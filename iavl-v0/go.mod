@@ -3,7 +3,6 @@ module github.com/kocubinski/iavl-bench/iavl-v0
 go 1.20
 
 require (
-	cosmossdk.io/log v1.2.0
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v0.21.1
 	github.com/kocubinski/costor-api v0.0.1
@@ -52,3 +51,5 @@ require (
 	golang.org/x/sys v0.10.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )
+
+replace github.com/kocubinski/iavl-bench/core => ../core

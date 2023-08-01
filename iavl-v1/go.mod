@@ -60,3 +60,5 @@ require (
 	golang.org/x/sys v0.10.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )
+
+replace github.com/kocubinski/iavl-bench/core => ../core

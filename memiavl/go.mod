@@ -3,7 +3,6 @@ module github.com/kocubinski/iavl-bench/memiavl
 go 1.20
 
 require (
-	github.com/cosmos/iavl v1.0.0-beta.1.0.20230801180932-0e16987c2161
 	github.com/crypto-org-chain/cronos/memiavl v0.0.3
 	github.com/dustin/go-humanize v1.0.0
 	github.com/kocubinski/costor-api v0.0.1

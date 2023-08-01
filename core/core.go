@@ -14,10 +14,12 @@ import (
 type TreeContext struct {
 	context.Context
 
-	Log             zerolog.Logger
-	IndexDir        string
-	LogDir          string
-	MetricLeafCount prometheus.Counter
+	Log               zerolog.Logger
+	IndexDir          string
+	LogDir            string
+	MetricLeafCount   prometheus.Counter
+	MetricTreeSize    prometheus.Gauge
+	MetricsTreeHeight prometheus.Gauge
 }
 
 type Tree interface {
@@ -25,6 +27,8 @@ type Tree interface {
 	Get(key []byte) ([]byte, error)
 	Remove(key []byte) ([]byte, bool, error)
 	SaveVersion() ([]byte, int64, error)
+	Size() int64
+	Height() int8
 }
 
 func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
@@ -62,6 +66,14 @@ func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 			}
 			lastVersion = n.Block
 		}
+
+		if c.MetricTreeSize != nil {
+			c.MetricTreeSize.Set(float64(tree.Size()))
+		}
+		if c.MetricsTreeHeight != nil {
+			c.MetricsTreeHeight.Set(float64(tree.Height()))
+		}
+
 		if cnt%100_000 == 0 {
 			c.Log.Info().Msgf("processed %s leaves in %s; %s leaves/s",
 				humanize.Comma(int64(cnt)),
