@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kocubinski/costor/memiavl-bench/memiavl"
 	"github.com/spf13/cobra"
 )
 
 func rootCommand() (*cobra.Command, error) {
 	root := &cobra.Command{
 		Use:   "memiavl-bench",
-		Short: "Benchmark memiavl",
+		Short: "benchmark crypto-org-chain/cronos/memiavl",
 	}
 	return root, nil
 }
@@ -21,7 +20,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	root.AddCommand(memiavl.Command())
+	root.AddCommand(Command())
 
 	if err := root.Execute(); err != nil {
 		fmt.Printf("Error: %s\n", err.Error())

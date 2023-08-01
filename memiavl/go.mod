@@ -1,4 +1,4 @@
-module github.com/kocubinski/costor/memiavl-bench
+module github.com/kocubinski/iavl-bench/memiavl
 
 go 1.20
 

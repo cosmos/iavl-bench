@@ -1,4 +1,4 @@
-package memiavl
+package main
 
 import (
 	"fmt"
@@ -80,10 +80,7 @@ func buildCommand(c *context) *cobra.Command {
 							return err
 						}
 					}
-					//if err != nil {
-					//	log.Error().Err(err).Msgf("failed to commit changeset at block %d", n.Block)
-					//	return err
-					//}
+
 					namedChangeset = &memiavl.NamedChangeSet{
 						Name:      "bank",
 						Changeset: iavl_proto.ChangeSet{},
