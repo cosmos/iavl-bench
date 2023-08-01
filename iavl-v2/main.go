@@ -72,10 +72,19 @@ func treeCommand(c context.Context) *cobra.Command {
 					true, clog.NewNopLogger())
 				labels["backend"] = "sqlite"
 			case mapDb:
+				labels["backend"] = "mapdb"
 				tree = iavl.NewMutableTreeWithOpts(prefixDb, 300_000, &iavl.Options{NodeBackend: iavl.NewMapDB()},
 					true, clog.NewNopLogger())
-				labels["backend"] = "mapdb"
+				tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
+					Name:        "iavl_tree_height",
+					ConstLabels: labels,
+				})
+				tree.MetricTreeSize = promauto.NewGauge(prometheus.GaugeOpts{
+					Name:        "iavl_tree_size",
+					ConstLabels: labels,
+				})
 			case nodeBackend:
+				labels["backend"] = "node"
 				sqlDb, err := iavl.NewSqliteDb(cmd.Context(), fmt.Sprintf("%s/iavl.sqlite", ctx.IndexDir))
 				if err != nil {
 					return err
@@ -136,12 +145,13 @@ func treeCommand(c context.Context) *cobra.Command {
 				opts := &iavl.Options{NodeBackend: kvBackend}
 				tree = iavl.NewMutableTreeWithOpts(prefixDb, 0, opts, true, clog.NewNopLogger())
 				tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
-					Name: "iavl_tree_height",
+					Name:        "iavl_tree_height",
+					ConstLabels: labels,
 				})
 				tree.MetricTreeSize = promauto.NewGauge(prometheus.GaugeOpts{
-					Name: "iavl_tree_size",
+					Name:        "iavl_tree_size",
+					ConstLabels: labels,
 				})
-				labels["backend"] = "node"
 			default:
 				tree = iavl.NewMutableTree(prefixDb, 1_000_000, true, clog.NewNopLogger())
 				labels["backend"] = "leveldb"

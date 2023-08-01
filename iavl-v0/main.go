@@ -56,7 +56,7 @@ func treeCommand(c context.Context) *cobra.Command {
 			labels := map[string]string{}
 			tree := iavl.NewMutableTree(prefixDb, 1_000_000, true, clog.NewNopLogger())
 			labels["backend"] = "leveldb"
-			labels["key_format"] = "v1"
+			labels["key_format"] = "v0"
 
 			tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
 				Name:        "iavl_tree_height",
