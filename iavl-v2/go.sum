@@ -49,6 +49,8 @@ github.com/cosmos/cosmos-db v1.0.0 h1:EVcQZ+qYag7W6uorBKFPvX6gRjw6Uq2hIh4hCWjuQ0
 github.com/cosmos/cosmos-db v1.0.0/go.mod h1:iBvi1TtqaedwLdcrZVYRSSCb6eSy61NLj4UNmdIgs0U=
 github.com/cosmos/gogoproto v1.4.3 h1:RP3yyVREh9snv/lsOvmsAPQt8f44LgL281X0IOIhhcI=
 github.com/cosmos/gogoproto v1.4.3/go.mod h1:0hLIG5TR7IvV1fme1HCFKjfzW9X2x0Mo+RooWXCnOWU=
+github.com/cosmos/iavl v1.0.0-beta.1.0.20230801180932-0e16987c2161 h1:Fa2iYo//LifcFwCC693adT06DFTiBhTg87nTse9wYBs=
+github.com/cosmos/iavl v1.0.0-beta.1.0.20230801180932-0e16987c2161/go.mod h1:Mq5U6SJB2/oNEo3ICLYkxC8Glq2lS1KuXUYj3Gpn4x8=
 github.com/cosmos/ics23/go v0.10.0 h1:iXqLLgp2Lp+EdpIuwXTYIQU+AiHj9mOC2X9ab++bZDM=
 github.com/cosmos/ics23/go v0.10.0/go.mod h1:ZfJSmng/TBNTBkFemHHHj5YY7VAU/MBU980F4VU1NG0=
 github.com/cpuguy83/go-md2man v1.0.10/go.mod h1:SmD6nW6nTyfqj6ABTjUi3V3JVMnlJmwcJI5acqYI6dE=
@@ -166,6 +168,8 @@ github.com/klauspost/compress v1.15.9/go.mod h1:PhcZ0MbTNciWF3rruxRgKxI5NkcHHrHU
 github.com/klauspost/cpuid v1.2.1/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/kocubinski/costor-api v0.0.1 h1:8FeIGmWde1VIE527vnZytEUC/lOD0yTlkgjeLpEDxxo=
 github.com/kocubinski/costor-api v0.0.1/go.mod h1:mqkPS6XzK3dRRlQ4J3GWov1yhlSDP1tojc6li/0VG3w=
+github.com/kocubinski/iavl-bench/core v0.0.0-20230801174715-a13b4acdfc81 h1:XHDnEG77tUqDEoiiJEaexKRLrl+2JbuPQkDAW/h9NuE=
+github.com/kocubinski/iavl-bench/core v0.0.0-20230801174715-a13b4acdfc81/go.mod h1:4TkCg6U+l4woMJJw2zuSyKeiar2VapivCjeSBWwafMM=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
