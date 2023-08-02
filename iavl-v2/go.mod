@@ -61,4 +61,7 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 )
 
-replace github.com/kocubinski/iavl-bench/core => ../core
+replace (
+	github.com/cosmos/iavl => ../../avlite
+	github.com/kocubinski/iavl-bench/core => ../core
+)

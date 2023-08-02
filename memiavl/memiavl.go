@@ -41,6 +41,7 @@ func buildCommand(c *context) *cobra.Command {
 			memIavlOpts := memiavl.Options{
 				CreateIfMissing: true,
 				InitialStores:   []string{"bank"},
+				//SnapshotInterval: 10_000_000,
 			}
 			miavl, err := memiavl.Load(fmt.Sprintf("%s/memiavl", c.indexDir), memIavlOpts)
 			if err != nil {
@@ -55,6 +56,11 @@ func buildCommand(c *context) *cobra.Command {
 			cnt := 1
 			since := time.Now()
 			lastVersion := int64(1)
+			hashLog, err := os.Create(fmt.Sprintf("%s/memiavl-hash.log", c.indexDir))
+			if err != nil {
+				return err
+			}
+			defer hashLog.Close()
 
 			//commitResult := make(chan error)
 			stream := &compact.StreamingContext{}
@@ -67,10 +73,16 @@ func buildCommand(c *context) *cobra.Command {
 
 				// block height advanced; flush.
 				if n.Block > lastVersion {
-					_, _, commitErr := miavl.Commit([]*memiavl.NamedChangeSet{namedChangeset})
+					h, v, commitErr := miavl.Commit([]*memiavl.NamedChangeSet{namedChangeset})
 					if commitErr != nil {
 						log.Error().Err(commitErr).Msgf("failed to commit changeset at block %d", n.Block)
 						return commitErr
+					}
+					if v%20_000 == 0 {
+						_, err = fmt.Fprintf(hashLog, "%d|%x\n", v, h)
+						if err != nil {
+							return err
+						}
 					}
 					// go func() {
 					// 	commitResult <- commitErr

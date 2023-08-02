@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -20,6 +21,7 @@ type TreeContext struct {
 	MetricLeafCount   prometheus.Counter
 	MetricTreeSize    prometheus.Gauge
 	MetricsTreeHeight prometheus.Gauge
+	HashLog           *os.File
 }
 
 type Tree interface {
@@ -60,9 +62,15 @@ func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 			}
 		}
 		if n.Block > lastVersion {
-			_, _, err := tree.SaveVersion()
+			h, v, err := tree.SaveVersion()
 			if err != nil {
 				return err
+			}
+			if v%20000 == 0 && c.HashLog != nil {
+				_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", v, h)
+				if err != nil {
+					return err
+				}
 			}
 			lastVersion = n.Block
 		}

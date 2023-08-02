@@ -39,6 +39,7 @@ func treeCommand(c context.Context) *cobra.Command {
 		sqlite       bool
 		mapDb        bool
 		nodeBackend  bool
+		nopBackend   bool
 		levelDbName  string
 	)
 	ctx := &core.TreeContext{
@@ -50,6 +51,12 @@ func treeCommand(c context.Context) *cobra.Command {
 		Short: "rebuild the tree from changesets",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
+			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v2-hash.log", ctx.IndexDir))
+			if err != nil {
+				return err
+			}
+			defer hashLog.Close()
+			ctx.HashLog = hashLog
 			levelDb, err := dbm.NewGoLevelDBWithOpts(levelDbName, ctx.IndexDir, &opt.Options{})
 			if err != nil {
 				return err
@@ -71,9 +78,24 @@ func treeCommand(c context.Context) *cobra.Command {
 				tree = iavl.NewMutableTreeWithOpts(prefixDb, 1000, &iavl.Options{NodeBackend: sqlDb},
 					true, clog.NewNopLogger())
 				labels["backend"] = "sqlite"
+			case nopBackend:
+				labels["backend"] = "mapdb"
+				tree = iavl.NewMutableTreeWithOpts(prefixDb, 0,
+					&iavl.Options{NodeBackend: &iavl.NopBackend{}},
+					true, clog.NewNopLogger())
+				tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
+					Name:        "iavl_tree_height",
+					ConstLabels: labels,
+				})
+				tree.MetricTreeSize = promauto.NewGauge(prometheus.GaugeOpts{
+					Name:        "iavl_tree_size",
+					ConstLabels: labels,
+				})
 			case mapDb:
 				labels["backend"] = "mapdb"
-				tree = iavl.NewMutableTreeWithOpts(prefixDb, 300_000, &iavl.Options{NodeBackend: iavl.NewMapDB()},
+				backend := iavl.NewMapDB()
+				tree = iavl.NewMutableTreeWithOpts(prefixDb, 300_000,
+					&iavl.Options{NodeBackend: backend},
 					true, clog.NewNopLogger())
 				tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
 					Name:        "iavl_tree_height",
@@ -169,6 +191,7 @@ func treeCommand(c context.Context) *cobra.Command {
 	cmd.Flags().StringVar(&sqliteDbName, "sqlite-db-name", "sqlite.db", "path to sqlite db")
 	cmd.Flags().BoolVar(&sqlite, "sqlite", false, "use sqlite")
 	cmd.Flags().BoolVar(&mapDb, "mapdb", false, "use mapdb")
+	cmd.Flags().BoolVar(&nopBackend, "nop", false, "use no-op backend")
 	cmd.Flags().BoolVar(&nodeBackend, "node-backend", false, "use node backend")
 	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "legacy", "name to give the new leveldb instance")
 	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "logs", "directory containing the compressed changeset logs")
