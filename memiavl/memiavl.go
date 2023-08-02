@@ -56,7 +56,7 @@ func buildCommand(c *context) *cobra.Command {
 			since := time.Now()
 			lastVersion := int64(1)
 
-			commitResult := make(chan error)
+			//commitResult := make(chan error)
 			stream := &compact.StreamingContext{}
 			itr, err := stream.NewIterator(logDir)
 			for ; itr.Valid(); err = itr.Next() {
@@ -67,19 +67,23 @@ func buildCommand(c *context) *cobra.Command {
 
 				// block height advanced; flush.
 				if n.Block > lastVersion {
-					go func() {
-						_, _, commitErr := miavl.Commit([]*memiavl.NamedChangeSet{namedChangeset})
-						commitResult <- commitErr
-					}()
-					select {
-					case <-time.After(1 * time.Minute):
-						log.Fatal().Msgf("commit took longer than 1 minute at block %d", n.Block)
-					case err := <-commitResult:
-						if err != nil {
-							log.Error().Err(err).Msgf("failed to commit changeset at block %d", n.Block)
-							return err
-						}
+					_, _, commitErr := miavl.Commit([]*memiavl.NamedChangeSet{namedChangeset})
+					if commitErr != nil {
+						log.Error().Err(commitErr).Msgf("failed to commit changeset at block %d", n.Block)
+						return commitErr
 					}
+					// go func() {
+					// 	commitResult <- commitErr
+					// }()
+					// select {
+					// case <-time.After(1 * time.Minute):
+					// 	log.Fatal().Msgf("commit took longer than 1 minute at block %d", n.Block)
+					// case err := <-commitResult:
+					// 	if err != nil {
+					// 		log.Error().Err(err).Msgf("failed to commit changeset at block %d", n.Block)
+					// 		return err
+					// 	}
+					// }
 
 					namedChangeset = &memiavl.NamedChangeSet{
 						Name:      "bank",
