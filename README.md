@@ -98,7 +98,7 @@ but root hashes are still calculated and stored in memory.  This is a good basel
 
 ### iavl v2
 Processing completed in 2 hours with a throughput of 42,686 leaves/sec.  Memory usage was 3.5-4GB. Final 
-db size is 350M.
+db size is 395M.
 
 IAVL v2 is an experimental branch of cosmos/iavl which tries to make efficient use of memory for caching, 
 and a WAL to optimize disk writes.  It is not yet merged into master and is still under active development.
