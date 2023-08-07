@@ -79,7 +79,7 @@ func treeCommand(c context.Context) *cobra.Command {
 					true, clog.NewNopLogger())
 				labels["backend"] = "sqlite"
 			case nopBackend:
-				labels["backend"] = "mapdb"
+				labels["backend"] = "nop"
 				tree = iavl.NewMutableTreeWithOpts(prefixDb, 0,
 					&iavl.Options{NodeBackend: &iavl.NopBackend{}},
 					true, clog.NewNopLogger())
@@ -141,7 +141,7 @@ func treeCommand(c context.Context) *cobra.Command {
 					}
 				}()
 
-				kvBackend, err := iavl.NewKeyValueBackend(prefixDb, 1_000_000, wal)
+				kvBackend, err := iavl.NewKeyValueBackend(prefixDb, 300_000, wal)
 				if err != nil {
 					return err
 				}
@@ -165,7 +165,7 @@ func treeCommand(c context.Context) *cobra.Command {
 				})
 
 				opts := &iavl.Options{NodeBackend: kvBackend}
-				tree = iavl.NewMutableTreeWithOpts(prefixDb, 0, opts, true, clog.NewNopLogger())
+				tree = iavl.NewMutableTreeWithOpts(prefixDb, 300_000, opts, true, clog.NewNopLogger())
 				tree.MetricTreeHeight = promauto.NewGauge(prometheus.GaugeOpts{
 					Name:        "iavl_tree_height",
 					ConstLabels: labels,
@@ -174,6 +174,7 @@ func treeCommand(c context.Context) *cobra.Command {
 					Name:        "iavl_tree_size",
 					ConstLabels: labels,
 				})
+				//tree.CheckpointSignal = wal.CheckpointSignal
 			default:
 				tree = iavl.NewMutableTree(prefixDb, 1_000_000, true, clog.NewNopLogger())
 				labels["backend"] = "leveldb"

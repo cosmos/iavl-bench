@@ -5,7 +5,7 @@ go 1.20
 require (
 	cosmossdk.io/log v1.2.0
 	github.com/cosmos/cosmos-db v1.0.0
-	github.com/cosmos/iavl v1.0.0-beta.1.0.20230801180932-0e16987c2161
+	github.com/cosmos/iavl v1.0.0-beta.1.0.20230802214124-6b06195b1a09
 	github.com/kocubinski/costor-api v0.0.1
 	github.com/kocubinski/iavl-bench/core v0.0.0-20230801174715-a13b4acdfc81
 	github.com/prometheus/client_golang v1.16.0
@@ -61,7 +61,4 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 )
 
-replace (
-	github.com/cosmos/iavl => ../../avlite
-	github.com/kocubinski/iavl-bench/core => ../core
-)
+replace github.com/kocubinski/iavl-bench/core => ../core
