@@ -39,9 +39,10 @@ func buildCommand(c *context) *cobra.Command {
 		Short: "Build a MemIAVL index from the nodes directory",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			memIavlOpts := memiavl.Options{
-				CreateIfMissing: true,
-				InitialStores:   []string{"bank"},
-				//SnapshotInterval: 10_000_000,
+				CreateIfMissing:   true,
+				InitialStores:     []string{"bank"},
+				SnapshotInterval:  100_000,
+				AsyncCommitBuffer: 5,
 			}
 			miavl, err := memiavl.Load(fmt.Sprintf("%s/memiavl", c.indexDir), memIavlOpts)
 			if err != nil {
