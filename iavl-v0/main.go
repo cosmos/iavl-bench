@@ -44,6 +44,14 @@ func treeCommand(c context.Context) *cobra.Command {
 		Short: "rebuild the tree from changesets",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
+
+			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v0-hash.log", ctx.IndexDir))
+			if err != nil {
+				return err
+			}
+			defer hashLog.Close()
+			ctx.HashLog = hashLog
+
 			levelDb, err := dbm.NewGoLevelDBWithOpts(levelDbName, ctx.IndexDir, &opt.Options{})
 			if err != nil {
 				return err
