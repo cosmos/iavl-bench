@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -11,13 +11,15 @@ import (
 	"github.com/kocubinski/costor-api/compact"
 	"github.com/kocubinski/costor-api/logz"
 	"github.com/spf13/cobra"
+	log2 "github.com/tendermint/tendermint/libs/log"
 )
 
 var log = logz.Logger.With().Str("module", "memiavl").Logger()
 
 type context struct {
-	indexDir string
-	nodesDir string
+	indexDir     string
+	logDir       string
+	versionLimit int64
 }
 
 func Command() *cobra.Command {
@@ -28,21 +30,27 @@ func Command() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&c.indexDir, "index-dir", fmt.Sprintf("%s/.costor", os.Getenv("HOME")),
 		"the directory to store the index in")
+	cmd.Flags().StringVar(&c.logDir, "log-dir", "", "path to compacted changelogs")
+	if err := cmd.MarkFlagRequired("log-dir"); err != nil {
+		panic(err)
+	}
+
 	cmd.AddCommand(buildCommand(c))
 	return cmd
 }
 
 func buildCommand(c *context) *cobra.Command {
-	var logDir string
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Build a MemIAVL index from the nodes directory",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			memIavlOpts := memiavl.Options{
-				CreateIfMissing:   true,
-				InitialStores:     []string{"bank"},
-				SnapshotInterval:  100_000,
-				AsyncCommitBuffer: 5,
+				CreateIfMissing:    true,
+				InitialStores:      []string{"bank"},
+				SnapshotKeepRecent: 1000,
+				SnapshotInterval:   1000,
+				AsyncCommitBuffer:  -1,
+				Logger:             log2.TestingLogger(),
 			}
 			dir := fmt.Sprintf("%s/memiavl", c.indexDir)
 			if err := os.RemoveAll(dir); err != nil {
@@ -69,7 +77,7 @@ func buildCommand(c *context) *cobra.Command {
 
 			//commitResult := make(chan error)
 			stream := &compact.StreamingContext{}
-			itr, err := stream.NewIterator(logDir)
+			itr, err := stream.NewIterator(c.logDir)
 			if err != nil {
 				return err
 			}
@@ -106,6 +114,10 @@ func buildCommand(c *context) *cobra.Command {
 					lastVersion = n.Block
 				}
 
+				if c.versionLimit > 0 && lastVersion > c.versionLimit {
+					break
+				}
+
 				if cnt%100_000 == 0 {
 					log.Info().Msgf("processed %s leaves in %s; %s leaves/s",
 						humanize.Comma(int64(cnt)),
@@ -119,9 +131,6 @@ func buildCommand(c *context) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&logDir, "log-dir", "", "path to compacted changelogs")
-	if err := cmd.MarkFlagRequired("log-dir"); err != nil {
-		panic(err)
-	}
+
 	return cmd
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kocubinski/iavl-bench/memiavl/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	root.AddCommand(Command())
+	root.AddCommand(cmd.Command())
 
 	if err := root.Execute(); err != nil {
 		fmt.Printf("Error: %s\n", err.Error())

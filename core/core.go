@@ -18,6 +18,7 @@ type TreeContext struct {
 	Log               zerolog.Logger
 	IndexDir          string
 	LogDir            string
+	VersionLimit      int64
 	MetricLeafCount   prometheus.Counter
 	MetricTreeSize    prometheus.Gauge
 	MetricsTreeHeight prometheus.Gauge
@@ -33,6 +34,12 @@ type Tree interface {
 	Height() int8
 }
 
+type kvChange struct {
+	key    []byte
+	value  []byte
+	delete bool
+}
+
 func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 	cnt := 1
 	since := time.Now()
@@ -40,6 +47,7 @@ func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 
 	stream := &compact.StreamingContext{}
 	itr, err := stream.NewIterator(c.LogDir)
+	var changes []kvChange
 	if err != nil {
 		return err
 	}
@@ -48,20 +56,29 @@ func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 			return err
 		}
 		n := itr.Node
-		if !n.Delete {
-			if _, err := tree.Set(n.Key, n.Value); err != nil {
-				return err
-			}
-		} else {
-			_, ok, err := tree.Remove(n.Key)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("failed to remove key %s", string(n.Key))
-			}
-		}
+
+		changes = append(changes, kvChange{
+			key:    n.Key,
+			value:  n.Value,
+			delete: n.Delete,
+		})
+
 		if n.Block > lastVersion {
+			for _, change := range changes {
+				if !change.delete {
+					if _, err := tree.Set(change.key, change.value); err != nil {
+						return err
+					}
+				} else {
+					_, ok, err := tree.Remove(change.key)
+					if err != nil {
+						return err
+					}
+					if !ok {
+						return fmt.Errorf("failed to remove key %s", string(n.Key))
+					}
+				}
+			}
 			h, v, err := tree.SaveVersion()
 			if err != nil {
 				return err
@@ -73,6 +90,11 @@ func (c *TreeContext) BuildLegacyIAVL(tree Tree) error {
 				}
 			}
 			lastVersion = n.Block
+			changes = nil
+		}
+
+		if c.VersionLimit > 0 && lastVersion > c.VersionLimit {
+			break
 		}
 
 		if c.MetricTreeSize != nil {
