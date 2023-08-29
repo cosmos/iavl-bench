@@ -86,14 +86,16 @@ func (itr *ChangesetGenIterator) nextVersion() {
 	}
 	for i := 0; i < creates; i++ {
 		node := &api.Node{
-			Key:   itr.genBytes(itr.gen.KeyMean, itr.gen.KeyStdDev),
-			Value: itr.genBytes(itr.gen.ValueMean, itr.gen.ValueStdDev),
+			StoreKey: itr.gen.StoreKey,
+			Key:      itr.genBytes(itr.gen.KeyMean, itr.gen.KeyStdDev),
+			Value:    itr.genBytes(itr.gen.ValueMean, itr.gen.ValueStdDev),
+			Block:    int64(itr.Version),
 		}
 		itr.versionNodes = append(itr.versionNodes, node)
 		itr.keys = append(itr.keys, node.Key)
 	}
 
-	rand.Shuffle(len(itr.versionNodes), func(i, j int) {
+	itr.rand.Shuffle(len(itr.versionNodes), func(i, j int) {
 		itr.versionNodes[i], itr.versionNodes[j] = itr.versionNodes[j], itr.versionNodes[i]
 	})
 }
