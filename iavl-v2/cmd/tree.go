@@ -27,13 +27,13 @@ type Context struct {
 	levelDbName  string
 }
 
-func TreeCommand(ctx Context) *cobra.Command {
+func TreeCommand(ctx *Context) *cobra.Command {
 	ctx.Log = log
 	cmd := &cobra.Command{
 		Use:   "tree",
 		Short: "rebuild the tree from changesets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			//ctx.IndexDir = cmd.Flag("index-dir").Value.String()
+			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
 			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v2-hash.log", ctx.IndexDir))
 			if err != nil {
 				return err

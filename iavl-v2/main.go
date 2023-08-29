@@ -16,7 +16,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	root.AddCommand(cmd.TreeCommand(context.Background()))
+	root.AddCommand(cmd.TreeCommand(&cmd.Context{
+		TreeContext: core.TreeContext{
+			Context: context.Background(),
+		},
+	}))
 
 	if err := root.Execute(); err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
