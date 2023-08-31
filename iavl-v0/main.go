@@ -31,9 +31,21 @@ func main() {
 
 var log = logz.Logger.With().Str("bench", "iavl-v0").Logger()
 
+func newIavlTree(name, dir, storeKey string) (core.Tree, error) {
+	levelDb, err := dbm.NewGoLevelDBWithOpts(name, dir, &opt.Options{})
+	if err != nil {
+		return nil, err
+	}
+	prefix := fmt.Sprintf("s/k:%s/", storeKey)
+	prefixDb := dbm.NewPrefixDB(levelDb, []byte(prefix))
+
+	return iavl.NewMutableTree(prefixDb, 1_000_000, true)
+}
+
 func treeCommand(c context.Context) *cobra.Command {
 	var (
 		levelDbName string
+		seed        int64
 	)
 	ctx := &core.TreeContext{
 		Context: c,
@@ -52,16 +64,16 @@ func treeCommand(c context.Context) *cobra.Command {
 			defer hashLog.Close()
 			ctx.HashLog = hashLog
 
-			levelDb, err := dbm.NewGoLevelDBWithOpts(levelDbName, ctx.IndexDir, &opt.Options{})
+			multiTree := core.NewMultiTree()
+			multiTree.Trees["bank"], err = newIavlTree(levelDbName, ctx.IndexDir, "bank")
 			if err != nil {
 				return err
 			}
-			prefix := fmt.Sprintf("s/k:%s/", "bank")
-			prefixDb := dbm.NewPrefixDB(levelDb, []byte(prefix))
+
+			bankGen := core.BankLikeGenerator(seed, 10_000_000)
+			ctx.Generator = bankGen
 
 			labels := map[string]string{}
-			tree, err := iavl.NewMutableTree(prefixDb, 1_000_000, true)
-
 			labels["backend"] = "leveldb"
 			labels["key_format"] = "v0"
 
@@ -79,14 +91,12 @@ func treeCommand(c context.Context) *cobra.Command {
 				ConstLabels: labels,
 			})
 
-			return ctx.BuildLegacyIAVL(tree)
+			return ctx.BuildLegacyIAVL(multiTree)
 		},
 	}
 	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "legacy", "name to give the new leveldb instance")
-	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "logs", "directory containing the compressed changeset logs")
-	if err := cmd.MarkFlagRequired("log-dir"); err != nil {
-		panic(err)
-	}
+	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "", "directory containing the compressed changeset logs")
+	cmd.Flags().Int64Var(&seed, "seed", 0, "seed for the data generator")
 
 	return cmd
 }

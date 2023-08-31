@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v0.21.1
-	github.com/kocubinski/costor-api v0.0.1
+	github.com/kocubinski/costor-api v0.0.8
 	github.com/kocubinski/iavl-bench/core v0.0.0-20230801174715-a13b4acdfc81
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
@@ -42,7 +42,7 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
-	github.com/rogpeppe/go-internal v1.9.0 // indirect
+	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/rs/zerolog v1.30.0 // indirect
 	github.com/spf13/cast v1.5.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
