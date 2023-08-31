@@ -43,14 +43,15 @@ func (c ChangesetGenerator) Iterator() (*ChangesetIterator, error) {
 	}
 
 	itr := &ChangesetIterator{
-		gen:  c,
-		rand: rand.New(rand.NewSource(c.Seed)),
-		// TODO
-		// this approximation must be padded with the expected number of deletes per version
-		// createsPerVersion needs to be flaot to account for avg creates per version < 1
-		// accumulate creates and only write when >= 1, then subtract what was created
-		createsPerVersion: (c.FinalSize - c.InitialSize) / (c.Versions - 1),
-		keysHashes:        map[[16]byte]struct{}{},
+		gen:               c,
+		rand:              rand.New(rand.NewSource(c.Seed)),
+		createsPerVersion: float64(c.FinalSize-c.InitialSize) / float64(c.Versions-1),
+		keys:              make([][]byte, c.FinalSize),
+		freeList:          make(chan int, c.FinalSize),
+	}
+
+	for i := 0; i < c.FinalSize; i++ {
+		itr.freeList <- i
 	}
 
 	err := itr.Next()
@@ -64,11 +65,11 @@ type ChangesetIterator struct {
 	rand              *rand.Rand
 	gen               ChangesetGenerator
 	keys              [][]byte
-	keysHashes        map[[16]byte]struct{}
-	createsPerVersion int
+	freeList          chan int
+	createsPerVersion float64
+	createAccumulator float64
 	versionNodes      []*api.Node
 	versionIndex      int
-	deletable         [][]byte
 }
 
 func (itr *ChangesetIterator) nextVersion() {
@@ -82,7 +83,11 @@ func (itr *ChangesetIterator) nextVersion() {
 	// only delete past version 1
 	if itr.Version > 1 {
 		for i := 0; i < deletes; i++ {
-			j := itr.rand.Intn(len(itr.keys))
+			j := itr.rand.Intn(itr.gen.FinalSize)
+			if itr.keys[j] == nil {
+				i--
+				continue
+			}
 			node := &api.Node{
 				StoreKey: itr.gen.StoreKey,
 				Block:    int64(itr.Version),
@@ -90,14 +95,19 @@ func (itr *ChangesetIterator) nextVersion() {
 				Delete:   true,
 			}
 
-			itr.keys = append(itr.keys[:j], itr.keys[j+1:]...)
+			itr.freeList <- j
+			itr.keys[j] = nil
 			itr.versionNodes = append(itr.versionNodes, node)
 		}
 	}
 
 	if itr.Version > 1 {
 		for i := 0; i < updates; i++ {
-			j := itr.rand.Intn(len(itr.keys))
+			j := itr.rand.Intn(itr.gen.FinalSize)
+			if itr.keys[j] == nil {
+				i--
+				continue
+			}
 			itr.versionNodes = append(itr.versionNodes, &api.Node{
 				StoreKey: itr.gen.StoreKey,
 				Block:    int64(itr.Version),
@@ -107,14 +117,14 @@ func (itr *ChangesetIterator) nextVersion() {
 		}
 	}
 
-	var (
-		creates int
-		//createCollisions int
-	)
+	var creates int
 	if itr.Version == 1 {
 		creates = itr.gen.InitialSize
 	} else {
-		creates = itr.createsPerVersion + deletes
+		itr.createAccumulator += itr.createsPerVersion
+		clamped := int(itr.createAccumulator)
+		creates = clamped + deletes
+		itr.createAccumulator -= float64(clamped)
 	}
 	for i := 0; i < creates; i++ {
 		node := &api.Node{
@@ -123,8 +133,9 @@ func (itr *ChangesetIterator) nextVersion() {
 			Value:    itr.genBytes(itr.gen.ValueMean, itr.gen.ValueStdDev),
 			Block:    int64(itr.Version),
 		}
+		j := <-itr.freeList
+		itr.keys[j] = node.Key
 		itr.versionNodes = append(itr.versionNodes, node)
-		itr.keys = append(itr.keys, node.Key)
 	}
 
 	itr.rand.Shuffle(len(itr.versionNodes), func(i, j int) {

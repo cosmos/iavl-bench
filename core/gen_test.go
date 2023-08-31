@@ -26,7 +26,7 @@ func Test_ChangesetGenerator(t *testing.T) {
 	//	ChangePerVersion: 500,
 	//	DeleteFraction:   0.1,
 	//}
-	gen := core.BankLikeGenerator(0, 100_000)
+	gen := core.BankLikeGenerator(0, 10_000_000)
 	itr, err := gen.Iterator()
 	require.NoError(t, err)
 
@@ -38,13 +38,6 @@ func Test_ChangesetGenerator(t *testing.T) {
 	for ; itr.Valid(); err = itr.Next() {
 		if itr.Version != version {
 			//fmt.Printf("version %d; count %d; len %d\n", version, cnt, len(nodes))
-			if version%1000 == 0 {
-				fmt.Printf("version %d; count %s; len %d; node/s: %s\n",
-					version, humanize.Comma(cnt), len(nodes),
-					humanize.Comma(int64(cnt-lastCnt)/int64(time.Since(since).Seconds())))
-				lastCnt = cnt
-				since = time.Now()
-			}
 			version = itr.Version
 		}
 		cnt++
@@ -66,6 +59,14 @@ func Test_ChangesetGenerator(t *testing.T) {
 		} else {
 			nodes[keyHash] = struct{}{}
 		}
+		if cnt%1_000_000 == 0 {
+			fmt.Printf("version %d; count %s; len %s; node/ms: %s\n",
+				version, humanize.Comma(cnt),
+				humanize.Comma(int64(len(nodes))),
+				humanize.Comma((cnt-lastCnt)/time.Since(since).Milliseconds()))
+			lastCnt = cnt
+			since = time.Now()
+		}
 	}
 	require.NotEqual(t, 0, cnt)
 	require.Equal(t, gen.FinalSize, len(nodes))
@@ -76,10 +77,10 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 		seed int64
 		hash string
 	}{
-		{2, "6b1016b9e3ae4518176be598b92c3756"},
-		{100, "02d8c8b77136a8b515f12fa44d1457ec"},
-		{777, "903a2b9a4507fc61a2e4f1c5ba54a616"},
-		{-43, "49ff48a37ed02a0d9ec87acad273a1e5"},
+		{2, "08589a9d7583b598552f2dd328b9f087"},
+		{100, "6e00828663122181dbd185a3120b00d9"},
+		{777, "cf66266c99122410110b6885b0e72589"},
+		{-43, "3eba060775aebf83a7edb304377a84f4"},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("seed %d", tc.seed), func(t *testing.T) {
@@ -99,10 +100,21 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 			itr, err := gen.Iterator()
 			require.NoError(t, err)
 
+			nodes := map[[16]byte]struct{}{}
 			var h [16]byte
 			for ; itr.Valid(); err = itr.Next() {
 				require.NoError(t, err)
 				require.NotNil(t, itr.Node)
+
+				keyHash := md5.Sum(itr.Node.Key)
+				if itr.Node.Delete {
+					_, exists := nodes[keyHash]
+					require.True(t, exists, fmt.Sprintf("key %x not found", itr.Node.Key))
+					delete(nodes, keyHash)
+				} else {
+					nodes[keyHash] = struct{}{}
+				}
+
 				var buf bytes.Buffer
 				buf.Write(h[:])
 				buf.Write(itr.Node.Key)
@@ -111,6 +123,7 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 			}
 			fmt.Printf("hash: %x\n", h)
 			require.Equal(t, tc.hash, fmt.Sprintf("%x", h))
+			require.Equal(t, gen.FinalSize, len(nodes))
 		})
 	}
 }
