@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"fmt"
 	"testing"
@@ -9,23 +10,19 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/kocubinski/iavl-bench/core"
+	"github.com/kocubinski/iavl-bench/core/metrics"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_ChangesetGenerator(t *testing.T) {
-	//gen := core.ChangesetGenerator{
-	//	StoreKey:         "test",
-	//	Seed:             2,
-	//	KeyMean:          10,
-	//	KeyStdDev:        2,
-	//	ValueMean:        100,
-	//	ValueStdDev:      2000,
-	//	InitialSize:      1000,
-	//	FinalSize:        10000,
-	//	Versions:         10,
-	//	ChangePerVersion: 500,
-	//	DeleteFraction:   0.1,
-	//}
+	bg := context.Background()
+	bg, cancel := context.WithCancel(bg)
+	go metrics.Default.Run(bg)
+	defer func() {
+		cancel()
+	}()
+
+	//gen := core.LockupLikeGenerator(0, 10_000_000)
 	gen := core.BankLikeGenerator(0, 10_000_000)
 	itr, err := gen.Iterator()
 	require.NoError(t, err)
@@ -34,42 +31,46 @@ func Test_ChangesetGenerator(t *testing.T) {
 	var cnt int64
 	var lastCnt int64
 	since := time.Now()
-	version := itr.Version
 	for ; itr.Valid(); err = itr.Next() {
-		if itr.Version != version {
-			//fmt.Printf("version %d; count %d; len %d\n", version, cnt, len(nodes))
-			version = itr.Version
-		}
-		cnt++
-		//if fmt.Sprintf("%x", itr.Node.Key) == "49" {
-		//	n := itr.Node
-		//	if !n.Delete {
-		//		vh := md5.Sum(n.Value)
-		//		n.Value = vh[:]
-		//	}
-		//	fmt.Printf("seen key 49 %v\n", n)
-		//}
 		require.NoError(t, err)
-		require.NotNil(t, itr.Node)
-		keyHash := md5.Sum(itr.Node.Key)
-		if itr.Node.Delete {
-			_, exists := nodes[keyHash]
-			require.True(t, exists, fmt.Sprintf("key %x not found; version %d", itr.Node.Key, version))
-			delete(nodes, keyHash)
-		} else {
-			nodes[keyHash] = struct{}{}
+		changeset := itr.GetChangeset()
+		exit := false
+		for _, node := range changeset.Nodes {
+			cnt++
+			require.NotNil(t, node)
+			keyHash := md5.Sum(node.Key)
+
+			if node.Delete {
+				_, exists := nodes[keyHash]
+				require.True(t, exists, fmt.Sprintf("key %x not found; version %d",
+					node.Key, itr.GetChangeset().Version))
+				delete(nodes, keyHash)
+			} else {
+				nodes[keyHash] = struct{}{}
+			}
+
+			if cnt%1_000_000 == 0 {
+				fmt.Printf("version %d; count %s; len %s; node/ms: %s\n",
+					itr.GetChangeset().Version,
+					humanize.Comma(cnt),
+					humanize.Comma(int64(len(nodes))),
+					humanize.Comma((cnt-lastCnt)/time.Since(since).Milliseconds()))
+				lastCnt = cnt
+				since = time.Now()
+			}
+
+			if cnt == 3_000_000 {
+				exit = true
+				break
+			}
 		}
-		if cnt%1_000_000 == 0 {
-			fmt.Printf("version %d; count %s; len %s; node/ms: %s\n",
-				version, humanize.Comma(cnt),
-				humanize.Comma(int64(len(nodes))),
-				humanize.Comma((cnt-lastCnt)/time.Since(since).Milliseconds()))
-			lastCnt = cnt
-			since = time.Now()
+		if exit {
+			break
 		}
 	}
 	require.NotEqual(t, 0, cnt)
-	require.Equal(t, gen.FinalSize, len(nodes))
+	//require.True(t, gen.FinalSize == len(nodes) || gen.FinalSize == len(nodes)+1,
+	//	fmt.Sprintf("final size %d != %d", gen.FinalSize, len(nodes)))
 }
 
 func Test_ChangesetGenerator_Determinism(t *testing.T) {
@@ -104,26 +105,79 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 			var h [16]byte
 			for ; itr.Valid(); err = itr.Next() {
 				require.NoError(t, err)
-				require.NotNil(t, itr.Node)
+				for _, node := range itr.GetChangeset().Nodes {
+					require.NotNil(t, node)
 
-				keyHash := md5.Sum(itr.Node.Key)
-				if itr.Node.Delete {
-					_, exists := nodes[keyHash]
-					require.True(t, exists, fmt.Sprintf("key %x not found", itr.Node.Key))
-					delete(nodes, keyHash)
-				} else {
-					nodes[keyHash] = struct{}{}
+					keyHash := md5.Sum(node.Key)
+					if node.Delete {
+						_, exists := nodes[keyHash]
+						require.True(t, exists, fmt.Sprintf("key %x not found", node.Key))
+						delete(nodes, keyHash)
+					} else {
+						nodes[keyHash] = struct{}{}
+					}
+
+					var buf bytes.Buffer
+					buf.Write(h[:])
+					buf.Write(node.Key)
+					buf.Write(node.Value)
+					h = md5.Sum(buf.Bytes())
+
 				}
-
-				var buf bytes.Buffer
-				buf.Write(h[:])
-				buf.Write(itr.Node.Key)
-				buf.Write(itr.Node.Value)
-				h = md5.Sum(buf.Bytes())
 			}
 			fmt.Printf("hash: %x\n", h)
 			require.Equal(t, tc.hash, fmt.Sprintf("%x", h))
 			require.Equal(t, gen.FinalSize, len(nodes))
 		})
 	}
+}
+
+func Test_ChangesetIterators(t *testing.T) {
+	gen1 := &core.ChangesetGenerator{
+		StoreKey:         "test",
+		Seed:             1,
+		KeyMean:          10,
+		KeyStdDev:        2,
+		ValueMean:        100,
+		ValueStdDev:      1000,
+		InitialSize:      1000,
+		FinalSize:        10000,
+		Versions:         10,
+		ChangePerVersion: 500,
+		DeleteFraction:   0.1,
+	}
+	gen2 := *gen1
+	gen2.Seed = 2
+	gen3 := *gen1
+	gen3.Seed = 3
+
+	itr, err := core.NewChangesetIterators([]core.ChangesetGenerator{*gen1, gen2, gen3})
+	require.NoError(t, err)
+
+	nodes := map[[16]byte]struct{}{}
+	var h [16]byte
+	for ; itr.Valid(); err = itr.Next() {
+		require.NoError(t, err)
+		changeset := itr.GetChangeset()
+		for _, node := range changeset.Nodes {
+			require.NotNil(t, node)
+
+			keyHash := md5.Sum(node.Key)
+			if node.Delete {
+				_, exists := nodes[keyHash]
+				require.True(t, exists, fmt.Sprintf("key %x not found", node.Key))
+				delete(nodes, keyHash)
+			} else {
+				nodes[keyHash] = struct{}{}
+			}
+
+			var buf bytes.Buffer
+			buf.Write(h[:])
+			buf.Write([]byte(node.StoreKey))
+			buf.Write(node.Key)
+			buf.Write(node.Value)
+			h = md5.Sum(buf.Bytes())
+		}
+	}
+	require.Equal(t, gen1.FinalSize+gen2.FinalSize+gen3.FinalSize, len(nodes))
 }

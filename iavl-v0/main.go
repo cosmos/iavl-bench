@@ -65,13 +65,13 @@ func treeCommand(c context.Context) *cobra.Command {
 			ctx.HashLog = hashLog
 
 			multiTree := core.NewMultiTree()
-			multiTree.Trees["bank"], err = newIavlTree(levelDbName, ctx.IndexDir, "bank")
+			multiTree.Trees["lockup"], err = newIavlTree(levelDbName, ctx.IndexDir, "lockup")
 			if err != nil {
 				return err
 			}
 
-			bankGen := core.BankLikeGenerator(seed, 10_000_000)
-			ctx.Generator = bankGen
+			gen := core.LockupLikeGenerator(seed, 10_000_000)
+			ctx.Generators = []core.ChangesetGenerator{gen}
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"
