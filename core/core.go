@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
+	"github.com/kocubinski/costor-api/compact"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 )
@@ -31,17 +33,17 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 	cnt := 1
 	since := time.Now()
 	var (
-		itr ChangesetIterator
-		err error
+		itr         ChangesetIterator
+		err         error
+		iavlVersion int64
 	)
 
 	if c.LogDir != "" {
-		//stream := &compact.StreamingContext{}
-		//itr, err = stream.NewIterator(c.LogDir)
-		//if err != nil {
-		//	return err
-		//}
-		return fmt.Errorf("not implemented")
+		path := strings.Split(c.LogDir, "/")
+		itr, err = compact.NewChangesetIterator(c.LogDir, path[len(path)-1])
+		if err != nil {
+			return err
+		}
 	} else {
 		itr, err = NewChangesetIterators(c.Generators)
 		if err != nil {
@@ -53,14 +55,13 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 		if err != nil {
 			return err
 		}
-		nodes := itr.GetChangeset().Nodes
-		version := nodes[0].Block
+		changeset := itr.GetChangeset()
 
-		if c.VersionLimit > 0 && version > c.VersionLimit {
+		if c.VersionLimit > 0 && changeset.Version > c.VersionLimit {
 			break
 		}
 
-		for _, n := range itr.GetChangeset().Nodes {
+		for _, n := range changeset.Nodes {
 			cnt++
 			if cnt%100_000 == 0 {
 				c.Log.Info().Msgf("processed %s leaves in %s; %s leaves/s",
@@ -71,8 +72,8 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 			}
 			c.MetricLeafCount.Inc()
 
-			if n.Block != version {
-				return fmt.Errorf("expected block %d; got %d", version, n.Block)
+			if n.Block != changeset.Version {
+				return fmt.Errorf("expected block %d; got %d", changeset.Version, n.Block)
 			}
 			if !n.Delete {
 				if _, err := multiTree.Trees[n.StoreKey].Set(n.Key, n.Value); err != nil {
@@ -91,16 +92,16 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 
 		var hashes bytes.Buffer
 		for _, tree := range multiTree.Trees {
-			h, v, err := tree.SaveVersion()
+			var h []byte
+			h, iavlVersion, err = tree.SaveVersion()
 			if err != nil {
 				return err
 			}
-			version = v
 			hashes.Write(h)
 		}
-		if version%20000 == 0 && c.HashLog != nil {
+		if changeset.Version%20000 == 0 && c.HashLog != nil {
 			h := sha256.Sum256(hashes.Bytes())
-			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", version, h)
+			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, h)
 			if err != nil {
 				return err
 			}

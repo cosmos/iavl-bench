@@ -11,7 +11,7 @@ import (
 type ChangesetIterator interface {
 	Next() error
 	Valid() bool
-	GetChangeset() *Changeset
+	GetChangeset() *api.Changeset
 }
 
 type Changeset struct {
@@ -33,6 +33,9 @@ type ChangesetGenerator struct {
 	DeleteFraction   float64
 }
 
+const byteChunkSize = 512
+const byteChunkCount = 500_000
+
 func (c ChangesetGenerator) Iterator() (ChangesetIterator, error) {
 	if c.FinalSize < c.InitialSize {
 		return nil, fmt.Errorf("final size must be greater than initial size")
@@ -46,10 +49,15 @@ func (c ChangesetGenerator) Iterator() (ChangesetIterator, error) {
 		freeList:          make(chan int, c.FinalSize),
 		deleteMiss:        metrics.Default.NewCounter("iterator.delete_miss"),
 		updateMiss:        metrics.Default.NewCounter("iterator.update_miss"),
+		byteChunks:        make([][]byte, byteChunkCount),
 	}
 
 	for i := 0; i < c.FinalSize; i++ {
 		itr.freeList <- i
+	}
+
+	for i := 0; i < len(itr.byteChunks); i++ {
+		itr.rand.Read(itr.byteChunks[i][:])
 	}
 
 	err := itr.Next()
@@ -57,7 +65,7 @@ func (c ChangesetGenerator) Iterator() (ChangesetIterator, error) {
 }
 
 type ChangesetItr struct {
-	Changeset *Changeset
+	Changeset *api.Changeset
 
 	version           int64
 	rand              *rand.Rand
@@ -68,11 +76,12 @@ type ChangesetItr struct {
 	createAccumulator float64
 	deleteMiss        *metrics.Counter
 	updateMiss        *metrics.Counter
+	byteChunks        [][]byte
 }
 
 func (itr *ChangesetItr) nextVersion() {
 	itr.version++
-	itr.Changeset = &Changeset{Version: itr.version}
+	itr.Changeset = &api.Changeset{Version: itr.version}
 	var versionNodes []*api.Node
 
 	deletes := int(itr.gen.DeleteFraction * float64(itr.gen.ChangePerVersion))
@@ -92,10 +101,6 @@ func (itr *ChangesetItr) nextVersion() {
 				Block:    itr.version,
 				Key:      itr.keys[j],
 				Delete:   true,
-			}
-
-			if fmt.Sprintf("%x", node.Key) == "836a27c1c92316b921a61628448b57074c3c8ec3937243ff8754bd190c0d8f536e3e3027349626e74934776b01c3941e97944081719855526f09425d" {
-				fmt.Printf("found in delete gen; block %d\n", node.Block)
 			}
 
 			itr.freeList <- j
@@ -163,7 +168,7 @@ func (itr *ChangesetItr) Valid() bool {
 	return itr.Changeset != nil
 }
 
-func (itr *ChangesetItr) GetChangeset() *Changeset {
+func (itr *ChangesetItr) GetChangeset() *api.Changeset {
 	return itr.Changeset
 }
 
@@ -183,7 +188,12 @@ func (itr *ChangesetItr) genBytes(mean, stdDev int) []byte {
 		}
 	}
 	b := make([]byte, length)
-	itr.rand.Read(b)
+	rem := length % byteChunkSize
+	for i := 0; i < length-rem; i += byteChunkSize {
+		copy(b[i:], itr.byteChunks[itr.rand.Intn(byteChunkCount)])
+	}
+	// fill remainder (entire buffer if length < byteChunkSize)
+	itr.rand.Read(b[length-rem:])
 	return b
 }
 
@@ -192,7 +202,7 @@ type ChangesetIterators struct {
 	version      int64
 	versionSkips int
 	idx          int
-	Changeset    *Changeset
+	Changeset    *api.Changeset
 }
 
 func NewChangesetIterators(gens []ChangesetGenerator) (ChangesetIterator, error) {
@@ -201,7 +211,7 @@ func NewChangesetIterators(gens []ChangesetGenerator) (ChangesetIterator, error)
 	}
 	var iterators []ChangesetIterator
 	version := gens[0].Versions
-	firstChangeset := &Changeset{Version: version}
+	firstChangeset := &api.Changeset{Version: version}
 	for _, gen := range gens {
 		if gen.Versions != version {
 			return nil, fmt.Errorf("all generators must have the same number of versions")
@@ -224,7 +234,7 @@ func NewChangesetIterators(gens []ChangesetGenerator) (ChangesetIterator, error)
 }
 
 func (itr *ChangesetIterators) Next() error {
-	changeset := &Changeset{}
+	changeset := &api.Changeset{}
 	for _, i := range itr.iterators {
 		err := i.Next()
 		if err != nil {
@@ -249,6 +259,6 @@ func (itr *ChangesetIterators) Valid() bool {
 	return itr.Changeset != nil
 }
 
-func (itr *ChangesetIterators) GetChangeset() *Changeset {
+func (itr *ChangesetIterators) GetChangeset() *api.Changeset {
 	return itr.Changeset
 }

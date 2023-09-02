@@ -31,3 +31,19 @@ func LockupLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 		DeleteFraction:   0.29,
 	}
 }
+
+func StakingLikeGenerator(seed int64, versions int64) ChangesetGenerator {
+	return ChangesetGenerator{
+		StoreKey:         "staking",
+		Seed:             seed,
+		KeyMean:          24,
+		KeyStdDev:        2,
+		ValueMean:        12263,
+		ValueStdDev:      22967,
+		InitialSize:      35_000,
+		FinalSize:        1_600_696,
+		Versions:         versions,
+		ChangePerVersion: int(int64(60_975_465) / versions),
+		DeleteFraction:   0.25,
+	}
+}

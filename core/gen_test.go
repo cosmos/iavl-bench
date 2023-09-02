@@ -24,6 +24,7 @@ func Test_ChangesetGenerator(t *testing.T) {
 
 	//gen := core.LockupLikeGenerator(0, 10_000_000)
 	gen := core.BankLikeGenerator(0, 10_000_000)
+	//gen := core.StakingLikeGenerator(0, 10_000_000)
 	itr, err := gen.Iterator()
 	require.NoError(t, err)
 
