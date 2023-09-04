@@ -31,11 +31,7 @@ func main() {
 
 var log = logz.Logger.With().Str("bench", "iavl-v0").Logger()
 
-func newIavlTree(name, dir, storeKey string) (core.Tree, error) {
-	levelDb, err := dbm.NewGoLevelDBWithOpts(name, dir, &opt.Options{})
-	if err != nil {
-		return nil, err
-	}
+func newIavlTree(levelDb dbm.DB, storeKey string) (core.Tree, error) {
 	prefix := fmt.Sprintf("s/k:%s/", storeKey)
 	prefixDb := dbm.NewPrefixDB(levelDb, []byte(prefix))
 
@@ -64,14 +60,25 @@ func treeCommand(c context.Context) *cobra.Command {
 			defer hashLog.Close()
 			ctx.HashLog = hashLog
 
-			multiTree := core.NewMultiTree()
-			multiTree.Trees["lockup"], err = newIavlTree(levelDbName, ctx.IndexDir, "lockup")
+			levelDb, err := dbm.NewGoLevelDBWithOpts(levelDbName, ctx.IndexDir, &opt.Options{})
 			if err != nil {
 				return err
 			}
 
-			gen := core.LockupLikeGenerator(seed, 10_000_000)
-			ctx.Generators = []core.ChangesetGenerator{gen}
+			multiTree := core.NewMultiTree()
+			multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
+			if err != nil {
+				return err
+			}
+			multiTree.Trees["bank"], err = newIavlTree(levelDb, "bank")
+			if err != nil {
+				return err
+			}
+
+			ctx.Generators = []core.ChangesetGenerator{
+				core.LockupLikeGenerator(seed, 10_000_000),
+				core.BankLikeGenerator(seed, 10_000_000),
+			}
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"

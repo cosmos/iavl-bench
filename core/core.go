@@ -39,10 +39,13 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 	)
 
 	if c.LogDir != "" {
-		path := strings.Split(c.LogDir, "/")
-		itr, err = compact.NewChangesetIterator(c.LogDir, path[len(path)-1])
+		itr, err = compact.NewMultiChangesetIterator(c.LogDir)
 		if err != nil {
-			return err
+			path := strings.Split(c.LogDir, "/")
+			itr, err = compact.NewChangesetIterator(c.LogDir, path[len(path)-1])
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		itr, err = NewChangesetIterators(c.Generators)

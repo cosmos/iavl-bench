@@ -155,8 +155,8 @@ github.com/klauspost/compress v1.9.0/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0
 github.com/klauspost/compress v1.16.0 h1:iULayQNOReoYUe+1qtKOqw9CwJv3aNQu8ivo7lw1HU4=
 github.com/klauspost/compress v1.16.0/go.mod h1:ntbaceVETuRiXiv4DpjP66DpAtAGkEQskQzEyD//IeE=
 github.com/klauspost/cpuid v1.2.1/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
-github.com/kocubinski/costor-api v0.0.8 h1:d6YJOzuSa1hhhB5RjkrHf4xdEcsbjUff/9Mgzp/5gwE=
-github.com/kocubinski/costor-api v0.0.8/go.mod h1:eoTKR5TV4ECeqFdcYp3xZXZ28GS59XqUfdLwXdw23Ls=
+github.com/kocubinski/costor-api v0.0.9 h1:LdfZkZyZ+U26f/YxbBpVy0zjMVUeY7JTsMWV6X5TVBk=
+github.com/kocubinski/costor-api v0.0.9/go.mod h1:eoTKR5TV4ECeqFdcYp3xZXZ28GS59XqUfdLwXdw23Ls=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
