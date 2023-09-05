@@ -1,4 +1,4 @@
-package core
+package bench
 
 func BankLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 	return ChangesetGenerator{

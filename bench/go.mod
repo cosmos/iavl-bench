@@ -1,4 +1,4 @@
-module github.com/kocubinski/iavl-bench/core
+module github.com/kocubinski/iavl-bench/bench
 
 go 1.20
 

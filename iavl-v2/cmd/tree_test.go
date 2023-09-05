@@ -9,7 +9,7 @@ import (
 
 func Test_BuildTree(t *testing.T) {
 	cmd := TreeCommand(&Context{
-		TreeContext: core.TreeContext{
+		TreeContext: bench.TreeContext{
 			IndexDir:     "/Users/mattk/.costor",
 			VersionLimit: 1_000_000,
 		},

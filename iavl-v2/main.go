@@ -5,19 +5,18 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kocubinski/iavl-bench/bench"
 	"github.com/kocubinski/iavl-bench/iavl-v2/cmd"
-
-	"github.com/kocubinski/iavl-bench/core"
 )
 
 func main() {
-	root, err := core.RootCommand()
+	root, err := bench.RootCommand()
 	if err != nil {
 		os.Exit(1)
 	}
 
 	root.AddCommand(cmd.TreeCommand(&cmd.Context{
-		TreeContext: core.TreeContext{
+		TreeContext: bench.TreeContext{
 			Context: context.Background(),
 		},
 	}))

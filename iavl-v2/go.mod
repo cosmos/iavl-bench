@@ -7,7 +7,8 @@ require (
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v1.0.0-beta.1.0.20230802214124-6b06195b1a09
 	github.com/kocubinski/costor-api v0.0.9
-	github.com/kocubinski/iavl-bench/core v0.0.0-20230801174715-a13b4acdfc81
+	github.com/kocubinski/iavl-bench/bench v0.0.0-00010101000000-000000000000
+	github.com/kocubinski/iavl-bench/core v0.0.0-20230905140546-851237114e80
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
@@ -65,4 +66,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/kocubinski/iavl-bench/core => ../core
+replace github.com/kocubinski/iavl-bench/bench => ../bench

@@ -18,7 +18,7 @@ import (
 var log = logz.Logger.With().Str("bench", "iavl-v2").Logger()
 
 type Context struct {
-	core.TreeContext
+	bench.TreeContext
 	sqliteDbName string
 	sqlite       bool
 	mapDb        bool

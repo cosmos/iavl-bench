@@ -1,4 +1,4 @@
-package core_test
+package bench_test
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/kocubinski/iavl-bench/core"
-	"github.com/kocubinski/iavl-bench/core/metrics"
+	"github.com/kocubinski/iavl-bench/bench"
+	"github.com/kocubinski/iavl-bench/bench/metrics"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,9 +22,9 @@ func Test_ChangesetGenerator(t *testing.T) {
 		cancel()
 	}()
 
-	//gen := core.LockupLikeGenerator(0, 10_000_000)
-	gen := core.BankLikeGenerator(0, 10_000_000)
-	//gen := core.StakingLikeGenerator(0, 10_000_000)
+	//gen := bench.LockupLikeGenerator(0, 10_000_000)
+	gen := bench.BankLikeGenerator(0, 10_000_000)
+	//gen := bench.StakingLikeGenerator(0, 10_000_000)
 	itr, err := gen.Iterator()
 	require.NoError(t, err)
 
@@ -86,7 +86,7 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("seed %d", tc.seed), func(t *testing.T) {
-			gen := core.ChangesetGenerator{
+			gen := bench.ChangesetGenerator{
 				StoreKey:         "test",
 				Seed:             tc.seed,
 				KeyMean:          10,
@@ -134,7 +134,7 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 }
 
 func Test_ChangesetIterators(t *testing.T) {
-	gen1 := &core.ChangesetGenerator{
+	gen1 := &bench.ChangesetGenerator{
 		StoreKey:         "test",
 		Seed:             1,
 		KeyMean:          10,
@@ -152,7 +152,7 @@ func Test_ChangesetIterators(t *testing.T) {
 	gen3 := *gen1
 	gen3.Seed = 3
 
-	itr, err := core.NewChangesetIterators([]core.ChangesetGenerator{*gen1, gen2, gen3})
+	itr, err := bench.NewChangesetIterators([]bench.ChangesetGenerator{*gen1, gen2, gen3})
 	require.NoError(t, err)
 
 	nodes := map[[16]byte]struct{}{}

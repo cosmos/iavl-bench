@@ -8,7 +8,7 @@ import (
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
 	"github.com/kocubinski/costor-api/logz"
-	"github.com/kocubinski/iavl-bench/core"
+	"github.com/kocubinski/iavl-bench/bench"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/spf13/cobra"
@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	root, err := core.RootCommand()
+	root, err := bench.RootCommand()
 	if err != nil {
 		os.Exit(1)
 	}
@@ -31,7 +31,7 @@ func main() {
 
 var log = logz.Logger.With().Str("bench", "iavl-v0").Logger()
 
-func newIavlTree(levelDb dbm.DB, storeKey string) (core.Tree, error) {
+func newIavlTree(levelDb dbm.DB, storeKey string) (bench.Tree, error) {
 	prefix := fmt.Sprintf("s/k:%s/", storeKey)
 	prefixDb := dbm.NewPrefixDB(levelDb, []byte(prefix))
 
@@ -43,7 +43,7 @@ func treeCommand(c context.Context) *cobra.Command {
 		levelDbName string
 		seed        int64
 	)
-	ctx := &core.TreeContext{
+	ctx := &bench.TreeContext{
 		Context: c,
 		Log:     log,
 	}
@@ -65,7 +65,7 @@ func treeCommand(c context.Context) *cobra.Command {
 				return err
 			}
 
-			multiTree := core.NewMultiTree()
+			multiTree := bench.NewMultiTree()
 			multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
 			if err != nil {
 				return err
@@ -75,9 +75,9 @@ func treeCommand(c context.Context) *cobra.Command {
 				return err
 			}
 
-			ctx.Generators = []core.ChangesetGenerator{
-				core.LockupLikeGenerator(seed, 10_000_000),
-				core.BankLikeGenerator(seed, 10_000_000),
+			ctx.Generators = []bench.ChangesetGenerator{
+				bench.LockupLikeGenerator(seed, 10_000_000),
+				bench.BankLikeGenerator(seed, 10_000_000),
 			}
 
 			labels := map[string]string{}

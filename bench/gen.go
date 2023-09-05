@@ -1,11 +1,11 @@
-package core
+package bench
 
 import (
 	"fmt"
 	"math/rand"
 
 	api "github.com/kocubinski/costor-api"
-	"github.com/kocubinski/iavl-bench/core/metrics"
+	"github.com/kocubinski/iavl-bench/bench/metrics"
 )
 
 type ChangesetIterator interface {

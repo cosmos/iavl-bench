@@ -12,7 +12,7 @@ import (
 	"cosmossdk.io/store/v2/storage/leveldb"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/kocubinski/costor-api/logz"
-	"github.com/kocubinski/iavl-bench/core"
+	"github.com/kocubinski/iavl-bench/bench"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/spf13/cobra"
@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	root, err := core.RootCommand()
+	root, err := bench.RootCommand()
 	if err != nil {
 		os.Exit(1)
 	}
@@ -33,7 +33,7 @@ func main() {
 	}
 }
 
-var _ core.MultiTree = &MultiStore{}
+var _ bench.MultiTree = &MultiStore{}
 
 type MultiStore struct {
 	*multistore.Store
@@ -43,13 +43,13 @@ func (m MultiStore) SaveVersions() ([]byte, error) {
 	return m.Commit()
 }
 
-func (m MultiStore) GetTree(key string) (core.Tree, error) {
+func (m MultiStore) GetTree(key string) (bench.Tree, error) {
 	commitmentDb := m.GetSCStore(key)
 	iavlTree, ok := commitmentDb.(*store_iavl.Tree)
 	if !ok {
 		return nil, fmt.Errorf("commitment database is not an IAVL tree")
 	}
-	return iavlTree, nil
+	return iavlTree.MutableTree, nil
 }
 
 func newIavlTree(levelDb dbm.DB, storeKey string) (commitment.Database, error) {
@@ -70,7 +70,7 @@ func treeCommand(c context.Context) *cobra.Command {
 	var (
 		levelDbName string
 	)
-	ctx := &core.TreeContext{
+	ctx := &bench.TreeContext{
 		Context: c,
 		Log:     log,
 	}
@@ -80,9 +80,9 @@ func treeCommand(c context.Context) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
 
-			ctx.Generators = []core.ChangesetGenerator{
-				core.BankLikeGenerator(0, 10_000_000),
-				core.LockupLikeGenerator(0, 10_000_000),
+			ctx.Generators = []bench.ChangesetGenerator{
+				bench.BankLikeGenerator(0, 10_000_000),
+				bench.LockupLikeGenerator(0, 10_000_000),
 			}
 
 			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v1-hash.log", ctx.IndexDir))
