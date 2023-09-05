@@ -198,37 +198,30 @@ func (itr *ChangesetItr) genBytes(mean, stdDev int) []byte {
 }
 
 type ChangesetIterators struct {
+	*api.Changeset
 	iterators    []ChangesetIterator
-	version      int64
 	versionSkips int
 	idx          int
-	Changeset    *api.Changeset
 }
 
 func NewChangesetIterators(gens []ChangesetGenerator) (ChangesetIterator, error) {
 	if len(gens) == 0 {
 		return nil, fmt.Errorf("must provide at least one generator")
 	}
-	var iterators []ChangesetIterator
-	version := gens[0].Versions
-	firstChangeset := &api.Changeset{Version: version}
+	itr := &ChangesetIterators{Changeset: &api.Changeset{}}
+	versions := gens[0].Versions
 	for _, gen := range gens {
-		if gen.Versions != version {
+		if gen.Versions != versions {
 			return nil, fmt.Errorf("all generators must have the same number of versions")
 		}
-		itr, err := gen.Iterator()
+		i, err := gen.Iterator()
 		if err != nil {
 			return nil, err
 		}
-		iterators = append(iterators, itr)
-		firstChangeset.Nodes = append(firstChangeset.Nodes, itr.GetChangeset().Nodes...)
+		itr.iterators = append(itr.iterators, i)
+		itr.Nodes = append(itr.Nodes, i.GetChangeset().Nodes...)
+		itr.Version = i.GetChangeset().Version
 	}
-
-	itr := &ChangesetIterators{
-		iterators: iterators,
-	}
-	itr.version = version
-	itr.Changeset = firstChangeset
 
 	return itr, nil
 }

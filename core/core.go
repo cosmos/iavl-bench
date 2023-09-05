@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -29,7 +28,7 @@ type TreeContext struct {
 	HashLog           *os.File
 }
 
-func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
+func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 	cnt := 1
 	since := time.Now()
 	var (
@@ -78,12 +77,16 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 			if n.Block != changeset.Version {
 				return fmt.Errorf("expected block %d; got %d", changeset.Version, n.Block)
 			}
+			storeTree, err := multiTree.GetTree(n.StoreKey)
+			if err != nil {
+				return err
+			}
 			if !n.Delete {
-				if _, err := multiTree.Trees[n.StoreKey].Set(n.Key, n.Value); err != nil {
+				if _, err := storeTree.Set(n.Key, n.Value); err != nil {
 					return err
 				}
 			} else {
-				_, ok, err := multiTree.Trees[n.StoreKey].Remove(n.Key)
+				_, ok, err := storeTree.Remove(n.Key)
 				if err != nil {
 					return err
 				}
@@ -93,17 +96,13 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree *MultiTree) error {
 			}
 		}
 
-		var hashes bytes.Buffer
-		for _, tree := range multiTree.Trees {
-			var h []byte
-			h, iavlVersion, err = tree.SaveVersion()
-			if err != nil {
-				return err
-			}
-			hashes.Write(h)
+		var hashes []byte
+		hashes, err = multiTree.SaveVersions()
+		if err != nil {
+			return err
 		}
 		if changeset.Version%20000 == 0 && c.HashLog != nil {
-			h := sha256.Sum256(hashes.Bytes())
+			h := sha256.Sum256(hashes)
 			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, h)
 			if err != nil {
 				return err
