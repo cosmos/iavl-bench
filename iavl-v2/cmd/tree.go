@@ -8,7 +8,6 @@ import (
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
 	"github.com/kocubinski/costor-api/logz"
-	"github.com/kocubinski/iavl-bench/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/spf13/cobra"

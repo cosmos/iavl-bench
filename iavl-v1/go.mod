@@ -1,4 +1,4 @@
-module github.com/kocubinski/iavl-bench/iavl-v1
+module github.com/cosmos/iavl-bench/iavl-v1
 
 go 1.20
 
@@ -6,8 +6,8 @@ require (
 	cosmossdk.io/log v1.2.0
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v1.0.0-beta.1.0.20230801180932-0e16987c2161
+	github.com/cosmos/iavl-bench/bench v0.0.0-20230801174715-a13b4acdfc81
 	github.com/kocubinski/costor-api v0.0.9
-	github.com/kocubinski/iavl-bench/bench v0.0.0-20230801174715-a13b4acdfc81
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
@@ -61,4 +61,4 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 )
 
-replace github.com/kocubinski/iavl-bench/bench => ../bench
+replace github.com/cosmos/iavl-bench/bench => ../bench

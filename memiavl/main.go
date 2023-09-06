@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kocubinski/iavl-bench/memiavl/cmd"
+	"github.com/cosmos/iavl-bench/memiavl/cmd"
 	"github.com/spf13/cobra"
 )
 

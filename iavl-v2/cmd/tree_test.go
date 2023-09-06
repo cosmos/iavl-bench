@@ -3,7 +3,6 @@ package cmd
 import (
 	"testing"
 
-	"github.com/kocubinski/iavl-bench/core"
 	"github.com/stretchr/testify/require"
 )
 

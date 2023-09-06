@@ -4,15 +4,15 @@ go 1.20
 
 replace (
 	cosmossdk.io/store/v2 => ../../../cosmos-sdk/store-v2/store
-	github.com/kocubinski/iavl-bench/bench => ../bench
+	github.com/cosmos/iavl-bench/bench => ../bench
 )
 
 require (
 	cosmossdk.io/log v1.2.1
 	cosmossdk.io/store/v2 v2.0.0-20220818150845-0e16987c2161
 	github.com/cosmos/cosmos-db v1.0.0
+	github.com/cosmos/iavl-bench/bench v0.0.0-00010101000000-000000000000
 	github.com/kocubinski/costor-api v0.0.9
-	github.com/kocubinski/iavl-bench/bench v0.0.0-00010101000000-000000000000
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d

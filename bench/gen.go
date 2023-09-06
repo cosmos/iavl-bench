@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/cosmos/iavl-bench/bench/metrics"
 	api "github.com/kocubinski/costor-api"
-	"github.com/kocubinski/iavl-bench/bench/metrics"
 )
 
 type ChangesetIterator interface {

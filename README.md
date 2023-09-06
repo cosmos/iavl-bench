@@ -66,7 +66,7 @@ be added if needed.
 
 After 3 hours runtime the tree size is 410,000 with a throughput of 1,800 leaves/sec. 26,600,000 leaves 
 were processed. Total leveldb size on disk is 59G.  Memory usage is 800MB.  The tree was 
-constructed with a cache size 1,000,000 [like so.](https://github.com/kocubinski/iavl-bench/blob/0c657c91796a2c1adfc4ec8882c9bc408aa77d8a/iavl-v0/main.go#L55)
+constructed with a cache size 1,000,000 [like so.](https://github.com/cosmos/iavl-bench/blob/0c657c91796a2c1adfc4ec8882c9bc408aa77d8a/iavl-v0/main.go#L55)
 
 Will continue monitoring progress but the expectation is that performance will degrade as the tree and db 
 grow in size.
@@ -76,11 +76,11 @@ IAVL v1 is the current master branch of cosmos/iavl.  It uses the new `version|s
 performs about 10x better than IAVL v0.21.1.  
 
 After 6 hours runtime the tree size is 1,889,000 with 12,225 leaves/sec.  Leveldb size on disk 211G. 
-Memory usage is roughly 1GB. The tree was constructed with a cache size 1,000,000 [like so.](https://github.com/kocubinski/iavl-bench/blob/7e02c02d968505b307a8782b3088a72a622a7e8f/iavl-v1/main.go#L57)
+Memory usage is roughly 1GB. The tree was constructed with a cache size 1,000,000 [like so.](https://github.com/cosmos/iavl-bench/blob/7e02c02d968505b307a8782b3088a72a622a7e8f/iavl-v1/main.go#L57)
 
 ### memiavl
 MemIAVL is a fork of IAVL v1 that uses custom AVL disk storage backend and mmap for disk access.
-The kick-off code is [here](https://github.com/kocubinski/iavl-bench/blob/a13b4acdfc81ec5cac877a0601571bb0c4fde775/memiavl/memiavl.go#L41).
+The kick-off code is [here](https://github.com/cosmos/iavl-bench/blob/a13b4acdfc81ec5cac877a0601571bb0c4fde775/memiavl/memiavl.go#L41).
 
 ### iavl v1 in-memory
 Processing completed in 2 hours with a throughput of 61,000 leaves/sec at a final tree size of 2,215,217

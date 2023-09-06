@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosmos/iavl-bench/bench"
+	"github.com/cosmos/iavl-bench/bench/metrics"
 	"github.com/dustin/go-humanize"
-	"github.com/kocubinski/iavl-bench/bench"
-	"github.com/kocubinski/iavl-bench/bench/metrics"
 	"github.com/stretchr/testify/require"
 )
 

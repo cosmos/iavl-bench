@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kocubinski/iavl-bench/bench"
-	"github.com/kocubinski/iavl-bench/iavl-v2/cmd"
+	"github.com/cosmos/iavl-bench/bench"
+	"github.com/cosmos/iavl-bench/iavl-v2/cmd"
 )
 
 func main() {
