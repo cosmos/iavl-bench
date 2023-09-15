@@ -61,9 +61,9 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 		if err != nil {
 			return err
 		}
-		changeset := itr.GetChangeset()
+		changeset := itr.Nodes()
 
-		if c.VersionLimit > 0 && changeset.Version > c.VersionLimit {
+		if c.VersionLimit > 0 && itr.Version() > c.VersionLimit {
 			break
 		}
 		var (
@@ -71,20 +71,24 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 			key      []byte
 		)
 
-		for _, n := range changeset.Nodes {
+		for ; changeset.Valid(); err = changeset.Next() {
+			if err != nil {
+				return err
+			}
 			cnt++
 			if cnt%100_000 == 0 {
 				c.Log.Info().Msgf("processed %s leaves in %s; %s leaves/s; version=%d",
 					humanize.Comma(int64(cnt)),
 					time.Since(since),
 					humanize.Comma(int64(100_000/time.Since(since).Seconds())),
-					changeset.Version)
+					itr.Version())
 				since = time.Now()
 			}
 			c.MetricLeafCount.Inc()
 
-			if n.Block != changeset.Version {
-				return fmt.Errorf("expected block %d; got %d", changeset.Version, n.Block)
+			n := changeset.GetNode()
+			if n.Block != itr.Version() {
+				return fmt.Errorf("expected block %d; got %d", itr.Version(), n.Block)
 			}
 			if c.OneTree != "" {
 				storekey = c.OneTree
@@ -120,7 +124,7 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 		if err != nil {
 			return err
 		}
-		if changeset.Version%20000 == 0 && c.HashLog != nil {
+		if itr.Version()%20000 == 0 && c.HashLog != nil {
 			h := sha256.Sum256(hashes)
 			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, h)
 			if err != nil {
