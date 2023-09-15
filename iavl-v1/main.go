@@ -97,6 +97,7 @@ func treeCommand(c context.Context) *cobra.Command {
 				Help:        "number of leaf nodes procesed into the tree",
 				ConstLabels: labels,
 			})
+			ctx.OneTree = "bank"
 
 			return ctx.BuildLegacyIAVL(multiTree)
 		},

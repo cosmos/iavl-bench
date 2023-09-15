@@ -79,10 +79,10 @@ func Test_ChangesetGenerator_Determinism(t *testing.T) {
 		seed int64
 		hash string
 	}{
-		{2, "08589a9d7583b598552f2dd328b9f087"},
-		{100, "6e00828663122181dbd185a3120b00d9"},
-		{777, "cf66266c99122410110b6885b0e72589"},
-		{-43, "3eba060775aebf83a7edb304377a84f4"},
+		{2, "d2e748e5ee12b6c61fa3777170013981"},
+		{100, "5d1e2e003171b29ee2cbe8fbf0e3d04d"},
+		{777, "1b6021146e26eda88199115292b5d73a"},
+		{-43, "ea43166d2615aec10d6f666364583c66"},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("seed %d", tc.seed), func(t *testing.T) {

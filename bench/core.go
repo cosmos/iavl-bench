@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -26,6 +27,9 @@ type TreeContext struct {
 	MetricTreeSize    prometheus.Gauge
 	MetricsTreeHeight prometheus.Gauge
 	HashLog           *os.File
+
+	// hack to use a single tree instead of per storekey
+	OneTree string
 }
 
 func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
@@ -62,14 +66,19 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 		if c.VersionLimit > 0 && changeset.Version > c.VersionLimit {
 			break
 		}
+		var (
+			storekey string
+			key      []byte
+		)
 
 		for _, n := range changeset.Nodes {
 			cnt++
 			if cnt%100_000 == 0 {
-				c.Log.Info().Msgf("processed %s leaves in %s; %s leaves/s",
+				c.Log.Info().Msgf("processed %s leaves in %s; %s leaves/s; version=%d",
 					humanize.Comma(int64(cnt)),
 					time.Since(since),
-					humanize.Comma(int64(100_000/time.Since(since).Seconds())))
+					humanize.Comma(int64(100_000/time.Since(since).Seconds())),
+					changeset.Version)
 				since = time.Now()
 			}
 			c.MetricLeafCount.Inc()
@@ -77,16 +86,26 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 			if n.Block != changeset.Version {
 				return fmt.Errorf("expected block %d; got %d", changeset.Version, n.Block)
 			}
-			storeTree, err := multiTree.GetTree(n.StoreKey)
+			if c.OneTree != "" {
+				storekey = c.OneTree
+				var keyBz bytes.Buffer
+				keyBz.Write([]byte(n.StoreKey))
+				keyBz.Write(n.Key)
+				key = keyBz.Bytes()
+			} else {
+				storekey = n.StoreKey
+				key = n.Key
+			}
+			storeTree, err := multiTree.GetTree(storekey)
 			if err != nil {
 				return err
 			}
 			if !n.Delete {
-				if _, err := storeTree.Set(n.Key, n.Value); err != nil {
+				if _, err := storeTree.Set(key, n.Value); err != nil {
 					return err
 				}
 			} else {
-				_, ok, err := storeTree.Remove(n.Key)
+				_, ok, err := storeTree.Remove(key)
 				if err != nil {
 					return err
 				}
