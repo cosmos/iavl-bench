@@ -138,9 +138,6 @@ func (o *changesetOp) genNode(itr *ChangesetItr) *api.Node {
 				// remove the key from state so subsequent updates/deletes will not find it
 				k := itr.keys[i]
 				itr.keys[i] = nil
-				if "c08c92d28df599e9af1ca059350679c9" == fmt.Sprintf("%x", k) {
-					fmt.Println("here")
-				}
 				return &api.Node{
 					StoreKey: itr.gen.StoreKey,
 					Block:    itr.version,
@@ -173,9 +170,6 @@ func (o *changesetOp) genNode(itr *ChangesetItr) *api.Node {
 		i := <-itr.freeList
 		// hack re-use of field
 		node.LastVersion = int64(i)
-		if "c08c92d28df599e9af1ca059350679c9" == fmt.Sprintf("%x", node.Key) {
-			fmt.Println("here")
-		}
 		return node
 	default:
 		panic(fmt.Sprintf("invalid op %d", o.op))

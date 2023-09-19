@@ -2,11 +2,9 @@ module github.com/cosmos/iavl-bench/bench
 
 go 1.20
 
-replace github.com/kocubinski/costor-api => ../../../costor-api
-
 require (
 	github.com/dustin/go-humanize v1.0.0
-	github.com/kocubinski/costor-api v1.0.0
+	github.com/kocubinski/costor-api v1.1.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/rs/zerolog v1.30.0
 	github.com/spf13/cobra v1.7.0

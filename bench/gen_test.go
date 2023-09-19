@@ -170,10 +170,6 @@ func Test_ChangesetIterators(t *testing.T) {
 			node := changeset.GetNode()
 			require.NotNil(t, node)
 
-			if "c08c92d28df599e9af1ca059350679c9" == fmt.Sprintf("%x", node.Key) {
-				fmt.Println("here")
-			}
-
 			keyHash := md5.Sum(node.Key)
 			if node.Delete {
 				_, exists := nodes[keyHash]

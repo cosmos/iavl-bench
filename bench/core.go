@@ -124,7 +124,7 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 		if err != nil {
 			return err
 		}
-		if itr.Version()%20000 == 0 && c.HashLog != nil {
+		if itr.Version()%5000 == 0 && c.HashLog != nil {
 			h := sha256.Sum256(hashes)
 			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, h)
 			if err != nil {
