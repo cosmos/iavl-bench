@@ -5,8 +5,8 @@ go 1.20
 require (
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v0.21.1
-	github.com/cosmos/iavl-bench/bench v0.0.0-20230801174715-a13b4acdfc81
-	github.com/kocubinski/costor-api v0.0.9
+	github.com/cosmos/iavl-bench/bench v0.0.2
+	github.com/kocubinski/costor-api v1.1.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
@@ -49,7 +49,7 @@ require (
 	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )
 
 replace github.com/cosmos/iavl-bench/bench => ../bench

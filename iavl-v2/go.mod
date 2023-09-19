@@ -7,7 +7,7 @@ require (
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/iavl v1.0.0-beta.1.0.20230802214124-6b06195b1a09
 	github.com/cosmos/iavl-bench/bench v0.0.0-00010101000000-000000000000
-	github.com/kocubinski/costor-api v0.0.9
+	github.com/kocubinski/costor-api v1.1.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
@@ -61,7 +61,7 @@ require (
 	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

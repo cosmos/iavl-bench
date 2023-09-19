@@ -41,6 +41,7 @@ var log = logz.Logger.With().Str("bench", "iavl-v1").Logger()
 func treeCommand(c context.Context) *cobra.Command {
 	var (
 		levelDbName string
+		seed        int64
 	)
 	ctx := &bench.TreeContext{
 		Context: c,
@@ -53,8 +54,9 @@ func treeCommand(c context.Context) *cobra.Command {
 			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
 
 			ctx.Generators = []bench.ChangesetGenerator{
-				bench.BankLikeGenerator(0, 10_000_000),
-				bench.LockupLikeGenerator(0, 10_000_000),
+				bench.BankLikeGenerator(seed, 10_000_000),
+				bench.LockupLikeGenerator(seed, 10_000_000),
+				bench.StakingLikeGenerator(seed, 10_000_000),
 			}
 
 			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v1-hash.log", ctx.IndexDir))
@@ -98,12 +100,14 @@ func treeCommand(c context.Context) *cobra.Command {
 				ConstLabels: labels,
 			})
 			ctx.OneTree = "bank"
+			ctx.VersionLimit = 25000
 
 			return ctx.BuildLegacyIAVL(multiTree)
 		},
 	}
 	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "iavl-v1", "name to give the new leveldb instance")
 	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "", "directory containing the compressed changeset logs")
+	cmd.Flags().Int64Var(&seed, "seed", 1234, "seed for the random number generator")
 
 	return cmd
 }

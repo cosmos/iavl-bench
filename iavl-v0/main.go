@@ -74,11 +74,17 @@ func treeCommand(c context.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			multiTree.Trees["staking"], err = newIavlTree(levelDb, "staking")
+			if err != nil {
+				return err
+			}
 
 			ctx.Generators = []bench.ChangesetGenerator{
-				bench.LockupLikeGenerator(seed, 10_000_000),
 				bench.BankLikeGenerator(seed, 10_000_000),
+				bench.LockupLikeGenerator(seed, 10_000_000),
+				bench.StakingLikeGenerator(seed, 10_000_000),
 			}
+			ctx.OneTree = "bank"
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"
@@ -98,10 +104,12 @@ func treeCommand(c context.Context) *cobra.Command {
 				ConstLabels: labels,
 			})
 
+			ctx.VersionLimit = 5000
+
 			return ctx.BuildLegacyIAVL(multiTree)
 		},
 	}
-	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "legacy", "name to give the new leveldb instance")
+	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "iavl-v0", "name to give the new leveldb instance")
 	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "", "directory containing the compressed changeset logs")
 	cmd.Flags().Int64Var(&seed, "seed", 0, "seed for the data generator")
 

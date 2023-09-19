@@ -119,14 +119,29 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 			}
 		}
 
-		var hashes []byte
-		hashes, err = multiTree.SaveVersions()
-		if err != nil {
-			return err
+		var hash [32]byte
+		if c.OneTree == "" {
+			var hashes []byte
+			hashes, err = multiTree.SaveVersions()
+			if err != nil {
+				return err
+			}
+			hash = sha256.Sum256(hashes)
+		} else {
+			storeTree, err := multiTree.GetTree(storekey)
+			if err != nil {
+				return err
+			}
+			var h []byte
+			h, iavlVersion, err = storeTree.SaveVersion()
+			if err != nil {
+				return err
+			}
+			copy(hash[:], h)
 		}
-		if itr.Version()%5000 == 0 && c.HashLog != nil {
-			h := sha256.Sum256(hashes)
-			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, h)
+
+		if itr.Version()%1000 == 0 && c.HashLog != nil {
+			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, hash)
 			if err != nil {
 				return err
 			}

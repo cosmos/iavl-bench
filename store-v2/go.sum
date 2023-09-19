@@ -87,6 +87,8 @@ github.com/klauspost/compress v1.16.5 h1:IFV2oUNUzZaz+XyusxpLzpzS8Pt5rh0Z16For/d
 github.com/klauspost/compress v1.16.5/go.mod h1:ntbaceVETuRiXiv4DpjP66DpAtAGkEQskQzEyD//IeE=
 github.com/kocubinski/costor-api v0.0.9 h1:LdfZkZyZ+U26f/YxbBpVy0zjMVUeY7JTsMWV6X5TVBk=
 github.com/kocubinski/costor-api v0.0.9/go.mod h1:eoTKR5TV4ECeqFdcYp3xZXZ28GS59XqUfdLwXdw23Ls=
+github.com/kocubinski/costor-api v1.0.0/go.mod h1:eoTKR5TV4ECeqFdcYp3xZXZ28GS59XqUfdLwXdw23Ls=
+github.com/kocubinski/costor-api v1.1.0/go.mod h1:ESMBMDkKfN+9vvvhhNVdKLhbOmzI3O/i16iXvRM9Tuc=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
