@@ -53,11 +53,13 @@ func treeCommand(c context.Context) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx.IndexDir = cmd.Flag("index-dir").Value.String()
 
-			ctx.Generators = []bench.ChangesetGenerator{
-				bench.BankLikeGenerator(seed, 10_000_000),
-				bench.LockupLikeGenerator(seed, 10_000_000),
-				bench.StakingLikeGenerator(seed, 10_000_000),
-			}
+			//ctx.Generators = []bench.ChangesetGenerator{
+			//	bench.BankLikeGenerator(seed, 10_000_000),
+			//	bench.LockupLikeGenerator(seed, 10_000_000),
+			//	bench.StakingLikeGenerator(seed, 10_000_000),
+			//}
+
+			ctx.Generators = OsmoLikeGenerators()
 
 			hashLog, err := os.Create(fmt.Sprintf("%s/iavl-v1-hash.log", ctx.IndexDir))
 			if err != nil {
@@ -76,10 +78,10 @@ func treeCommand(c context.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
-			if err != nil {
-				return err
-			}
+			//multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
+			//if err != nil {
+			//	return err
+			//}
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"
@@ -99,8 +101,9 @@ func treeCommand(c context.Context) *cobra.Command {
 				Help:        "number of leaf nodes procesed into the tree",
 				ConstLabels: labels,
 			})
-			ctx.OneTree = "bank"
-			ctx.VersionLimit = 25000
+
+			//ctx.OneTree = "bank"
+			ctx.VersionLimit = 10000
 
 			return ctx.BuildLegacyIAVL(multiTree)
 		},
@@ -110,4 +113,82 @@ func treeCommand(c context.Context) *cobra.Command {
 	cmd.Flags().Int64Var(&seed, "seed", 1234, "seed for the random number generator")
 
 	return cmd
+}
+
+func initCommand(c context.Context) *cobra.Command {
+	var (
+		levelDbName string
+	)
+	ctx := &bench.TreeContext{
+		Context: c,
+		Log:     log,
+	}
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "build an osmosis scale (80M nodes) tree at version 1 and save",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			levelDb, err := dbm.NewGoLevelDBWithOpts(levelDbName, ctx.IndexDir, &opt.Options{})
+			if err != nil {
+				return err
+			}
+			tree, err := newIavlTree(levelDb, "bank")
+			if err != nil {
+				return err
+			}
+			itr := OsmoLike()
+			v1 := itr.Nodes()
+			for ; v1.Valid(); err = v1.Next() {
+				if err != nil {
+					return err
+				}
+				node := v1.GetNode()
+				if node.Delete {
+					return fmt.Errorf("unexpected delete in version 1")
+				}
+				_, err = tree.Set(node.Key, node.Value)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+func OsmoLikeGenerators() []bench.ChangesetGenerator {
+	initialSize := 20_000_000
+	finalSize := int(1.5 * float64(initialSize))
+	var seed int64 = 1234
+	var versions int64 = 1_000_000
+	bankGen := bench.BankLikeGenerator(seed, versions)
+	bankGen.InitialSize = initialSize
+	bankGen.FinalSize = finalSize
+	bankGen2 := bench.BankLikeGenerator(seed+1, versions)
+	bankGen2.InitialSize = initialSize
+	bankGen2.FinalSize = finalSize
+
+	return []bench.ChangesetGenerator{
+		bankGen,
+		bankGen2,
+	}
+}
+
+func OsmoLike() bench.ChangesetIterator {
+	initialSize := 20_000_000
+	finalSize := int(1.5 * float64(initialSize))
+	var seed int64 = 1234
+	var versions int64 = 1_000_000
+	bankGen := bench.BankLikeGenerator(seed, versions)
+	bankGen.InitialSize = initialSize
+	bankGen.FinalSize = finalSize
+	bankGen2 := bench.BankLikeGenerator(seed+1, versions)
+	bankGen2.InitialSize = initialSize
+	bankGen2.FinalSize = finalSize
+
+	itr, err := bench.NewChangesetIterators(OsmoLikeGenerators())
+	if err != nil {
+		panic(err)
+	}
+	return itr
 }
