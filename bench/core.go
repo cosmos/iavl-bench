@@ -6,11 +6,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/kocubinski/costor-api/compact"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 )
@@ -21,7 +19,7 @@ type TreeContext struct {
 	Log               zerolog.Logger
 	IndexDir          string
 	LogDir            string
-	Generators        []ChangesetGenerator
+	Iterator          ChangesetIterator
 	VersionLimit      int64
 	MetricLeafCount   prometheus.Counter
 	MetricTreeSize    prometheus.Gauge
@@ -36,26 +34,27 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 	cnt := 1
 	since := time.Now()
 	var (
-		itr         ChangesetIterator
 		err         error
 		iavlVersion int64
 	)
 
-	if c.LogDir != "" {
-		itr, err = compact.NewMultiChangesetIterator(c.LogDir)
-		if err != nil {
-			path := strings.Split(c.LogDir, "/")
-			itr, err = compact.NewChangesetIterator(c.LogDir, path[len(path)-1])
-			if err != nil {
-				return err
-			}
-		}
-	} else {
-		itr, err = NewChangesetIterators(c.Generators)
-		if err != nil {
-			return err
-		}
-	}
+	//if c.LogDir != "" {
+	//	itr, err = compact.NewMultiChangesetIterator(c.LogDir)
+	//	if err != nil {
+	//		path := strings.Split(c.LogDir, "/")
+	//		itr, err = compact.NewChangesetIterator(c.LogDir, path[len(path)-1])
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//} else {
+	//	itr, err = NewChangesetIterators(c.Generators)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
+
+	itr := c.Iterator
 
 	for ; itr.Valid(); err = itr.Next() {
 		if err != nil {
@@ -87,9 +86,9 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 			c.MetricLeafCount.Inc()
 
 			n := changeset.GetNode()
-			if n.Block != itr.Version() {
-				return fmt.Errorf("expected block %d; got %d", itr.Version(), n.Block)
-			}
+			//if n.Block != itr.Version() {
+			//	return fmt.Errorf("expected block %d; got %d", itr.Version(), n.Block)
+			//}
 			if c.OneTree != "" {
 				storekey = c.OneTree
 				var keyBz bytes.Buffer
