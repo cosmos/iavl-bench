@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	root.AddCommand(cmd.Command())
+	root.AddCommand(cmd.RunCommand(), cmd.BuildCommand())
 
 	if err := root.Execute(); err != nil {
 		fmt.Printf("Error: %s\n", err.Error())

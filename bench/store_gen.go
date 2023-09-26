@@ -47,3 +47,29 @@ func StakingLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 		DeleteFraction:   0.25,
 	}
 }
+
+func OsmoLikeGenerators() []ChangesetGenerator {
+	initialSize := 20_000_000
+	finalSize := int(1.5 * float64(initialSize))
+	var seed int64 = 1234
+	var versions int64 = 1_000_000
+	bankGen := BankLikeGenerator(seed, versions)
+	bankGen.InitialSize = initialSize
+	bankGen.FinalSize = finalSize
+	bankGen2 := BankLikeGenerator(seed+1, versions)
+	bankGen2.InitialSize = initialSize
+	bankGen2.FinalSize = finalSize
+
+	return []ChangesetGenerator{
+		bankGen,
+		bankGen2,
+	}
+}
+
+func OsmoLikeIterator() ChangesetIterator {
+	itr, err := NewChangesetIterators(OsmoLikeGenerators())
+	if err != nil {
+		panic(err)
+	}
+	return itr
+}

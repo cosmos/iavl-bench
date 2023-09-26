@@ -202,7 +202,7 @@ func initCommand() *cobra.Command {
 
 			var cnt int64
 			since := time.Now()
-			itr := OsmoLike()
+			itr := bench.OsmoLikeIterator()
 			v1 := itr.Nodes()
 			for ; v1.Valid(); err = v1.Next() {
 				if err != nil {
@@ -239,30 +239,4 @@ func initCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "iavl-v1", "name to give the new leveldb instance")
 	return cmd
-}
-
-func OsmoLikeGenerators() []bench.ChangesetGenerator {
-	initialSize := 20_000_000
-	finalSize := int(1.5 * float64(initialSize))
-	var seed int64 = 1234
-	var versions int64 = 1_000_000
-	bankGen := bench.BankLikeGenerator(seed, versions)
-	bankGen.InitialSize = initialSize
-	bankGen.FinalSize = finalSize
-	bankGen2 := bench.BankLikeGenerator(seed+1, versions)
-	bankGen2.InitialSize = initialSize
-	bankGen2.FinalSize = finalSize
-
-	return []bench.ChangesetGenerator{
-		bankGen,
-		bankGen2,
-	}
-}
-
-func OsmoLike() bench.ChangesetIterator {
-	itr, err := bench.NewChangesetIterators(OsmoLikeGenerators())
-	if err != nil {
-		panic(err)
-	}
-	return itr
 }
