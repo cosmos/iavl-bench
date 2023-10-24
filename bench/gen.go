@@ -412,3 +412,11 @@ func (itr *ChangesetIterators) Nodes() api.NodeIterator {
 }
 
 func (itr *ChangesetIterators) Version() int64 { return itr.version }
+
+func (itr *ChangesetIterators) StoreKeys() []string {
+	var keys []string
+	for _, i := range itr.iterators {
+		keys = append(keys, i.Nodes().GetNode().StoreKey)
+	}
+	return keys
+}

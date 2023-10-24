@@ -40,6 +40,8 @@ func RunCommand() *cobra.Command {
 			//if err := os.RemoveAll(dir); err != nil {
 			//	return err
 			//}
+			loadStart := time.Now()
+
 			miavl, err := memiavl.Load(dir, memIavlOpts)
 			if err != nil {
 				return err
@@ -80,12 +82,13 @@ func RunCommand() *cobra.Command {
 					if cnt%100_000 == 0 {
 						var m runtime.MemStats
 						runtime.ReadMemStats(&m)
-						log.Info().Msgf("version=%d leaves=%s dur=%s leaves/s=%s alloc=%s gc=%s",
+						log.Info().Msgf("version=%d leaves=%s dur=%s leaves/s=%s alloc=%s sys=%s gc=%s",
 							itr.Version(),
 							humanize.Comma(int64(cnt)),
 							time.Since(since),
 							humanize.Comma(int64(100_000/time.Since(since).Seconds())),
 							humanize.Bytes(m.Alloc),
+							humanize.Bytes(m.Sys),
 							humanize.Comma(int64(m.NumGC)),
 						)
 						since = time.Now()
@@ -115,6 +118,10 @@ func RunCommand() *cobra.Command {
 					break
 				}
 			}
+
+			fmt.Printf("total time=%s mean leaves/s=%s\n",
+				time.Since(loadStart), humanize.Comma(int64(float64(cnt)/time.Since(loadStart).Seconds())),
+			)
 
 			return nil
 		},
