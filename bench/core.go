@@ -3,7 +3,6 @@ package bench
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"time"
@@ -108,24 +107,20 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 					return err
 				}
 			} else {
-				_, ok, err := storeTree.Remove(key)
+				_, _, err := storeTree.Remove(key)
 				if err != nil {
 					return err
-				}
-				if !ok {
-					return fmt.Errorf("failed to remove key %x; version %d", n.Key, n.Block)
 				}
 			}
 		}
 
-		var hash [32]byte
+		var hash []byte
 		if c.OneTree == "" {
-			var hashes []byte
-			hashes, err = multiTree.SaveVersions()
+			_, err = multiTree.SaveVersions()
 			if err != nil {
 				return err
 			}
-			hash = sha256.Sum256(hashes)
+			hash = multiTree.V2Hash()
 		} else {
 			storeTree, err := multiTree.GetTree(storekey)
 			if err != nil {
@@ -139,7 +134,7 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 			copy(hash[:], h)
 		}
 
-		if itr.Version()%1000 == 0 && c.HashLog != nil {
+		if itr.Version()%10 == 0 && c.HashLog != nil {
 			_, err = fmt.Fprintf(c.HashLog, "%d|%x\n", iavlVersion, hash)
 			if err != nil {
 				return err

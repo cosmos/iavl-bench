@@ -66,25 +66,28 @@ func treeCommand(c context.Context) *cobra.Command {
 			}
 
 			multiTree := bench.NewMultiTree()
-			multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
+			multiTree.Trees["wasm"], err = newIavlTree(levelDb, "wasm")
 			if err != nil {
 				return err
 			}
-			multiTree.Trees["bank"], err = newIavlTree(levelDb, "bank")
+			multiTree.Trees["ibc"], err = newIavlTree(levelDb, "ibc")
 			if err != nil {
 				return err
 			}
-			multiTree.Trees["staking"], err = newIavlTree(levelDb, "staking")
+			multiTree.Trees["upgrade"], err = newIavlTree(levelDb, "upgrade")
+			if err != nil {
+				return err
+			}
+			multiTree.Trees["icahost"], err = newIavlTree(levelDb, "icahost")
+			if err != nil {
+				return err
+			}
+			multiTree.Trees["concentratedliquidity"], err = newIavlTree(levelDb, "concentratedliquidity")
 			if err != nil {
 				return err
 			}
 
-			ctx.Generators = []bench.ChangesetGenerator{
-				bench.BankLikeGenerator(seed, 10_000_000),
-				bench.LockupLikeGenerator(seed, 10_000_000),
-				bench.StakingLikeGenerator(seed, 10_000_000),
-			}
-			ctx.OneTree = "bank"
+			ctx.Iterator = OsmoLikeManyTrees()
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"
@@ -104,7 +107,7 @@ func treeCommand(c context.Context) *cobra.Command {
 				ConstLabels: labels,
 			})
 
-			ctx.VersionLimit = 5000
+			ctx.VersionLimit = 100
 
 			return ctx.BuildLegacyIAVL(multiTree)
 		},
@@ -114,4 +117,88 @@ func treeCommand(c context.Context) *cobra.Command {
 	cmd.Flags().Int64Var(&seed, "seed", 0, "seed for the data generator")
 
 	return cmd
+}
+
+func OsmoLikeManyTrees() bench.ChangesetIterator {
+	seed := int64(1234)
+	versions := int64(100_000)
+	changes := int(versions / 100)
+	deleteFrac := 0.2
+
+	wasm := bench.ChangesetGenerator{
+		StoreKey:         "wasm",
+		Seed:             seed,
+		KeyMean:          79,
+		KeyStdDev:        23,
+		ValueMean:        170,
+		ValueStdDev:      202,
+		InitialSize:      8_500_000,
+		FinalSize:        8_600_000,
+		Versions:         versions,
+		ChangePerVersion: changes,
+		DeleteFraction:   deleteFrac,
+	}
+	ibc := bench.ChangesetGenerator{
+		StoreKey:         "ibc",
+		Seed:             seed,
+		KeyMean:          58,
+		KeyStdDev:        4,
+		ValueMean:        22,
+		ValueStdDev:      29,
+		InitialSize:      23_400_000,
+		FinalSize:        23_500_000,
+		Versions:         versions,
+		ChangePerVersion: changes,
+		DeleteFraction:   deleteFrac,
+	}
+	upgrade := bench.ChangesetGenerator{
+		StoreKey:         "upgrade",
+		Seed:             seed,
+		KeyMean:          8,
+		KeyStdDev:        1,
+		ValueMean:        8,
+		ValueStdDev:      0,
+		InitialSize:      60,
+		FinalSize:        62,
+		Versions:         versions,
+		ChangePerVersion: 1,
+		DeleteFraction:   0,
+	}
+	concentratedliquidity := bench.ChangesetGenerator{
+		StoreKey:         "concentratedliquidity",
+		Seed:             seed,
+		KeyMean:          25,
+		KeyStdDev:        11,
+		ValueMean:        44,
+		ValueStdDev:      48,
+		InitialSize:      600_000,
+		FinalSize:        610_000,
+		Versions:         versions,
+		ChangePerVersion: changes,
+		DeleteFraction:   deleteFrac,
+	}
+	icahost := bench.ChangesetGenerator{
+		StoreKey:         "icahost",
+		Seed:             seed,
+		KeyMean:          103,
+		KeyStdDev:        11,
+		ValueMean:        37,
+		ValueStdDev:      25,
+		InitialSize:      1_500,
+		FinalSize:        1_600,
+		Versions:         versions,
+		ChangePerVersion: changes,
+		DeleteFraction:   deleteFrac,
+	}
+	itr, err := bench.NewChangesetIterators([]bench.ChangesetGenerator{
+		wasm,
+		ibc,
+		upgrade,
+		concentratedliquidity,
+		icahost,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return itr
 }

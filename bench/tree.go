@@ -3,6 +3,7 @@ package bench
 import (
 	"crypto/sha256"
 	"fmt"
+	"sort"
 )
 
 type Tree interface {
@@ -12,11 +13,13 @@ type Tree interface {
 	SaveVersion() ([]byte, int64, error)
 	Size() int64
 	Height() int8
+	Hash() ([]byte, error)
 }
 
 type MultiTree interface {
 	GetTree(key string) (Tree, error)
 	SaveVersions() ([]byte, error)
+	V2Hash() []byte
 }
 
 type NaiveMultiTree struct {
@@ -48,4 +51,26 @@ func NewMultiTree() *NaiveMultiTree {
 	return &NaiveMultiTree{
 		Trees: make(map[string]Tree),
 	}
+}
+
+func (nmt *NaiveMultiTree) V2Hash() []byte {
+	var (
+		storeKeys []string
+		hashes    []byte
+	)
+	for k := range nmt.Trees {
+		storeKeys = append(storeKeys, k)
+	}
+
+	sort.Strings(storeKeys)
+	for _, k := range storeKeys {
+		tree := nmt.Trees[k]
+		h, err := tree.Hash()
+		if err != nil {
+			panic(err)
+		}
+		hashes = append(hashes, h...)
+	}
+	hash := sha256.Sum256(hashes)
+	return hash[:]
 }
