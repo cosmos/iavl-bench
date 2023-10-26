@@ -116,7 +116,7 @@ func (c *TreeContext) BuildLegacyIAVL(multiTree MultiTree) error {
 
 		var hash []byte
 		if c.OneTree == "" {
-			_, err = multiTree.SaveVersions()
+			_, iavlVersion, err = multiTree.SaveVersions()
 			if err != nil {
 				return err
 			}

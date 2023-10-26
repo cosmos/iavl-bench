@@ -18,7 +18,7 @@ type Tree interface {
 
 type MultiTree interface {
 	GetTree(key string) (Tree, error)
-	SaveVersions() ([]byte, error)
+	SaveVersions() ([]byte, int64, error)
 	V2Hash() []byte
 }
 
@@ -34,17 +34,22 @@ func (nmt *NaiveMultiTree) GetTree(key string) (Tree, error) {
 	return tree, nil
 }
 
-func (nmt *NaiveMultiTree) SaveVersions() ([]byte, error) {
+func (nmt *NaiveMultiTree) SaveVersions() ([]byte, int64, error) {
 	var hashes []byte
+	version := int64(-1)
 	for _, tree := range nmt.Trees {
-		hash, _, err := tree.SaveVersion()
+		hash, v, err := tree.SaveVersion()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		if version != -1 && version != v {
+			return nil, 0, fmt.Errorf("unexpected; trees are at different versions: %d != %d", version, v)
+		}
+		version = v
 		hashes = append(hashes, hash...)
 	}
 	h := sha256.Sum256(hashes)
-	return h[:], nil
+	return h[:], version, nil
 }
 
 func NewMultiTree() *NaiveMultiTree {

@@ -353,7 +353,7 @@ type ChangesetIterators struct {
 	idx       int
 }
 
-func NewChangesetIterators(gens []ChangesetGenerator) (ChangesetIterator, error) {
+func NewChangesetIterators(gens []ChangesetGenerator) (*ChangesetIterators, error) {
 	if len(gens) == 0 {
 		return nil, fmt.Errorf("must provide at least one generator")
 	}

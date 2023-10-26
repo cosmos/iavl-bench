@@ -42,6 +42,7 @@ func treeCommand(c context.Context) *cobra.Command {
 	var (
 		levelDbName string
 		seed        int64
+		dataset     string
 	)
 	ctx := &bench.TreeContext{
 		Context: c,
@@ -66,28 +67,53 @@ func treeCommand(c context.Context) *cobra.Command {
 			}
 
 			multiTree := bench.NewMultiTree()
-			multiTree.Trees["wasm"], err = newIavlTree(levelDb, "wasm")
-			if err != nil {
-				return err
+			switch dataset {
+			case "osmo-like-many":
+				multiTree.Trees["wasm"], err = newIavlTree(levelDb, "wasm")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["ibc"], err = newIavlTree(levelDb, "ibc")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["upgrade"], err = newIavlTree(levelDb, "upgrade")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["icahost"], err = newIavlTree(levelDb, "icahost")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["concentratedliquidity"], err = newIavlTree(levelDb, "concentratedliquidity")
+				if err != nil {
+					return err
+				}
+				ctx.Iterator = OsmoLikeManyTrees()
+				ctx.VersionLimit = 100
+			case "std":
+				multiTree.Trees["bank"], err = newIavlTree(levelDb, "bank")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["staking"], err = newIavlTree(levelDb, "staking")
+				if err != nil {
+					return err
+				}
+				multiTree.Trees["lockup"], err = newIavlTree(levelDb, "lockup")
+				if err != nil {
+					return err
+				}
+				ctx.Iterator, err = bench.NewChangesetIterators([]bench.ChangesetGenerator{
+					bench.BankLikeGenerator(seed, 200_000),
+					bench.LockupLikeGenerator(seed, 200_000),
+					bench.StakingLikeGenerator(seed, 200_000),
+				})
+				if err != nil {
+					return err
+				}
+				ctx.VersionLimit = 100
 			}
-			multiTree.Trees["ibc"], err = newIavlTree(levelDb, "ibc")
-			if err != nil {
-				return err
-			}
-			multiTree.Trees["upgrade"], err = newIavlTree(levelDb, "upgrade")
-			if err != nil {
-				return err
-			}
-			multiTree.Trees["icahost"], err = newIavlTree(levelDb, "icahost")
-			if err != nil {
-				return err
-			}
-			multiTree.Trees["concentratedliquidity"], err = newIavlTree(levelDb, "concentratedliquidity")
-			if err != nil {
-				return err
-			}
-
-			ctx.Iterator = OsmoLikeManyTrees()
 
 			labels := map[string]string{}
 			labels["backend"] = "leveldb"
@@ -107,14 +133,13 @@ func treeCommand(c context.Context) *cobra.Command {
 				ConstLabels: labels,
 			})
 
-			ctx.VersionLimit = 100
-
 			return ctx.BuildLegacyIAVL(multiTree)
 		},
 	}
 	cmd.Flags().StringVar(&levelDbName, "leveldb-name", "iavl-v0", "name to give the new leveldb instance")
 	cmd.Flags().StringVar(&ctx.LogDir, "log-dir", "", "directory containing the compressed changeset logs")
 	cmd.Flags().Int64Var(&seed, "seed", 0, "seed for the data generator")
+	cmd.Flags().StringVar(&dataset, "dataset", "osmo-like-many", "dataset to use")
 
 	return cmd
 }
