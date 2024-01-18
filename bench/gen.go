@@ -3,6 +3,7 @@ package bench
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/cosmos/iavl-bench/bench/metrics"
 	api "github.com/kocubinski/costor-api"
@@ -167,10 +168,14 @@ func (o *changesetOp) genNode(itr *ChangesetItr) *api.Node {
 			Value:    itr.genBytes(itr.gen.ValueMean, itr.gen.ValueStdDev),
 			Block:    itr.version,
 		}
-		i := <-itr.freeList
-		// hack re-use of field
-		node.LastVersion = int64(i)
-		return node
+		select {
+		case i := <-itr.freeList:
+			// hack re-use of field
+			node.LastVersion = int64(i)
+			return node
+		case <-time.After(1 * time.Second):
+			panic(fmt.Sprintf("timed out waiting for free list; version=%d", itr.version))
+		}
 	default:
 		panic(fmt.Sprintf("invalid op %d", o.op))
 	}
