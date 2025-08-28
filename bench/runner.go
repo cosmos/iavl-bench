@@ -10,6 +10,7 @@ import (
 	"time"
 
 	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protodelim"
 )
@@ -27,6 +28,7 @@ type Tree interface {
 type LoaderParams struct {
 	TreeDir     string
 	TreeOptions string
+	StoreNames  []string
 }
 
 type TreeLoader func(params LoaderParams) (Tree, error)
@@ -50,7 +52,7 @@ func Run(cfg RunConfig) {
 		cmd.Flags().StringVar(&treeOptions, "tree-options", "", cfg.OptionsHelpText)
 	}
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
-	cmd.Flags().Int64Var(&targetVersion, "versions", 0, "Number of versions to apply. Must be > 0.")
+	cmd.Flags().Int64Var(&targetVersion, "versions", 0, "Number of versions to apply. If this is empty or 0, all versions in the changeset-dir will be applied.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if treeDir == "" {
@@ -61,14 +63,21 @@ func Run(cfg RunConfig) {
 			return fmt.Errorf("changeset-dir is required")
 		}
 
+		info, err := readInfoFile(changesetDir)
+		if err != nil {
+			return fmt.Errorf("error reading changeset info file: %w", err)
+		}
+
 		if targetVersion <= 0 {
-			return fmt.Errorf("versions must be > 0")
+			targetVersion = info.Versions
 		}
 
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: treeOptions,
+			StoreNames:  info.StoreNames,
 		}
+
 		tree, err := cfg.TreeLoader(loaderParams)
 		if err != nil {
 			return fmt.Errorf("error loading tree: %w", err)
@@ -99,7 +108,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	version := tree.Version()
 	target := params.TargetVersion
 	logger.Info("starting run", "start_version", version, "target_version", target)
-	for version <= target {
+	for version < target {
 		version++
 		err := applyVersion(logger, tree, changesetDir, version)
 		if err != nil {
@@ -157,7 +166,15 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64)
 	opsPerSec := float64(i) / duration.Seconds()
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	logger.Info("committed version", "version", version, "duration", duration, "ops_per_sec", opsPerSec, "mem_stats", memStats)
+	logger.Info(
+		"committed version",
+		"version", version,
+		"duration", duration,
+		"ops_per_sec", opsPerSec,
+		"mem_allocs", humanize.Bytes(memStats.Alloc),
+		"mem_sys", humanize.Bytes(memStats.Sys),
+		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
+	)
 
 	return nil
 }

@@ -100,7 +100,15 @@ func GenerateChangesets(g TreeParams, outDir string) error {
 		fmt.Printf("Wrote changeset for version %d to %s\n", version, filename)
 	}
 
-	return nil
+	// write info file
+	stores := make([]string, 0, len(multiStoreState))
+	for storeKey := range multiStoreState {
+		stores = append(stores, storeKey)
+	}
+	return writeInfoFile(outDir, testdataInfo{
+		Versions:   g.Versions,
+		StoreNames: stores,
+	})
 }
 
 type storeState struct {

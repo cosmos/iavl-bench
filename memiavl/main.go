@@ -58,7 +58,11 @@ var _ bench.Tree = &DBWrapper{}
 func main() {
 	bench.Run(bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			opts := memiavl.Options{}
+			opts := memiavl.Options{
+				CreateIfMissing: true,
+				InitialStores:   params.StoreNames,
+			}
+
 			db, err := memiavl.Load(params.TreeDir, opts)
 			if err != nil {
 				return nil, err
