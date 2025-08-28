@@ -44,12 +44,12 @@ func Run(cfg RunConfig) {
 	var changesetDir string
 	var targetVersion int64
 	cmd := &cobra.Command{
-		Use:   "run",
+		Use:   "bench",
 		Short: "Runs benchmarks for the tree implementation.",
 	}
-	cmd.Flags().StringVar(&treeDir, "tree-dir", "", "Directory for the tree's data.")
+	cmd.Flags().StringVar(&treeDir, "db-dir", "", "Directory for the db's data.")
 	if cfg.OptionsHelpText != "" {
-		cmd.Flags().StringVar(&treeOptions, "tree-options", "", cfg.OptionsHelpText)
+		cmd.Flags().StringVar(&treeOptions, "db-options", "", cfg.OptionsHelpText)
 	}
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
 	cmd.Flags().Int64Var(&targetVersion, "versions", 0, "Number of versions to apply. If this is empty or 0, all versions in the changeset-dir will be applied.")
