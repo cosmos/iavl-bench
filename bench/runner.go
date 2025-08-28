@@ -43,6 +43,8 @@ func Run(cfg RunConfig) {
 	var treeOptions string
 	var changesetDir string
 	var targetVersion int64
+	var logHandlerType string
+	var logFile string
 	cmd := &cobra.Command{
 		Use:   "bench",
 		Short: "Runs benchmarks for the tree implementation.",
@@ -53,6 +55,8 @@ func Run(cfg RunConfig) {
 	}
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
 	cmd.Flags().Int64Var(&targetVersion, "target-version", 0, "Target version to apply changesets up to. If this is empty or 0, all remaining versions in the changeset-dir will be applied.")
+	cmd.Flags().StringVar(&logHandlerType, "log-type", "text", "Log handler type. One of 'text' or 'json'.")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "If set, log output will be written to this file instead of stdout.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if treeDir == "" {
@@ -83,9 +87,35 @@ func Run(cfg RunConfig) {
 			return fmt.Errorf("error loading tree: %w", err)
 		}
 
+		logOut := os.Stdout
+		if logFile != "" {
+			logOut, err = os.Create(logFile)
+			if err != nil {
+				return fmt.Errorf("error creating log file: %w", err)
+			}
+			defer func() {
+				err := logOut.Close()
+				if err != nil {
+					slog.Error("error closing log file", "error", err)
+				}
+			}()
+		}
+
+		var handler slog.Handler
+		switch logHandlerType {
+		case "text":
+			handler = slog.NewTextHandler(logOut, nil)
+		case "json":
+			handler = slog.NewJSONHandler(logOut, nil)
+		default:
+			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
+		}
+
+		logger := slog.New(handler)
+
 		return run(tree, changesetDir, runParams{
 			TargetVersion: targetVersion,
-			Logger:        slog.Default(),
+			Logger:        logger,
 		})
 	}
 
