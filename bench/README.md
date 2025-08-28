@@ -11,8 +11,7 @@ For each version:
    `InitialSize` to `FinalSize` over the course of the number of specified `Versions`.
 2. populate an empty list of the desired number of create, update, and delete operations in random order
 3. for delete operations, select a random existing key from the current set of keys in the tree
-4. for create operations, generate new keys and values randomly where the length of the key and value are generated as
-   to match `KeyMean`, `KeyStdDev`, `ValueMean`, and `ValueStdDev` using a normal distribution
+4. for create operations, generate new keys and values randomly where the length of the key and value are generated to approximate a normal distribution conforming to `KeyMean`, `KeyStdDev`, `ValueMean`, and `ValueStdDev`
 5. for update operations, select a random existing key and generate a new value using `ValueMean` and `ValueStdDev`
 
 Note: Version 1 is special and only contains create operations to establish the initial set of keys.
