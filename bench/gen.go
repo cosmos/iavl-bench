@@ -35,7 +35,7 @@ type ChangesetGenerator struct {
 	InitialSize int
 	// FinalSize is the number of keys at the final version.
 	// FinalSize must be >= InitialSize, it is used together with
-	// ChangesPerVersion and Versions to determine the number of create operations
+	// ChangePerVersion and Versions to determine the number of create operations
 	// per version.
 	FinalSize int
 	// Versions are the number of versions to generate data for as well as the
