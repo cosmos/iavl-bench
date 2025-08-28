@@ -156,7 +156,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 		"total_ops", stats.totalOps,
 		"total_time", stats.totalTime,
 		"ops_per_sec", opsPerSec,
-		"max_mem_alloc", humanize.Bytes(stats.maxAlloc),
+		"max_mem_sys", humanize.Bytes(stats.maxSys),
 	)
 
 	return nil
@@ -165,7 +165,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 type totalStats struct {
 	totalOps  uint64
 	totalTime time.Duration
-	maxAlloc  uint64
+	maxSys    uint64
 }
 
 func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64, stats *totalStats) error {
@@ -223,13 +223,14 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 		"ops_per_sec", opsPerSec,
 		"mem_allocs", humanize.Bytes(memStats.Alloc),
 		"mem_sys", humanize.Bytes(memStats.Sys),
+		"mem_heap_in_use", humanize.Bytes(memStats.HeapInuse),
 		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
 	)
 
 	stats.totalOps += uint64(i)
 	stats.totalTime += duration
-	if memStats.Alloc > stats.maxAlloc {
-		stats.maxAlloc = memStats.Alloc
+	if memStats.Sys > stats.maxSys {
+		stats.maxSys = memStats.Sys
 	}
 
 	return nil
