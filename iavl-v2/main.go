@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/cosmos/iavl/v2"
 
 	"github.com/cosmos/iavl-bench/bench"
+	"github.com/cosmos/iavl-bench/bench/multitreeutil"
 )
 
 type MultiTreeWrapper struct {
@@ -44,7 +43,7 @@ func (m *MultiTreeWrapper) Commit() error {
 
 	m.version++
 
-	return saveVersion(m.dbDir, m.version)
+	return multitreeutil.SaveVersion(m.dbDir, m.version)
 }
 
 var _ bench.Tree = &MultiTreeWrapper{}
@@ -53,7 +52,7 @@ func main() {
 	bench.Run(bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			dbDir := params.TreeDir
-			version, err := loadVersion(dbDir)
+			version, err := multitreeutil.LoadVersion(dbDir)
 			if err != nil {
 				return nil, err
 			}
@@ -84,33 +83,4 @@ func main() {
 			}, nil
 		},
 	})
-}
-
-type info struct {
-	Version int64 `json:"version"`
-}
-
-func loadVersion(dbDir string) (int64, error) {
-	bz, err := os.ReadFile(fmt.Sprintf("%s/info.json", dbDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	var i info
-	if err := json.Unmarshal(bz, &i); err != nil {
-		return 0, err
-	}
-	return i.Version, nil
-
-}
-
-func saveVersion(dbDir string, version int64) error {
-	i := info{Version: version}
-	bz, err := json.MarshalIndent(i, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(fmt.Sprintf("%s/info.json", dbDir), bz, 0o644)
 }
