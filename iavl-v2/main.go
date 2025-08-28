@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/cosmos/iavl/v2"
 
@@ -27,15 +29,16 @@ import (
 //}
 
 type MultiTreeWrapper struct {
+	dbDir   string
 	version int64
 	trees   map[string]*iavl.Tree
 }
 
-func (m MultiTreeWrapper) Version() int64 {
+func (m *MultiTreeWrapper) Version() int64 {
 	return m.version
 }
 
-func (m MultiTreeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
+func (m *MultiTreeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
 		return fmt.Errorf("store key %s not found", storeKey)
@@ -49,15 +52,17 @@ func (m MultiTreeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete
 	}
 }
 
-func (m MultiTreeWrapper) Commit() error {
+func (m *MultiTreeWrapper) Commit() error {
 	for _, tree := range m.trees {
 		_, _, err := tree.SaveVersion()
 		if err != nil {
 			return err
 		}
 	}
+
 	m.version++
-	return nil
+
+	return saveVersion(m.dbDir, m.version)
 }
 
 var _ bench.Tree = &MultiTreeWrapper{}
@@ -66,7 +71,10 @@ func main() {
 	bench.Run(bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			dbDir := params.TreeDir
-			// TODO allow loading existing version
+			version, err := loadVersion(dbDir)
+			if err != nil {
+				return nil, err
+			}
 			trees := make(map[string]*iavl.Tree)
 			nodePool := iavl.NewNodePool()
 			for _, storeName := range params.StoreNames {
@@ -79,9 +87,48 @@ func main() {
 				}
 				opts := iavl.DefaultTreeOptions()
 				tree := iavl.NewTree(sqlite, nodePool, opts)
+				if version != 0 {
+					err = tree.LoadVersion(version)
+					if err != nil {
+						return nil, fmt.Errorf("loading version %d for store %s: %w", version, storeName, err)
+					}
+				}
 				trees[storeName] = tree
 			}
-			return MultiTreeWrapper{trees: trees}, nil
+			return &MultiTreeWrapper{
+				trees:   trees,
+				version: version,
+				dbDir:   dbDir,
+			}, nil
 		},
 	})
+}
+
+type info struct {
+	Version int64 `json:"version"`
+}
+
+func loadVersion(dbDir string) (int64, error) {
+	bz, err := os.ReadFile(fmt.Sprintf("%s/info.json", dbDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var i info
+	if err := json.Unmarshal(bz, &i); err != nil {
+		return 0, err
+	}
+	return i.Version, nil
+
+}
+
+func saveVersion(dbDir string, version int64) error {
+	i := info{Version: version}
+	bz, err := json.MarshalIndent(i, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(fmt.Sprintf("%s/info.json", dbDir), bz, 0o644)
 }

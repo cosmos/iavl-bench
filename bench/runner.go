@@ -52,7 +52,7 @@ func Run(cfg RunConfig) {
 		cmd.Flags().StringVar(&treeOptions, "db-options", "", cfg.OptionsHelpText)
 	}
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
-	cmd.Flags().Int64Var(&targetVersion, "versions", 0, "Number of versions to apply. If this is empty or 0, all versions in the changeset-dir will be applied.")
+	cmd.Flags().Int64Var(&targetVersion, "target-version", 0, "Target version to apply changesets up to. If this is empty or 0, all remaining versions in the changeset-dir will be applied.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if treeDir == "" {
@@ -108,17 +108,37 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	version := tree.Version()
 	target := params.TargetVersion
 	logger.Info("starting run", "start_version", version, "target_version", target)
+	stats := &totalStats{}
+	i := 0
 	for version < target {
 		version++
-		err := applyVersion(logger, tree, changesetDir, version)
+		err := applyVersion(logger, tree, changesetDir, version, stats)
 		if err != nil {
 			return fmt.Errorf("error applying version %d: %w", version, err)
 		}
+		i++
 	}
+
+	opsPerSec := float64(stats.totalOps) / stats.totalTime.Seconds()
+	logger.Info(
+		"benchmark run complete",
+		"versions_applied", i,
+		"total_ops", stats.totalOps,
+		"total_time", stats.totalTime,
+		"ops_per_sec", opsPerSec,
+		"max_mem_alloc", humanize.Bytes(stats.maxAlloc),
+	)
+
 	return nil
 }
 
-func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64) error {
+type totalStats struct {
+	totalOps  uint64
+	totalTime time.Duration
+	maxAlloc  uint64
+}
+
+func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64, stats *totalStats) error {
 	dataFilename := dataFilename(dataDir, version)
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
@@ -175,6 +195,12 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64)
 		"mem_sys", humanize.Bytes(memStats.Sys),
 		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
 	)
+
+	stats.totalOps += uint64(i)
+	stats.totalTime += duration
+	if memStats.Alloc > stats.maxAlloc {
+		stats.maxAlloc = memStats.Alloc
+	}
 
 	return nil
 }
