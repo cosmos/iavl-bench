@@ -81,7 +81,7 @@ func GenerateChangesets(g TreeParams, outDir string) error {
 
 		// generate todo list
 		todo := newChangesetTodo(plans)
-		filename := fmt.Sprintf("%s/%06d.delimpb", outDir, version)
+		filename := dataFilename(outDir, version)
 		outWriter, err := os.Create(filename)
 		if err != nil {
 			return fmt.Errorf("error creating changeset file for version %d: %w", version, err)
