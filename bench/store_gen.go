@@ -1,7 +1,7 @@
 package bench
 
-func BankLikeGenerator(seed int64, versions int64) ChangesetGenerator {
-	return ChangesetGenerator{
+func BankLikeGenerator(seed int64, versions int64) StoreParams {
+	return StoreParams{
 		StoreKey:         "bank",
 		Seed:             seed,
 		KeyMean:          56,
@@ -16,8 +16,8 @@ func BankLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 	}
 }
 
-func LockupLikeGenerator(seed int64, versions int64) ChangesetGenerator {
-	return ChangesetGenerator{
+func LockupLikeGenerator(seed int64, versions int64) StoreParams {
+	return StoreParams{
 		StoreKey:         "lockup",
 		Seed:             seed,
 		KeyMean:          56,
@@ -32,8 +32,8 @@ func LockupLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 	}
 }
 
-func StakingLikeGenerator(seed int64, versions int64) ChangesetGenerator {
-	return ChangesetGenerator{
+func StakingLikeGenerator(seed int64, versions int64) StoreParams {
+	return StoreParams{
 		StoreKey:         "staking",
 		Seed:             seed,
 		KeyMean:          24,
@@ -48,7 +48,7 @@ func StakingLikeGenerator(seed int64, versions int64) ChangesetGenerator {
 	}
 }
 
-func OsmoLikeGenerators() []ChangesetGenerator {
+func OsmoLikeGenerators() []StoreParams {
 	initialSize := 20_000_000
 	finalSize := int(1.5 * float64(initialSize))
 	var seed int64 = 1234
@@ -60,7 +60,7 @@ func OsmoLikeGenerators() []ChangesetGenerator {
 	bankGen2.InitialSize = initialSize
 	bankGen2.FinalSize = finalSize
 
-	return []ChangesetGenerator{
+	return []StoreParams{
 		bankGen,
 		bankGen2,
 	}

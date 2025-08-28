@@ -9,15 +9,15 @@ import (
 	"github.com/cosmos/iavl-bench/bench"
 )
 
-//func GetDefaultGenerators() []bench.ChangesetGenerator {
+//func GetDefaultGenerators() []bench.StoreParams {
 //	gens := bench.OsmoLikeGenerators()
 //	gens = append(gens, bench.StakingLikeGenerator(0, 1_000_000))
 //	gens = append(gens, bench.LockupLikeGenerator(1, 1_000_000))
 //	return gens
 //}
 
-func SmallGenerators() []bench.ChangesetGenerator {
-	gens := []bench.ChangesetGenerator{
+func SmallGenerators() []bench.StoreParams {
+	gens := []bench.StoreParams{
 		bench.BankLikeGenerator(0, 200_000),
 		bench.StakingLikeGenerator(1, 200_000),
 		bench.LockupLikeGenerator(2, 200_000),
@@ -33,7 +33,7 @@ func main() {
 		Short: "Generate changesets for iavl-bench",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var gens []bench.ChangesetGenerator
+			var gens []bench.StoreParams
 			switch profile {
 			case "small":
 				gens = SmallGenerators()
@@ -46,13 +46,13 @@ func main() {
 			outDir := args[0]
 
 			rngSource := rand.NewPCG(0, 0)
-			gen := bench.MultiChangesetGenerator{
-				Generators: gens,
-				Versions:   versions,
-				RandSource: rngSource,
+			gen := bench.TreeParams{
+				StoreParams: gens,
+				Versions:    versions,
+				RandSource:  rngSource,
 			}
 
-			return bench.GenerateChangeSets(gen, outDir)
+			return bench.GenerateChangesets(gen, outDir)
 		},
 	}
 	cmd.Flags().Int64Var(&versions, "versions", 100, "number of versions to generate")
