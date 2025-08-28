@@ -18,9 +18,9 @@ import (
 
 func SmallGenerators() []bench.StoreParams {
 	gens := []bench.StoreParams{
-		bench.BankLikeGenerator(0, 200_000),
-		bench.StakingLikeGenerator(1, 200_000),
-		bench.LockupLikeGenerator(2, 200_000),
+		bench.BankLikeGenerator(200_000),
+		bench.StakingLikeGenerator(200_000),
+		bench.LockupLikeGenerator(200_000),
 	}
 	return gens
 }

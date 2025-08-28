@@ -53,8 +53,13 @@ type StoreParams struct {
 }
 
 func GenerateChangesets(g TreeParams, outDir string) error {
-	// ensure directory exists
-	err := os.MkdirAll(outDir, 0o755)
+	// ensure directory does not exist
+	_, err := os.Stat(outDir)
+	if err == nil {
+		return fmt.Errorf("output directory %s already exists", outDir)
+	}
+	// create directory
+	err = os.MkdirAll(outDir, 0o755)
 	if err != nil {
 		return err
 	}
