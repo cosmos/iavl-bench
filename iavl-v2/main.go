@@ -48,9 +48,16 @@ func (m *MultiTreeWrapper) Commit() error {
 
 var _ bench.Tree = &MultiTreeWrapper{}
 
+type Options struct {
+	CheckpointInterval int64 `json:"checkpoint_interval"`
+	EvictionDepth      int8  `json:"eviction_depth"`
+}
+
 func main() {
 	bench.Run("iavl/v2", bench.RunConfig{
+		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+			opts := params.TreeOptions.(*Options)
 			dbDir := params.TreeDir
 			version, err := multitreeutil.LoadVersion(dbDir)
 			if err != nil {
@@ -66,8 +73,14 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				opts := iavl.DefaultTreeOptions()
-				tree := iavl.NewTree(sqlite, nodePool, opts)
+				treeOpts := iavl.DefaultTreeOptions()
+				if opts.CheckpointInterval != 0 {
+					treeOpts.CheckpointInterval = opts.CheckpointInterval
+				}
+				if opts.EvictionDepth != 0 {
+					treeOpts.EvictionDepth = opts.EvictionDepth
+				}
+				tree := iavl.NewTree(sqlite, nodePool, treeOpts)
 				if version != 0 {
 					err = tree.LoadVersion(version)
 					if err != nil {

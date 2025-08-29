@@ -35,8 +35,8 @@ func (d DBWrapper) Commit() error {
 var _ bench.Tree = &DBWrapper{}
 
 type Options struct {
-	SnapshotKeepRecent uint32 `json:"snapshot-keep-recent"`
-	SnapshotInterval   uint32 `json:"snapshot-interval"`
+	SnapshotKeepRecent uint32 `json:"snapshot_keep_recent"`
+	SnapshotInterval   uint32 `json:"snapshot_interval"`
 	// Buffer size for the asynchronous commit queue, -1 means synchronous commit,
 	// default to 0.
 	AsyncCommitBuffer int `json:"async-commit-buffer"`
