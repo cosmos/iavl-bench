@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -119,9 +120,12 @@ func Run(cfg RunConfig) {
 		})
 	}
 
-	err := cmd.Execute()
+	rootCmd := &cobra.Command{}
+	rootCmd.AddCommand(cmd)
+	err := rootCmd.Execute()
 	if err != nil {
 		slog.Error("error running benchmarks", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -216,6 +220,10 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	opsPerSec := float64(i) / duration.Seconds()
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
+	dirSize, err := getDirSize(dataDir)
+	if err != nil {
+		return fmt.Errorf("error getting data dir size: %w", err)
+	}
 	logger.Info(
 		"committed version",
 		"version", version,
@@ -225,6 +233,7 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 		"mem_sys", humanize.Bytes(memStats.Sys),
 		"mem_heap_in_use", humanize.Bytes(memStats.HeapInuse),
 		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
+		"disk_usage", humanize.Bytes(uint64(dirSize)),
 	)
 
 	stats.totalOps += uint64(i)
@@ -234,4 +243,18 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	}
 
 	return nil
+}
+
+func getDirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
 }
