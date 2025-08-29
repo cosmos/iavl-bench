@@ -95,9 +95,6 @@ func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
 	defer os.RemoveAll(dir)
 
 	args := []string{
-		"run",
-		"-buildvcs=true", // capture git info in the binary
-		".",
 		"bench",
 		"--changeset-dir",
 		plan.ChangesetDir,
@@ -117,7 +114,7 @@ func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
 		args = append(args, "--target-version", fmt.Sprintf("%d", plan.Versions))
 	}
 
-	cmd := exec.Command("go", args...)
+	cmd := exec.Command(plan.Runner, args...)
 	cmd.Dir = plan.Runner
 	logger.Info("executing runner command", "cmd", cmd.String())
 	if dryRun {

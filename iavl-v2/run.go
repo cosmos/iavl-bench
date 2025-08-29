@@ -1,4 +1,4 @@
-package main
+package iavl_v2
 
 import (
 	"fmt"
@@ -53,7 +53,7 @@ type Options struct {
 	EvictionDepth      int8  `json:"eviction_depth"`
 }
 
-func main() {
+func Run() {
 	bench.Run("iavl/v2", bench.RunConfig{
 		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {

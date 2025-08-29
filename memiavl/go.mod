@@ -1,4 +1,4 @@
-module github.com/cosmos/iavl-bench/memiavl
+module bench-memiavl
 
 go 1.24.0
 
