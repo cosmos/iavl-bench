@@ -35,7 +35,7 @@ func (d DBWrapper) Commit() error {
 var _ bench.Tree = &DBWrapper{}
 
 func main() {
-	bench.Run(bench.RunConfig{
+	bench.Run("memiavl", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			opts := memiavl.Options{
 				CreateIfMissing: true,

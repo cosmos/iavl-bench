@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
@@ -39,7 +40,7 @@ type RunConfig struct {
 	OptionsHelpText string
 }
 
-func Run(cfg RunConfig) {
+func Run(treeType string, cfg RunConfig) {
 	var treeDir string
 	var treeOptions string
 	var changesetDir string
@@ -115,8 +116,10 @@ func Run(cfg RunConfig) {
 		logger := slog.New(handler)
 
 		return run(tree, changesetDir, runParams{
+			TreeType:      treeType,
 			TargetVersion: targetVersion,
 			Logger:        logger,
+			LoaderParams:  loaderParams,
 		})
 	}
 
@@ -132,6 +135,8 @@ func Run(cfg RunConfig) {
 type runParams struct {
 	TargetVersion int64
 	Logger        *slog.Logger
+	LoaderParams  LoaderParams
+	TreeType      string
 }
 
 func run(tree Tree, changesetDir string, params runParams) error {
@@ -141,7 +146,19 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	}
 	version := tree.Version()
 	target := params.TargetVersion
-	logger.Info("starting run", "start_version", version, "target_version", target)
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		return fmt.Errorf("could not read build info")
+	}
+	logger.Info("starting run",
+		"start_version", version,
+		"target_version", target,
+		"changeset_dir", changesetDir,
+		"db_dir", params.LoaderParams.TreeDir,
+		"db_options", params.LoaderParams.TreeOptions,
+		"tree_type", params.TreeType,
+		"build_info", buildInfo.String(),
+	)
 	stats := &totalStats{}
 	i := 0
 	for version < target {
@@ -214,6 +231,10 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	err = tree.Commit()
 	if err != nil {
 		return fmt.Errorf("error committing version %d: %w", version, err)
+	}
+
+	if tree.Version() != version {
+		return fmt.Errorf("committed version %d does not match expected version %d", tree.Version(), version)
 	}
 
 	duration := time.Since(startTime)
