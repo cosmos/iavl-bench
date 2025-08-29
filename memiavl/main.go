@@ -34,6 +34,14 @@ func (d DBWrapper) Commit() error {
 
 var _ bench.Tree = &DBWrapper{}
 
+type Options struct {
+	SnapshotKeepRecent uint32
+	SnapshotInterval   uint32
+	AsyncCommitBuffer  int
+	ZeroCopy           bool
+	CacheSize          int
+}
+
 func main() {
 	bench.Run("memiavl", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {

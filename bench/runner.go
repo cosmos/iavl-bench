@@ -180,6 +180,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 		"total_time", stats.totalTime,
 		"ops_per_sec", opsPerSec,
 		"max_mem_sys", humanize.Bytes(stats.maxSys),
+		"max_disk_usage", humanize.Bytes(stats.maxDiskUsage),
 	)
 
 	return nil
@@ -221,16 +222,17 @@ func captureSystemInfo(logger *slog.Logger) {
 }
 
 type totalStats struct {
-	totalOps  uint64
-	totalTime time.Duration
-	maxSys    uint64
+	totalOps     uint64
+	totalTime    time.Duration
+	maxSys       uint64
+	maxDiskUsage uint64
 }
 
 func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64, stats *totalStats) error {
 	dataFilename := dataFilename(dataDir, version)
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
-		return fmt.Errorf("error opening changeset file for version %d: %w", version)
+		return fmt.Errorf("error opening changeset file for version %d: %w", version, err)
 	}
 	defer func() {
 		err := dataFile.Close()
@@ -290,8 +292,8 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 		"mem_allocs", humanize.Bytes(memStats.Alloc),
 		"mem_sys", humanize.Bytes(memStats.Sys),
 		"mem_heap_in_use", humanize.Bytes(memStats.HeapInuse),
-		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
-		"disk_usage", humanize.Bytes(uint64(dirSize)),
+		"mem_num_gc", memStats.NumGC,
+		"disk_usage", humanize.Bytes(dirSize),
 	)
 	logger.Debug("full mem stats", "mem_stats", memStats)
 
@@ -300,11 +302,14 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	if memStats.Sys > stats.maxSys {
 		stats.maxSys = memStats.Sys
 	}
+	if dirSize > stats.maxDiskUsage {
+		stats.maxDiskUsage = dirSize
+	}
 
 	return nil
 }
 
-func getDirSize(path string) (int64, error) {
+func getDirSize(path string) (uint64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -315,5 +320,5 @@ func getDirSize(path string) (int64, error) {
 		}
 		return nil
 	})
-	return size, err
+	return uint64(size), err
 }
