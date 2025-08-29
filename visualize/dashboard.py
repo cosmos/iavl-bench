@@ -11,14 +11,22 @@ if not benchmark_dir:
     raise ValueError('BENCHMARK_RESULTS environment variable not set')
 
 data = load_benchmark_dir(benchmark_dir)
+all_names = [d.name for d in data]
 
 st.title('Benchmark Results Visualization')
+
+names = st.segmented_control("Benchmark Runs", all_names, selection_mode="multi", default=all_names)
+
+if len(names) == 0:
+    st.warning('Please select at least one benchmark run to display')
+    st.stop()
+
+data = [d for d in data if d.name in names]
 
 # Show table and bar charts of all summary data
 st.header('Summary Data')
 
 summary_df = pandas.DataFrame([d.summary for d in data])
-names = [d.name for d in data]
 summary_df.index = names
 tab1, tab2, tab3, tab4 = st.tabs(['Summary', 'Ops/sec', 'Max Mem (GB)', 'Max Disk (GB)'])
 

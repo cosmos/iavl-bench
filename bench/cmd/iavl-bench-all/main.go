@@ -115,7 +115,6 @@ func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
 	}
 
 	cmd := exec.Command(plan.Runner, args...)
-	cmd.Dir = plan.Runner
 	logger.Info("executing runner command", "cmd", cmd.String())
 	if dryRun {
 		logger.Info("dry run, not executing command")
