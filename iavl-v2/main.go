@@ -49,7 +49,7 @@ func (m *MultiTreeWrapper) Commit() error {
 var _ bench.Tree = &MultiTreeWrapper{}
 
 func main() {
-	bench.Run(bench.RunConfig{
+	bench.Run("iavl/v2", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			dbDir := params.TreeDir
 			version, err := multitreeutil.LoadVersion(dbDir)

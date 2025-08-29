@@ -29,7 +29,7 @@ func main() {
 	var versions int64
 	var profile string
 	cmd := &cobra.Command{
-		Use:   "gen_changesets [out-dir]",
+		Use:   "gen-changesets [out-dir]",
 		Short: "Generate changesets for iavl-bench",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -112,7 +112,7 @@ func Run(treeType string, cfg RunConfig) {
 		case "text":
 			handler = slog.NewTextHandler(logOut, nil)
 		case "json":
-			handler = slog.NewJSONHandler(logOut, nil)
+			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true})
 		default:
 			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
 		}
@@ -150,31 +150,6 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	}
 	version := tree.Version()
 	target := params.TargetVersion
-	buildInfo, ok := debug.ReadBuildInfo()
-	if !ok {
-		return fmt.Errorf("could not read build info")
-	}
-
-	cpuInfo, err := cpu.Info()
-	if err != nil {
-		return fmt.Errorf("could not read cpu info: %w", err)
-	}
-
-	memInfo, err := mem.VirtualMemory()
-	if err != nil {
-		return fmt.Errorf("could not read memory info: %w", err)
-	}
-
-	hostInfo, err := host.Info()
-	if err != nil {
-		return fmt.Errorf("could not read host info: %w", err)
-	}
-
-	diskInfo, err := disk.Usage("/")
-	if err != nil {
-		return fmt.Errorf("could not read disk info: %w", err)
-	}
-
 	logger.Info("starting run",
 		"start_version", version,
 		"target_version", target,
@@ -182,12 +157,10 @@ func run(tree Tree, changesetDir string, params runParams) error {
 		"db_dir", params.LoaderParams.TreeDir,
 		"db_options", params.LoaderParams.TreeOptions,
 		"tree_type", params.TreeType,
-		"build_info", buildInfo.String(),
-		"cpu_info", cpuInfo,
-		"mem_info", memInfo,
-		"host_info", hostInfo,
-		"disk_info", diskInfo,
 	)
+
+	captureSystemInfo(logger)
+
 	stats := &totalStats{}
 	i := 0
 	for version < target {
@@ -210,6 +183,41 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	)
 
 	return nil
+}
+
+func captureSystemInfo(logger *slog.Logger) {
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		logger.Warn("could not read build info")
+	}
+
+	cpuInfo, err := cpu.Info()
+	if err != nil {
+		logger.Warn("could not read cpu info", "error", err)
+	}
+
+	memInfo, err := mem.VirtualMemory()
+	if err != nil {
+		logger.Warn("could not read memory info", "error", err)
+	}
+
+	hostInfo, err := host.Info()
+	if err != nil {
+		logger.Warn("could not read host info", "error", err)
+	}
+
+	diskInfo, err := disk.Usage("/")
+	if err != nil {
+		logger.Warn("could not read disk info", "error", err)
+	}
+
+	logger.Debug("system info",
+		"build_info", buildInfo.String(),
+		"cpu_info", cpuInfo,
+		"mem_info", memInfo,
+		"host_info", hostInfo,
+		"disk_info", diskInfo,
+	)
 }
 
 type totalStats struct {
@@ -285,6 +293,7 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 		"mem_num_gc", humanize.Comma(int64(memStats.NumGC)),
 		"disk_usage", humanize.Bytes(uint64(dirSize)),
 	)
+	logger.Debug("full mem stats", "mem_stats", memStats)
 
 	stats.totalOps += uint64(i)
 	stats.totalTime += duration
