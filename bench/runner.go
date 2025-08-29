@@ -2,11 +2,13 @@ package bench
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"time"
@@ -33,15 +35,15 @@ type Tree interface {
 
 type LoaderParams struct {
 	TreeDir     string
-	TreeOptions string
+	TreeOptions interface{}
 	StoreNames  []string
 }
 
 type TreeLoader func(params LoaderParams) (Tree, error)
 
 type RunConfig struct {
-	TreeLoader      TreeLoader
-	OptionsHelpText string
+	TreeLoader  TreeLoader
+	OptionsType interface{}
 }
 
 func Run(treeType string, cfg RunConfig) {
@@ -56,9 +58,7 @@ func Run(treeType string, cfg RunConfig) {
 		Short: "Runs benchmarks for the tree implementation.",
 	}
 	cmd.Flags().StringVar(&treeDir, "db-dir", "", "Directory for the db's data.")
-	if cfg.OptionsHelpText != "" {
-		cmd.Flags().StringVar(&treeOptions, "db-options", "", cfg.OptionsHelpText)
-	}
+	cmd.Flags().StringVar(&treeOptions, "db-options", "", "Implementation specific options for the db, in JSON format.")
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
 	cmd.Flags().Int64Var(&targetVersion, "target-version", 0, "Target version to apply changesets up to. If this is empty or 0, all remaining versions in the changeset-dir will be applied.")
 	cmd.Flags().StringVar(&logHandlerType, "log-type", "text", "Log handler type. One of 'text' or 'json'.")
@@ -82,9 +82,21 @@ func Run(treeType string, cfg RunConfig) {
 			targetVersion = info.Versions
 		}
 
+		// decode db options from json
+		opts := reflect.New(reflect.TypeOf(cfg.OptionsType).Elem()).Interface()
+		if treeOptions != "" {
+			if cfg.OptionsType == nil {
+				return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
+			}
+			err := json.Unmarshal([]byte(treeOptions), opts)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling db-options: %w", err)
+			}
+		}
+
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
-			TreeOptions: treeOptions,
+			TreeOptions: opts,
 			StoreNames:  info.StoreNames,
 		}
 

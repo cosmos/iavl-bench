@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,48 +13,64 @@ import (
 )
 
 type Plan struct {
-	RunName      string
-	Runner       string
-	Options      string
-	ChangesetDir string
-	Versions     int64
+	ChangesetDir string    `json:"changeset_dir"`
+	Versions     int64     `json:"versions"`
+	Runs         []RunPlan `json:"runs"`
+}
+
+type RunPlan struct {
+	RunName      string          `json:"name"`
+	Runner       string          `json:"runner"`
+	Options      json.RawMessage `json:"options"`
+	ChangesetDir string          `json:"changeset_dir"`
+	Versions     int64           `json:"versions"`
 }
 
 func main() {
-	var planFile string
 	var dryRun bool
-	var defaultChangeset string
 	cmd := &cobra.Command{
-		Use: "bench-all",
+		Use:  "bench-all [plan-file]",
+		Args: cobra.ExactArgs(1),
 	}
-	cmd.Flags().StringVar(&planFile, "plan", "", "CSV file containing a plan of the benchmarks to run.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
-	cmd.Flags().StringVar(&defaultChangeset, "default-changeset", "", "Default changeset directory to use if not specified in the plan.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if planFile == "" {
-			return fmt.Errorf("plan is required")
-		}
-
-		plans, err := readPlanFile(planFile, defaultChangeset)
+		planFile := args[0]
+		bz, err := os.ReadFile(planFile)
 		if err != nil {
 			return fmt.Errorf("error reading plan file: %w", err)
 		}
 
+		var plan Plan
+		err = json.Unmarshal(bz, &plan)
+		if err != nil {
+			return fmt.Errorf("error unmarshaling plan file: %w", err)
+		}
+
 		logger := slog.Default()
 
-		resultDir := filepath.Join(filepath.Base(planFile), time.Now().Format("20060102_150405"))
-		err = os.MkdirAll(resultDir, 0755)
-		if err != nil {
-			return fmt.Errorf("error creating result dir: %w", err)
-		}
+		resultDir := filepath.Join(filepath.Dir(planFile), time.Now().Format("20060102_150405"))
 		resultDir, err = filepath.Abs(resultDir)
 		if err != nil {
 			return fmt.Errorf("error getting absolute path of result dir: %w", err)
 		}
 		logger.Info(fmt.Sprintf("writing results to %s", resultDir))
 
-		for _, plan := range plans {
-			runOne(logger, plan, resultDir, dryRun)
+		if !dryRun {
+			err = os.MkdirAll(resultDir, 0755)
+			if err != nil {
+				return fmt.Errorf("error creating result dir: %w", err)
+			}
+		}
+
+		for _, run := range plan.Runs {
+			// fill in defaults from plan
+			if run.ChangesetDir == "" {
+				run.ChangesetDir = plan.ChangesetDir
+			}
+			if run.Versions == 0 {
+				run.Versions = plan.Versions
+			}
+			runOne(logger, run, resultDir, dryRun)
 		}
 
 		return nil
@@ -64,62 +80,13 @@ func main() {
 	}
 }
 
-func readPlanFile(file string, changesetDir string) ([]Plan, error) {
-	planIds := make(map[string]struct{})
-	f, err := os.Open(file)
+func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
+	bz, err := json.Marshal(plan)
 	if err != nil {
-		return nil, fmt.Errorf("error opening plan file: %w", err)
+		logger.Error("error marshaling plan", "error", err)
+		return
 	}
-	rdr := csv.NewReader(f)
-	allRows, err := rdr.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("error reading plan file: %w", err)
-	}
-	plans := make([]Plan, 0, len(allRows)-1)
-	for i, row := range allRows {
-		if i == 0 {
-			// skip header
-			continue
-		}
-		if len(row) < 5 {
-			return nil, fmt.Errorf("invalid plan file: row %d has less than 5 columns", i+1)
-		}
-		runName := row[0]
-		runner := row[1]
-		options := row[2]
-		if row[3] != "" {
-			changesetDir = row[3]
-		}
-		if changesetDir == "" {
-			return nil, fmt.Errorf("invalid plan file: row %d has no changeset dir and no default provided", i+1)
-		}
-		versions := int64(0)
-		if row[4] != "" {
-			_, err := fmt.Sscanf(row[4], "%d", &versions)
-			if err != nil {
-				return nil, fmt.Errorf("invalid plan file: row %d has invalid versions: %w", i+1, err)
-			}
-		}
-
-		if _, exists := planIds[runName]; exists {
-			return nil, fmt.Errorf("invalid plan file: duplicate run name %s", runName)
-		}
-		planIds[runName] = struct{}{}
-
-		plans = append(plans, Plan{
-			RunName:      runName,
-			Runner:       runner,
-			ChangesetDir: changesetDir,
-			Options:      options,
-			Versions:     versions,
-		})
-	}
-
-	return plans, nil
-}
-
-func runOne(logger *slog.Logger, plan Plan, resultDir string, dryRun bool) {
-	logger.Info("running plan", "plan", plan, "options", plan.Options)
+	logger.Info("starting run", "run_plan", string(bz))
 	dir, err := os.MkdirTemp("", plan.Runner)
 	if err != nil {
 		logger.Error("error creating db dir", "error", err)
@@ -127,8 +94,7 @@ func runOne(logger *slog.Logger, plan Plan, resultDir string, dryRun bool) {
 	}
 	defer os.RemoveAll(dir)
 
-	cmd := exec.Command(
-		"go",
+	args := []string{
 		"run",
 		"-buildvcs=true", // capture git info in the binary
 		".",
@@ -137,13 +103,21 @@ func runOne(logger *slog.Logger, plan Plan, resultDir string, dryRun bool) {
 		plan.ChangesetDir,
 		"--db-dir",
 		dir,
-		"--target-version",
-		fmt.Sprintf("%d", plan.Versions),
 		"--log-type",
 		"json",
 		"--log-file",
 		filepath.Join(resultDir, fmt.Sprintf("%s.jsonl", plan.RunName)),
-	)
+	}
+
+	if plan.Options != nil {
+		args = append(args, "--db-options", string(plan.Options))
+	}
+
+	if plan.Versions != 0 {
+		args = append(args, "--target-version", fmt.Sprintf("%d", plan.Versions))
+	}
+
+	cmd := exec.Command("go", args...)
 	cmd.Dir = plan.Runner
 	logger.Info("executing runner command", "cmd", cmd.String())
 	if dryRun {

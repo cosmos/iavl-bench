@@ -35,19 +35,30 @@ func (d DBWrapper) Commit() error {
 var _ bench.Tree = &DBWrapper{}
 
 type Options struct {
-	SnapshotKeepRecent uint32
-	SnapshotInterval   uint32
-	AsyncCommitBuffer  int
-	ZeroCopy           bool
-	CacheSize          int
+	SnapshotKeepRecent uint32 `json:"snapshot-keep-recent"`
+	SnapshotInterval   uint32 `json:"snapshot-interval"`
+	// Buffer size for the asynchronous commit queue, -1 means synchronous commit,
+	// default to 0.
+	AsyncCommitBuffer int `json:"async-commit-buffer"`
+	// ZeroCopy if true, the get and iterator methods could return a slice pointing to mmaped blob files.
+	ZeroCopy bool `json:"zero-copy"`
+	// CacheSize defines the cache's max entry size for each memiavl store.
+	CacheSize int `json:"cache-size"`
 }
 
 func main() {
 	bench.Run("memiavl", bench.RunConfig{
+		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+			benchmarkOpts := params.TreeOptions.(*Options)
 			opts := memiavl.Options{
-				CreateIfMissing: true,
-				InitialStores:   params.StoreNames,
+				CreateIfMissing:    true,
+				InitialStores:      params.StoreNames,
+				SnapshotKeepRecent: benchmarkOpts.SnapshotKeepRecent,
+				SnapshotInterval:   benchmarkOpts.SnapshotInterval,
+				AsyncCommitBuffer:  benchmarkOpts.AsyncCommitBuffer,
+				ZeroCopy:           benchmarkOpts.ZeroCopy,
+				CacheSize:          benchmarkOpts.CacheSize,
 			}
 
 			db, err := memiavl.Load(params.TreeDir, opts)
