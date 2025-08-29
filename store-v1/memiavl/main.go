@@ -3,7 +3,9 @@ package main
 import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/store/cronos/rootmulti"
-	"
+
+	"github.com/cosmos/iavl-bench/bench"
+	"github.com/cosmos/iavl-bench/store-v1"
 )
 
 func main() {

@@ -20,6 +20,7 @@ func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeNames []strin
 			return nil, fmt.Errorf("duplicate store name: %s", name)
 		}
 		storeKeys[name] = types.NewKVStoreKey(name)
+		store.MountStoreWithDB(storeKeys[name], types.StoreTypeIAVL, nil)
 	}
 
 	err := store.LoadLatestVersion()
