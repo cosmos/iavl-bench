@@ -180,7 +180,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	i := 0
 	for version < target {
 		version++
-		err := applyVersion(logger, tree, changesetDir, version, stats)
+		err := applyVersion(logger, tree, changesetDir, params.LoaderParams.TreeDir, version, stats)
 		if err != nil {
 			return fmt.Errorf("error applying version %d: %w", version, err)
 		}
@@ -243,8 +243,8 @@ type totalStats struct {
 	maxDiskUsage uint64
 }
 
-func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64, stats *totalStats) error {
-	dataFilename := dataFilename(dataDir, version)
+func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir string, version int64, stats *totalStats) error {
+	dataFilename := dataFilename(changesetDir, version)
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
 		return fmt.Errorf("error opening changeset file for version %d: %w", version, err)
@@ -295,7 +295,7 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	opsPerSec := float64(i) / duration.Seconds()
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	dirSize, err := getDirSize(dataDir)
+	dirSize := getDirSize(logger, dbDir)
 	if err != nil {
 		return fmt.Errorf("error getting data dir size: %w", err)
 	}
@@ -324,16 +324,22 @@ func applyVersion(logger *slog.Logger, tree Tree, dataDir string, version int64,
 	return nil
 }
 
-func getDirSize(path string) (uint64, error) {
+func getDirSize(logger *slog.Logger, path string) uint64 {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			// we don't want to fail the whole operation if there's an error walking a path
+			// just log it and continue, the files may change in the meantime
+			logger.Warn("error walking path", "path", path, "error", err)
+			return nil
 		}
 		if !info.IsDir() {
 			size += info.Size()
 		}
 		return nil
 	})
-	return uint64(size), err
+	if err != nil {
+		logger.Warn("error getting dir size", "path", path, "error", err)
+	}
+	return uint64(size)
 }

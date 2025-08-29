@@ -10,6 +10,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.7
 	github.com/spf13/cobra v1.7.0
 	github.com/tidwall/btree v1.8.1
+	github.com/tidwall/jsonc v0.3.2
 	google.golang.org/protobuf v1.36.6
 )
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tidwall/jsonc"
 )
 
 type Plan struct {
@@ -29,8 +30,9 @@ type RunPlan struct {
 func main() {
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:  "bench-all [plan-file]",
-		Args: cobra.ExactArgs(1),
+		Use:   "bench-all [plan-file]",
+		Short: "Run all benchmarks in the given JSON/JSONC plan file.",
+		Args:  cobra.ExactArgs(1),
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -41,7 +43,7 @@ func main() {
 		}
 
 		var plan Plan
-		err = json.Unmarshal(bz, &plan)
+		err = json.Unmarshal(jsonc.ToJSON(bz), &plan)
 		if err != nil {
 			return fmt.Errorf("error unmarshaling plan file: %w", err)
 		}
