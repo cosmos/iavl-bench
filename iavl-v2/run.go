@@ -53,8 +53,8 @@ type Options struct {
 	EvictionDepth      int8  `json:"eviction_depth"`
 }
 
-func Run() {
-	bench.Run("iavl/v2", bench.RunConfig{
+func Run(treeType string) {
+	bench.Run(treeType, bench.RunConfig{
 		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			opts := params.TreeOptions.(*Options)

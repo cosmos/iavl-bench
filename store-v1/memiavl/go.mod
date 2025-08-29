@@ -2,19 +2,23 @@ module bench-sdk-store-memiavl
 
 go 1.25.0
 
-require github.com/cosmos/iavl-bench/store-v1 v0.0.0
+require (
+	cosmossdk.io/log v1.6.0
+	github.com/cosmos/iavl-bench/bench v0.0.4
+	github.com/cosmos/iavl-bench/store-v1 v0.0.0
+)
 
 // pinned store version with:
 // go get cosmossdk.io/store@14e9f72d4f340fd3e4575a7deddef96e6b4ac4df
 // from https://github.com/cosmos/cosmos-sdk/pull/25121
-require cosmossdk.io/store v1.10.0-rc.2.0.20250808131834-14e9f72d4f34 // indirect
+require cosmossdk.io/store v1.10.0-rc.2.0.20250808131834-14e9f72d4f34
 
 require (
 	cosmossdk.io/api v0.9.2 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
-	cosmossdk.io/log v1.6.0 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
+	github.com/alitto/pond v1.8.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
@@ -32,8 +36,8 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/cosmos/iavl v1.2.6 // indirect
-	github.com/cosmos/iavl-bench/bench v0.0.4 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
+	github.com/crypto-org-chain/cronos/memiavl v0.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/emicklei/dot v1.8.0 // indirect
@@ -52,6 +56,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/ledgerwatch/erigon-lib v0.0.0-20230210071639-db0e7ed11263 // indirect
 	github.com/linxGnu/grocksdb v1.10.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -72,10 +77,16 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
+	github.com/tidwall/gjson v1.10.2 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/tidwall/tinylru v1.1.0 // indirect
+	github.com/tidwall/wal v1.1.7 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	github.com/zbiljic/go-filelock v0.0.0-20170914061330-1dbf7103ab7d // indirect
 	golang.org/x/arch v0.17.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect

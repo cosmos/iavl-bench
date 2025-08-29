@@ -3,25 +3,38 @@ package store_v1
 import (
 	"fmt"
 
-	"cosmossdk.io/log"
-	"cosmossdk.io/store/metrics"
-	"cosmossdk.io/store/rootmulti"
 	"cosmossdk.io/store/types"
-	db "github.com/cosmos/cosmos-db"
 
 	"github.com/cosmos/iavl-bench/bench"
 )
 
-type storeWrapper struct {
+type CommitMultiStoreWrapper struct {
 	storeKeys map[string]types.StoreKey
-	store     *rootmulti.Store
+	store     types.CommitMultiStore
 }
 
-func (s *storeWrapper) Version() int64 {
+func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeNames []string) (*CommitMultiStoreWrapper, error) {
+	storeKeys := make(map[string]types.StoreKey)
+	for _, name := range storeNames {
+		if _, exists := storeKeys[name]; exists {
+			return nil, fmt.Errorf("duplicate store name: %s", name)
+		}
+		storeKeys[name] = types.NewKVStoreKey(name)
+	}
+
+	err := store.LoadLatestVersion()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load latest version: %w", err)
+	}
+
+	return &CommitMultiStoreWrapper{store: store, storeKeys: storeKeys}, nil
+}
+
+func (s *CommitMultiStoreWrapper) Version() int64 {
 	return s.store.LatestVersion()
 }
 
-func (s *storeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
+func (s *CommitMultiStoreWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	sk, ok := s.storeKeys[storeKey]
 	if !ok {
 		return fmt.Errorf("store key %s not found", storeKey)
@@ -35,42 +48,9 @@ func (s *storeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bo
 	return nil
 }
 
-func (s *storeWrapper) Commit() error {
+func (s *CommitMultiStoreWrapper) Commit() error {
 	_ = s.store.Commit()
 	return nil
 }
 
-var _ bench.Tree = &storeWrapper{}
-
-func Run() {
-	bench.Run("store-v1", bench.RunConfig{
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			dbDir := params.TreeDir
-
-			storeKeys := make(map[string]types.StoreKey)
-			for _, name := range params.StoreNames {
-				storeKeys[name] = types.NewKVStoreKey(name)
-			}
-
-			d, err := db.NewGoLevelDB("bench-store", dbDir, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create db: %w", err)
-			}
-			store := rootmulti.NewStore(d, log.NewNopLogger(), metrics.NewNoOpMetrics())
-
-			for _, sk := range storeKeys {
-				store.MountStoreWithDB(sk, types.StoreTypeIAVL, nil)
-			}
-
-			err = store.LoadLatestVersion()
-			if err != nil {
-				return nil, fmt.Errorf("failed to load latest version: %w", err)
-			}
-
-			return &storeWrapper{
-				storeKeys: storeKeys,
-				store:     store,
-			}, nil
-		},
-	})
-}
+var _ bench.Tree = &CommitMultiStoreWrapper{}
