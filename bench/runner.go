@@ -83,14 +83,17 @@ func Run(treeType string, cfg RunConfig) {
 		}
 
 		// decode db options from json
-		opts := reflect.New(reflect.TypeOf(cfg.OptionsType).Elem()).Interface()
-		if treeOptions != "" {
-			if cfg.OptionsType == nil {
-				return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
-			}
-			err := json.Unmarshal([]byte(treeOptions), opts)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling db-options: %w", err)
+		var opts interface{}
+		if cfg.OptionsType != nil {
+			opts = reflect.New(reflect.TypeOf(cfg.OptionsType).Elem()).Interface()
+			if treeOptions != "" {
+				if cfg.OptionsType == nil {
+					return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
+				}
+				err := json.Unmarshal([]byte(treeOptions), opts)
+				if err != nil {
+					return fmt.Errorf("error unmarshaling db-options: %w", err)
+				}
 			}
 		}
 
