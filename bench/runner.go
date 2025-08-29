@@ -13,6 +13,10 @@ import (
 
 	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
 	"github.com/dustin/go-humanize"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protodelim"
 )
@@ -150,6 +154,27 @@ func run(tree Tree, changesetDir string, params runParams) error {
 	if !ok {
 		return fmt.Errorf("could not read build info")
 	}
+
+	cpuInfo, err := cpu.Info()
+	if err != nil {
+		return fmt.Errorf("could not read cpu info: %w", err)
+	}
+
+	memInfo, err := mem.VirtualMemory()
+	if err != nil {
+		return fmt.Errorf("could not read memory info: %w", err)
+	}
+
+	hostInfo, err := host.Info()
+	if err != nil {
+		return fmt.Errorf("could not read host info: %w", err)
+	}
+
+	diskInfo, err := disk.Usage("/")
+	if err != nil {
+		return fmt.Errorf("could not read disk info: %w", err)
+	}
+
 	logger.Info("starting run",
 		"start_version", version,
 		"target_version", target,
@@ -158,6 +183,10 @@ func run(tree Tree, changesetDir string, params runParams) error {
 		"db_options", params.LoaderParams.TreeOptions,
 		"tree_type", params.TreeType,
 		"build_info", buildInfo.String(),
+		"cpu_info", cpuInfo,
+		"mem_info", memInfo,
+		"host_info", hostInfo,
+		"disk_info", diskInfo,
 	)
 	stats := &totalStats{}
 	i := 0
