@@ -4,6 +4,9 @@ go 1.25.0
 
 require github.com/cosmos/iavl-bench/iavl-v2 v0.0.0
 
+// pinned store version with:
+// go get github.com/cosmos/iavl/v2@8e11ef38d394fb515b88649b734e8bf528fe96ac
+// which is derived from https://github.com/cosmos/iavl/pull/1043
 require github.com/cosmos/iavl/v2 v2.0.0-alpha.5.0.20250829183505-8e11ef38d394 // indirect
 
 require (
