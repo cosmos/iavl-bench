@@ -44,7 +44,14 @@ func main() {
 		}
 
 		logger := slog.Default()
-		resultDir := filepath.Join("runs", time.Now().Format("20060102_150405"))
+
+		resultDir := filepath.Join(".", "runs", time.Now().Format("20060102_150405"))
+		err = os.MkdirAll(resultDir, 0755)
+		if err != nil {
+			return fmt.Errorf("error creating result dir: %w", err)
+		}
+		logger.Info(fmt.Sprintf("writing results to %s", resultDir))
+
 		for _, plan := range plans {
 			runOne(logger, changesetDir, versions, plan, resultDir, dryRun)
 		}
@@ -107,6 +114,8 @@ func runOne(logger *slog.Logger, changesetDir string, versions int64, plan Plan,
 	}
 	defer os.RemoveAll(dir)
 
+	// result dir is one dir above the runner dir
+	resultDir = filepath.Join("..", resultDir)
 	cmd := exec.Command(
 		"go",
 		"run",
