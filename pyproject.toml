@@ -1,0 +1,11 @@
+[project]
+name = "iavl-bench"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "humanfriendly>=10.0",
+    "pandas>=2.3.2",
+    "streamlit>=1.49.0",
+]
