@@ -3,7 +3,6 @@ module bench-sdk-store-memiavl
 go 1.25.0
 
 require (
-	cosmossdk.io/log v1.6.0
 	github.com/cosmos/iavl-bench/bench v0.0.4
 	github.com/cosmos/iavl-bench/store-v1 v0.0.0
 )
@@ -16,6 +15,7 @@ require cosmossdk.io/store v1.10.0-rc.2.0.20250808131834-14e9f72d4f34
 require (
 	cosmossdk.io/api v0.9.2 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
+	cosmossdk.io/log v1.6.1 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/alitto/pond v1.8.3 // indirect

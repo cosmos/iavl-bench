@@ -1,10 +1,10 @@
 package main
 
 import (
-	"cosmossdk.io/log/slog"
 	"github.com/crypto-org-chain/cronos/memiavl"
 
 	"github.com/cosmos/iavl-bench/bench"
+	"github.com/cosmos/iavl-bench/bench/util"
 )
 
 type DBWrapper struct {
@@ -52,6 +52,10 @@ func main() {
 		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			benchmarkOpts := params.TreeOptions.(*Options)
+			logger := util.NewSlogWrapper(params.Logger)
+			// Test the logger directly before passing to memiavl
+			logger.Info("TESTING: memiavl logger before passing to Load", "snapshot_interval", benchmarkOpts.SnapshotInterval)
+
 			opts := memiavl.Options{
 				CreateIfMissing:    true,
 				InitialStores:      params.StoreNames,
@@ -60,7 +64,7 @@ func main() {
 				AsyncCommitBuffer:  benchmarkOpts.AsyncCommitBuffer,
 				ZeroCopy:           benchmarkOpts.ZeroCopy,
 				CacheSize:          benchmarkOpts.CacheSize,
-				Logger:             slog.NewCustomLogger(params.Logger),
+				Logger:             logger,
 			}
 
 			db, err := memiavl.Load(params.TreeDir, opts)

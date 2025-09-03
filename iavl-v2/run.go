@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"reflect"
 
-	"cosmossdk.io/log/slog"
 	"github.com/cosmos/iavl/v2"
 
 	"github.com/cosmos/iavl-bench/bench"
-	"github.com/cosmos/iavl-bench/bench/multitreeutil"
+	"github.com/cosmos/iavl-bench/bench/util"
 )
 
 type MultiTreeWrapper struct {
@@ -45,7 +44,7 @@ func (m *MultiTreeWrapper) Commit() error {
 
 	m.version++
 
-	return multitreeutil.SaveVersion(m.dbDir, m.version)
+	return util.SaveVersion(m.dbDir, m.version)
 }
 
 var _ bench.Tree = &MultiTreeWrapper{}
@@ -61,7 +60,7 @@ func Run(treeType string) {
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			opts := params.TreeOptions.(*Options)
 			dbDir := params.TreeDir
-			version, err := multitreeutil.LoadVersion(dbDir)
+			version, err := util.LoadVersion(dbDir)
 			if err != nil {
 				return nil, err
 			}
@@ -74,7 +73,7 @@ func Run(treeType string) {
 				// set Logger field by reflection (because of version incompatibility)
 				loggerField := reflect.ValueOf(&sqliteOpts).Elem().FieldByName("Logger")
 				if !loggerField.IsZero() {
-					loggerField.Set(reflect.ValueOf(slog.NewCustomLogger(params.Logger)))
+					loggerField.Set(reflect.ValueOf(util.NewSlogWrapper(params.Logger)))
 				}
 				sqlite, err := iavl.NewSqliteDb(nodePool, sqliteOpts)
 				if err != nil {

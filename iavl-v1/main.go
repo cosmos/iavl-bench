@@ -3,13 +3,12 @@ package main
 import (
 	"fmt"
 
-	"cosmossdk.io/log/slog"
 	"github.com/cosmos/iavl"
 	"github.com/cosmos/iavl/db"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 
 	"github.com/cosmos/iavl-bench/bench"
-	"github.com/cosmos/iavl-bench/bench/multitreeutil"
+	"github.com/cosmos/iavl-bench/bench/util"
 )
 
 type MultiTreeWrapper struct {
@@ -46,7 +45,7 @@ func (m *MultiTreeWrapper) Commit() error {
 
 	m.version++
 
-	return multitreeutil.SaveVersion(m.dbDir, m.version)
+	return util.SaveVersion(m.dbDir, m.version)
 }
 
 var _ bench.Tree = &MultiTreeWrapper{}
@@ -55,12 +54,12 @@ func main() {
 	bench.Run("iavl/v1", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			dbDir := params.TreeDir
-			version, err := multitreeutil.LoadVersion(dbDir)
+			version, err := util.LoadVersion(dbDir)
 			if err != nil {
 				return nil, err
 			}
 			trees := make(map[string]*iavl.MutableTree)
-			logger := slog.NewCustomLogger(params.Logger)
+			logger := util.NewSlogWrapper(params.Logger)
 			for _, storeName := range params.StoreNames {
 				d, err := db.NewGoLevelDBWithOpts(storeName, dbDir, &opt.Options{})
 				if err != nil {
