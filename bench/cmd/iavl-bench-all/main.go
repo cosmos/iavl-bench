@@ -14,27 +14,27 @@ import (
 )
 
 type Plan struct {
-	ChangesetDir string    `json:"changeset_dir"`
-	Versions     int64     `json:"versions"`
-	Runs         []RunPlan `json:"runs"`
+	Runs []RunPlan `json:"runs"`
 }
 
 type RunPlan struct {
-	RunName      string          `json:"name"`
-	Runner       string          `json:"runner"`
-	Options      json.RawMessage `json:"options"`
-	ChangesetDir string          `json:"changeset_dir"`
-	Versions     int64           `json:"versions"`
+	RunName string          `json:"name"`
+	Runner  string          `json:"runner"`
+	Options json.RawMessage `json:"options"`
 }
 
 func main() {
 	var dryRun bool
+	var changesetDir string
+	var versions int64
 	cmd := &cobra.Command{
 		Use:   "bench-all [plan-file]",
 		Short: "Run all benchmarks in the given JSON/JSONC plan file.",
 		Args:  cobra.ExactArgs(1),
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
+	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing changesets.")
+	cmd.Flags().Int64Var(&versions, "target-version", 0, "If non-zero, the target version to run the benchmarks against.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		planFile := args[0]
 		bz, err := os.ReadFile(planFile)
@@ -50,7 +50,7 @@ func main() {
 
 		logger := slog.Default()
 
-		resultDir := filepath.Join(filepath.Dir(planFile), time.Now().Format("20060102_150405"))
+		resultDir := filepath.Join(filepath.Dir(planFile), fmt.Sprintf("run-%s", time.Now().Format("20060102_150405")))
 		resultDir, err = filepath.Abs(resultDir)
 		if err != nil {
 			return fmt.Errorf("error getting absolute path of result dir: %w", err)
@@ -65,14 +65,7 @@ func main() {
 		}
 
 		for _, run := range plan.Runs {
-			// fill in defaults from plan
-			if run.ChangesetDir == "" {
-				run.ChangesetDir = plan.ChangesetDir
-			}
-			if run.Versions == 0 {
-				run.Versions = plan.Versions
-			}
-			runOne(logger, run, resultDir, dryRun)
+			runOne(logger, run, changesetDir, versions, resultDir, dryRun)
 		}
 
 		return nil
@@ -82,7 +75,7 @@ func main() {
 	}
 }
 
-func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
+func runOne(logger *slog.Logger, plan RunPlan, changesetDir string, versions int64, resultDir string, dryRun bool) {
 	bz, err := json.Marshal(plan)
 	if err != nil {
 		logger.Error("error marshaling plan", "error", err)
@@ -99,7 +92,7 @@ func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
 	args := []string{
 		"bench",
 		"--changeset-dir",
-		plan.ChangesetDir,
+		changesetDir,
 		"--db-dir",
 		dir,
 		"--log-type",
@@ -112,8 +105,8 @@ func runOne(logger *slog.Logger, plan RunPlan, resultDir string, dryRun bool) {
 		args = append(args, "--db-options", string(plan.Options))
 	}
 
-	if plan.Versions != 0 {
-		args = append(args, "--target-version", fmt.Sprintf("%d", plan.Versions))
+	if versions != 0 {
+		args = append(args, "--target-version", fmt.Sprintf("%d", versions))
 	}
 
 	cmd := exec.Command(plan.Runner, args...)
