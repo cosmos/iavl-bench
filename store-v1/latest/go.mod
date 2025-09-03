@@ -2,14 +2,18 @@ module bench-sdk-store
 
 go 1.25.0
 
-require github.com/cosmos/iavl-bench/store-v1 v0.0.0
+require (
+	cosmossdk.io/log v1.5.1
+	cosmossdk.io/store v1.1.2
+	github.com/cosmos/cosmos-db v1.1.1
+	github.com/cosmos/iavl-bench/bench v0.0.4
+	github.com/cosmos/iavl-bench/store-v1 v0.0.0
+)
 
 require (
 	cosmossdk.io/api v0.9.2 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
-	cosmossdk.io/log v1.5.1 // indirect
 	cosmossdk.io/math v1.5.1 // indirect
-	cosmossdk.io/store v1.1.2 // indirect
 	github.com/DataDog/zstd v1.5.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
@@ -24,11 +28,9 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/cometbft/cometbft v0.38.17 // indirect
-	github.com/cosmos/cosmos-db v1.1.1 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/cosmos/iavl v1.2.0 // indirect
-	github.com/cosmos/iavl-bench/bench v0.0.4 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

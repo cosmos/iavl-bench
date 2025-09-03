@@ -2,12 +2,17 @@ module bench-sdk-store-iavl-v2
 
 go 1.25.0
 
-require github.com/cosmos/iavl-bench/store-v1 v0.0.0
+require (
+	cosmossdk.io/log v1.6.1
+	github.com/cosmos/cosmos-db v1.1.3
+	github.com/cosmos/iavl-bench/bench v0.0.4
+	github.com/cosmos/iavl-bench/store-v1 v0.0.0
+)
 
 // pinned store version with:
 // go get cosmossdk.io/store@1a022151cbf285e04b341732213ad1facd46ceee
 // from https://github.com/cosmos/cosmos-sdk/pull/24960
-require cosmossdk.io/store v1.10.0-rc.2.0.20250829194042-1a022151cbf2 // indirect
+require cosmossdk.io/store v1.10.0-rc.2.0.20250829194042-1a022151cbf2
 
 // this won't work with the latest iavl
 replace github.com/cosmos/iavl v1.3.5 => github.com/cosmos/iavl v1.2.6
@@ -15,7 +20,6 @@ replace github.com/cosmos/iavl v1.3.5 => github.com/cosmos/iavl v1.2.6
 require (
 	cosmossdk.io/api v0.9.2 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
-	cosmossdk.io/log v1.6.1 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/aybabtme/uniplot v0.0.0-20151203143629-039c559e5e7e // indirect
@@ -33,11 +37,9 @@ require (
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
 	github.com/cometbft/cometbft/api v1.1.0-rc1 // indirect
 	github.com/cometbft/cometbft/v2 v2.0.0-rc1 // indirect
-	github.com/cosmos/cosmos-db v1.1.3 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/cosmos/iavl v1.3.5 // indirect
-	github.com/cosmos/iavl-bench/bench v0.0.4 // indirect
 	github.com/cosmos/iavl/v2 v2.0.0-alpha.5.0.20250829183505-8e11ef38d394 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

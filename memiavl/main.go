@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cosmossdk.io/log/slog"
 	"github.com/crypto-org-chain/cronos/memiavl"
 
 	"github.com/cosmos/iavl-bench/bench"
@@ -59,6 +60,7 @@ func main() {
 				AsyncCommitBuffer:  benchmarkOpts.AsyncCommitBuffer,
 				ZeroCopy:           benchmarkOpts.ZeroCopy,
 				CacheSize:          benchmarkOpts.CacheSize,
+				Logger:             slog.NewCustomLogger(params.Logger),
 			}
 
 			db, err := memiavl.Load(params.TreeDir, opts)

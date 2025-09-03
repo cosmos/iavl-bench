@@ -37,6 +37,7 @@ type LoaderParams struct {
 	TreeDir     string
 	TreeOptions interface{}
 	StoreNames  []string
+	Logger      *slog.Logger
 }
 
 type TreeLoader func(params LoaderParams) (Tree, error)
@@ -97,17 +98,6 @@ func Run(treeType string, cfg RunConfig) {
 			}
 		}
 
-		loaderParams := LoaderParams{
-			TreeDir:     treeDir,
-			TreeOptions: opts,
-			StoreNames:  info.StoreNames,
-		}
-
-		tree, err := cfg.TreeLoader(loaderParams)
-		if err != nil {
-			return fmt.Errorf("error loading tree: %w", err)
-		}
-
 		logOut := os.Stdout
 		if logFile != "" {
 			logOut, err = os.Create(logFile)
@@ -133,6 +123,18 @@ func Run(treeType string, cfg RunConfig) {
 		}
 
 		logger := slog.New(handler)
+
+		loaderParams := LoaderParams{
+			TreeDir:     treeDir,
+			TreeOptions: opts,
+			StoreNames:  info.StoreNames,
+			Logger:      logger.With("module", treeType),
+		}
+
+		tree, err := cfg.TreeLoader(loaderParams)
+		if err != nil {
+			return fmt.Errorf("error loading tree: %w", err)
+		}
 
 		return run(tree, changesetDir, runParams{
 			TreeType:      treeType,
