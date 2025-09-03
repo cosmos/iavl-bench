@@ -15,24 +15,26 @@ all_names = [d.name for d in data]
 
 st.title('Benchmark Results Visualization')
 
-# Show table and bar charts of all summary data
-st.header('Summary Data')
+summaries = [d.summary for d in data if d.summary is not None]
+if len(summaries) != 0:
+    # Show table and bar charts of all summary data
+    st.header('Summary Data')
 
-summary_df = pandas.DataFrame([d.summary for d in data])
-summary_df.index = all_names
-tab1, tab2, tab3, tab4 = st.tabs(['Summary', 'Ops/sec', 'Max Mem (GB)', 'Max Disk (GB)'])
+    summary_df = pandas.DataFrame(summaries)
+    summary_df.index = [d.name for d in data if d.summary is not None]
+    tab1, tab2, tab3, tab4 = st.tabs(['Summary', 'Ops/sec', 'Max Mem (GB)', 'Max Disk (GB)'])
 
-with tab1:
-    st.dataframe(summary_df)
+    with tab1:
+        st.dataframe(summary_df)
 
-with tab2:
-    st.bar_chart(summary_df, y='ops_per_sec', stack=False)
+    with tab2:
+        st.bar_chart(summary_df, y='ops_per_sec', stack=False)
 
-with tab3:
-    st.bar_chart(summary_df, y='max_mem_gb', stack=False)
+    with tab3:
+        st.bar_chart(summary_df, y='max_mem_gb', stack=False)
 
-with tab4:
-    st.bar_chart(summary_df, y='max_disk_gb', stack=False)
+    with tab4:
+        st.bar_chart(summary_df, y='max_disk_gb', stack=False)
 
 # Show line charts for ops_per_sec, mem_sys, disk_usage over versions for each benchmark
 st.header('Performance Over Time')
@@ -61,3 +63,6 @@ with tab3:
 
 st.text(f'Showing data from {len(data)} benchmark logs in {Path(benchmark_dir).absolute()}')
 
+for d in data:
+    st.markdown(f'#### {d.name}')
+    st.markdown(f'* Versions: {len(d.versions)}')

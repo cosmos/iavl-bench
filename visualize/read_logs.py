@@ -1,6 +1,8 @@
 """Utility for parsing benchmark logs in .jsonl files for visualizing results."""
 import json
 from dataclasses import dataclass
+from typing import Optional
+
 import humanfriendly
 import os
 
@@ -46,7 +48,7 @@ class VersionLog:
 @dataclass
 class BenchmarkData:
     name: str
-    summary: BenchmarkSummary
+    summary: Optional[BenchmarkSummary]
     versions: list[VersionLog]
 
 
@@ -58,10 +60,10 @@ def select_rows(msg: str, rows: list[dict]) -> list[dict]:
     return res
 
 
-def select_one(msg: str, rows: list[dict]) -> dict:
+def select_one(msg: str, rows: list[dict]) -> Optional[dict]:
     rows = select_rows(msg, rows)
     if len(rows) == 0:
-        raise ValueError(f'No rows found for msg: {msg}')
+        return None
     if len(rows) == 1:
         return rows[0]
     raise ValueError(f'Multiple rows found for msg: {msg}')
@@ -77,7 +79,8 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     """ Load a benchmark log from a .jsonl file. """
     name = os.path.basename(path).removesuffix('.jsonl')
     rows = read_log(path)
-    summary = BenchmarkSummary.from_dict(select_one('benchmark run complete', rows))
+    summary_row = select_one('benchmark run complete', rows)
+    summary = BenchmarkSummary.from_dict(summary_row) if summary_row else None
     versions = [VersionLog.from_dict(row) for row in select_rows('committed version', rows)]
     return BenchmarkData(name=name, summary=summary, versions=versions)
 
