@@ -1,4 +1,5 @@
 install:
+	cd bench && go install ./cmd/gen-changesets
 	cd bench && go install ./cmd/iavl-bench-all
 	cd iavl-v0 && go install .
 	cd iavl-v1 && go install .

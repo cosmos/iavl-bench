@@ -9,13 +9,6 @@ import (
 	"github.com/cosmos/iavl-bench/bench"
 )
 
-//func GetDefaultGenerators() []bench.StoreParams {
-//	gens := bench.OsmoLikeGenerators()
-//	gens = append(gens, bench.StakingLikeGenerator(0, 1_000_000))
-//	gens = append(gens, bench.LockupLikeGenerator(1, 1_000_000))
-//	return gens
-//}
-
 func SmallGenerators() []bench.StoreParams {
 	gens := []bench.StoreParams{
 		bench.BankLikeGenerator(200_000),

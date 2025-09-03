@@ -2,7 +2,9 @@ package iavl_v2
 
 import (
 	"fmt"
+	"reflect"
 
+	"cosmossdk.io/log/slog"
 	"github.com/cosmos/iavl/v2"
 
 	"github.com/cosmos/iavl-bench/bench"
@@ -68,6 +70,11 @@ func Run(treeType string) {
 			for _, storeName := range params.StoreNames {
 				sqliteOpts := iavl.SqliteDbOptions{
 					Path: fmt.Sprintf("%s/%s", dbDir, storeName),
+				}
+				// set Logger field by reflection (because of version incompatibility)
+				loggerField := reflect.ValueOf(&sqliteOpts).Elem().FieldByName("Logger")
+				if !loggerField.IsZero() {
+					loggerField.Set(reflect.ValueOf(slog.NewCustomLogger(params.Logger)))
 				}
 				sqlite, err := iavl.NewSqliteDb(nodePool, sqliteOpts)
 				if err != nil {

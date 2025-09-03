@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/slog"
 	"cosmossdk.io/store/cronos/rootmulti"
 
 	"github.com/cosmos/iavl-bench/bench"
@@ -11,7 +11,12 @@ import (
 func main() {
 	bench.Run("store-memiavl", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			store := rootmulti.NewStore(params.TreeDir, log.NewNopLogger(), false, false)
+			store := rootmulti.NewStore(
+				params.TreeDir,
+				slog.NewCustomLogger(params.Logger),
+				false,
+				false,
+			)
 			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreNames)
 		},
 	})

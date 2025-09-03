@@ -53,6 +53,7 @@ func OsmoLikeGenerators() []StoreParams {
 	bankGen.InitialSize = initialSize
 	bankGen.FinalSize = finalSize
 	bankGen2 := BankLikeGenerator(versions)
+	bankGen2.StoreKey = "bank2"
 	bankGen2.InitialSize = initialSize
 	bankGen2.FinalSize = finalSize
 

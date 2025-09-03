@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/slog"
 	"cosmossdk.io/store/iavl2"
 	"cosmossdk.io/store/metrics"
 	"cosmossdk.io/store/rootmulti"
@@ -20,7 +20,7 @@ func main() {
 			if err != nil {
 				return nil, fmt.Errorf("failed to create db: %w", err)
 			}
-			store := rootmulti.NewStore(d, log.NewNopLogger(), metrics.NewNoOpMetrics())
+			store := rootmulti.NewStore(d, slog.NewCustomLogger(params.Logger), metrics.NewNoOpMetrics())
 			store.EnableIAVLV2(&iavl2.Config{
 				Path: params.TreeDir,
 			})

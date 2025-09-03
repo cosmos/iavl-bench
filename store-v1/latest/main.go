@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/slog"
 	"cosmossdk.io/store/metrics"
 	"cosmossdk.io/store/rootmulti"
 	db "github.com/cosmos/cosmos-db"
@@ -19,7 +19,7 @@ func main() {
 			if err != nil {
 				return nil, fmt.Errorf("failed to create db: %w", err)
 			}
-			store := rootmulti.NewStore(d, log.NewNopLogger(), metrics.NewNoOpMetrics())
+			store := rootmulti.NewStore(d, slog.NewCustomLogger(params.Logger), metrics.NewNoOpMetrics())
 			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreNames)
 		},
 	})
