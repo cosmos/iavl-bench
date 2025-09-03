@@ -234,6 +234,25 @@ func captureSystemInfo(logger *slog.Logger) {
 		"host_info", hostInfo,
 		"disk_info", diskInfo,
 	)
+
+	// capture initial disk IO state
+	initialDiskCounters, err := disk.IOCounters()
+	if err != nil {
+		logger.Warn("could not read initial disk io counters", "error", err)
+	} else {
+		logger.Debug("initial disk io counters", "disk_io_counters", initialDiskCounters)
+	}
+
+	// initialize CPU tracking - first call establishes baseline
+	initialCPUTimes, err := cpu.Times(true)
+	if err != nil {
+		logger.Warn("could not read initial cpu times", "error", err)
+	} else {
+		logger.Debug("initial cpu times", "cpu_times", initialCPUTimes)
+	}
+
+	// call cpu.Percent to establish baseline for subsequent calls
+	_, _ = cpu.Percent(0, true)
 }
 
 type totalStats struct {
@@ -293,12 +312,29 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 
 	duration := time.Since(startTime)
 	opsPerSec := float64(i) / duration.Seconds()
+
+	// get mem stats
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	dirSize := getDirSize(logger, dbDir)
+
+	// get cpu utilization data
+	cpuPercents, err := cpu.Percent(0, true)
 	if err != nil {
-		return fmt.Errorf("error getting data dir size: %w", err)
+		logger.Warn("could not read cpu percent", "error", err)
 	}
+
+	cpuTimes, err := cpu.Times(true)
+	if err != nil {
+		logger.Warn("could not read cpu times", "error", err)
+	}
+
+	// get disk usage and io stats
+	dirSize := getDirSize(logger, dbDir)
+	diskIOCounters, err := disk.IOCounters()
+	if err != nil {
+		logger.Warn("could not read disk io counters", "error", err)
+	}
+
 	logger.Info(
 		"committed version",
 		"version", version,
@@ -311,6 +347,8 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 		"disk_usage", humanize.Bytes(dirSize),
 	)
 	logger.Debug("full mem stats", "mem_stats", memStats)
+	logger.Debug("disk io counters", "disk_io_counters", diskIOCounters)
+	logger.Debug("cpu utilization", "cpu_percents", cpuPercents, "cpu_times", cpuTimes)
 
 	stats.totalOps += uint64(i)
 	stats.totalTime += duration
