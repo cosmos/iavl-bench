@@ -161,6 +161,13 @@ type runParams struct {
 }
 
 func run(tree Tree, changesetDir string, params runParams) error {
+	// capture exceptions and log stack trace
+	defer func() {
+		if r := recover(); r != nil {
+			params.Logger.Error("panic occurred", "error", r, "stack", string(debug.Stack()))
+		}
+	}()
+
 	logger := params.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -341,6 +348,7 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 		"committed version",
 		"version", version,
 		"duration", duration,
+		"count", i,
 		"ops_per_sec", opsPerSec,
 		"mem_allocs", humanize.Bytes(memStats.Alloc),
 		"mem_sys", humanize.Bytes(memStats.Sys),
@@ -348,9 +356,13 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 		"mem_num_gc", memStats.NumGC,
 		"disk_usage", humanize.Bytes(dirSize),
 	)
-	logger.Debug("full mem stats", "mem_stats", memStats)
-	logger.Debug("disk io counters", "disk_io_counters", diskIOCounters)
-	logger.Debug("cpu utilization", "cpu_percents", cpuPercents, "cpu_times", cpuTimes)
+	logger.Debug("full post-commit stats",
+		"mem_stats", memStats,
+		"cpu_percents", cpuPercents,
+		"cpu_times", cpuTimes,
+		"disk_io_counters", diskIOCounters,
+		"version", version,
+	)
 
 	stats.totalOps += uint64(i)
 	stats.totalTime += duration
