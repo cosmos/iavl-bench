@@ -8,3 +8,4 @@ install:
 	cd store-v1/iavl-v2 && go install .
 	cd store-v1/memiavl && go install .
 
+PHONY: install

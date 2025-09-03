@@ -1,0 +1,1 @@
+BENCHMARK_RESULTS=$1 uv run streamlit run visualize/dashboard.py

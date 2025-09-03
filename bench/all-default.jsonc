@@ -1,0 +1,32 @@
+{
+  "runs": [
+    {
+      "name": "iavl-v2-alpha5",
+      "runner": "bench-iavl-v2-alpha5"
+    },
+    {
+      "name": "iavl-v2-alpha6",
+      "runner": "bench-iavl-v2-alpha6"
+    },
+    {
+      "name": "memiavl",
+      "runner": "bench-memiavl"
+    },
+    {
+      "name": "store",
+      "runner": "bench-sdk-store"
+    },
+    {
+      "name": "store-memiavl",
+      "runner": "bench-sdk-store-memiavl"
+    },
+    {
+      "name": "store-iavl-v2",
+      "runner": "bench-sdk-store-iavl-v2"
+    },
+    {
+      "name": "iavl-v1",
+      "runner": "bench-iavl-v1"
+    }
+  ]
+}
