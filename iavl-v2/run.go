@@ -72,7 +72,7 @@ func Run(treeType string) {
 				}
 				// set Logger field by reflection (because of version incompatibility)
 				loggerField := reflect.ValueOf(&sqliteOpts).Elem().FieldByName("Logger")
-				if !loggerField.IsZero() {
+				if loggerField.IsValid() {
 					loggerField.Set(reflect.ValueOf(util.NewSlogWrapper(params.Logger)))
 				}
 				sqlite, err := iavl.NewSqliteDb(nodePool, sqliteOpts)
