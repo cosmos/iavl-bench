@@ -1,5 +1,5 @@
 // Package multitreeutil provides utility functions for managing version information in a multitree database directory.
-package multitreeutil
+package util
 
 import (
 	"encoding/json"
