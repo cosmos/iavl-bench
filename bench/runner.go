@@ -74,13 +74,13 @@ func Run(treeType string, cfg RunConfig) {
 			return fmt.Errorf("changeset-dir is required")
 		}
 
-		info, err := readInfoFile(changesetDir)
+		changesetInfo, err := readChangesetInfo(changesetDir)
 		if err != nil {
 			return fmt.Errorf("error reading changeset info file: %w", err)
 		}
 
 		if targetVersion <= 0 {
-			targetVersion = info.Versions
+			targetVersion = changesetInfo.Versions
 		}
 
 		// decode db options from json
@@ -127,7 +127,7 @@ func Run(treeType string, cfg RunConfig) {
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: opts,
-			StoreNames:  info.StoreNames,
+			StoreNames:  changesetInfo.StoreNames,
 			Logger:      logger.With("module", treeType),
 		}
 
@@ -136,7 +136,7 @@ func Run(treeType string, cfg RunConfig) {
 			return fmt.Errorf("error loading tree: %w", err)
 		}
 
-		return run(tree, changesetDir, runParams{
+		return run(tree, changesetDir, changesetInfo, runParams{
 			TreeType:      treeType,
 			TargetVersion: targetVersion,
 			Logger:        logger,
@@ -160,7 +160,7 @@ type runParams struct {
 	TreeType      string
 }
 
-func run(tree Tree, changesetDir string, params runParams) error {
+func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params runParams) error {
 	// capture exceptions and log stack trace
 	defer func() {
 		if r := recover(); r != nil {
@@ -178,6 +178,7 @@ func run(tree Tree, changesetDir string, params runParams) error {
 		"start_version", version,
 		"target_version", target,
 		"changeset_dir", changesetDir,
+		"changeset_info", changesetInfo,
 		"db_dir", params.LoaderParams.TreeDir,
 		"db_options", params.LoaderParams.TreeOptions,
 		"tree_type", params.TreeType,
@@ -272,7 +273,7 @@ type totalStats struct {
 }
 
 func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir string, version int64, stats *totalStats) error {
-	dataFilename := dataFilename(changesetDir, version)
+	dataFilename := changesetDataFilename(changesetDir, version)
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
 		return fmt.Errorf("error opening changeset file for version %d: %w", version, err)
