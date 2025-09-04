@@ -45,8 +45,8 @@ func StakingLikeGenerator(versions int64) StoreParams {
 	}
 }
 
-func OsmoLikeGenerators() []StoreParams {
-	initialSize := 20_000_000
+func OsmoLikeGenerators(scale float64) []StoreParams {
+	initialSize := int(20_000_000 * scale)
 	finalSize := int(1.5 * float64(initialSize))
 	var versions int64 = 1_000_000
 	bankGen := BankLikeGenerator(versions)
