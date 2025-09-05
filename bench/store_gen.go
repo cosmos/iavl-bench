@@ -10,7 +10,7 @@ func BankLikeGenerator(versions int64, scale float64) StoreParams {
 		InitialSize:      35_000,
 		FinalSize:        int(float64(2_200_200) * scale),
 		Versions:         versions,
-		ChangePerVersion: int(int64(368_000_000) / versions),
+		ChangePerVersion: 1840,
 		DeleteFraction:   0.25,
 	}
 }
@@ -25,7 +25,7 @@ func LockupLikeGenerator(versions int64, scale float64) StoreParams {
 		InitialSize:      35_000,
 		FinalSize:        int(float64(2_600_200) * scale),
 		Versions:         versions,
-		ChangePerVersion: int(int64(72_560_000) / versions),
+		ChangePerVersion: 363,
 		DeleteFraction:   0.29,
 	}
 }
@@ -40,7 +40,7 @@ func StakingLikeGenerator(versions int64, scale float64) StoreParams {
 		InitialSize:      35_000,
 		FinalSize:        int(float64(1_600_696) * scale),
 		Versions:         versions,
-		ChangePerVersion: int(int64(60_975_465) / versions),
+		ChangePerVersion: 305,
 		DeleteFraction:   0.25,
 	}
 }
