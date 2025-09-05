@@ -1,6 +1,6 @@
 package bench
 
-func BankLikeGenerator(versions int64) StoreParams {
+func BankLikeGenerator(versions int64, scale float64) StoreParams {
 	return StoreParams{
 		StoreKey:         "bank",
 		KeyMean:          56,
@@ -8,14 +8,14 @@ func BankLikeGenerator(versions int64) StoreParams {
 		ValueMean:        100,
 		ValueStdDev:      1200,
 		InitialSize:      35_000,
-		FinalSize:        2_200_200,
+		FinalSize:        int(float64(2_200_200) * scale),
 		Versions:         versions,
 		ChangePerVersion: int(int64(368_000_000) / versions),
 		DeleteFraction:   0.25,
 	}
 }
 
-func LockupLikeGenerator(versions int64) StoreParams {
+func LockupLikeGenerator(versions int64, scale float64) StoreParams {
 	return StoreParams{
 		StoreKey:         "lockup",
 		KeyMean:          56,
@@ -23,14 +23,14 @@ func LockupLikeGenerator(versions int64) StoreParams {
 		ValueMean:        1936,
 		ValueStdDev:      29261,
 		InitialSize:      35_000,
-		FinalSize:        2_600_200,
+		FinalSize:        int(float64(2_600_200) * scale),
 		Versions:         versions,
 		ChangePerVersion: int(int64(72_560_000) / versions),
 		DeleteFraction:   0.29,
 	}
 }
 
-func StakingLikeGenerator(versions int64) StoreParams {
+func StakingLikeGenerator(versions int64, scale float64) StoreParams {
 	return StoreParams{
 		StoreKey:         "staking",
 		KeyMean:          24,
@@ -38,7 +38,7 @@ func StakingLikeGenerator(versions int64) StoreParams {
 		ValueMean:        12263,
 		ValueStdDev:      22967,
 		InitialSize:      35_000,
-		FinalSize:        1_600_696,
+		FinalSize:        int(float64(1_600_696) * scale),
 		Versions:         versions,
 		ChangePerVersion: int(int64(60_975_465) / versions),
 		DeleteFraction:   0.25,
@@ -49,10 +49,10 @@ func OsmoLikeGenerators(scale float64) []StoreParams {
 	initialSize := int(20_000_000 * scale)
 	finalSize := int(1.5 * float64(initialSize))
 	var versions int64 = 1_000_000
-	bankGen := BankLikeGenerator(versions)
+	bankGen := BankLikeGenerator(versions, scale)
 	bankGen.InitialSize = initialSize
 	bankGen.FinalSize = finalSize
-	bankGen2 := BankLikeGenerator(versions)
+	bankGen2 := BankLikeGenerator(versions, scale)
 	bankGen2.StoreKey = "bank2"
 	bankGen2.InitialSize = initialSize
 	bankGen2.FinalSize = finalSize

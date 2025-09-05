@@ -9,12 +9,11 @@ import (
 	"github.com/cosmos/iavl-bench/bench"
 )
 
-func MixedGenerators(actualVersions int64, scale float64) []bench.StoreParams {
-	versions := int64(float64(actualVersions) * scale)
+func MixedGenerators(versions int64, scale float64) []bench.StoreParams {
 	gens := []bench.StoreParams{
-		bench.BankLikeGenerator(versions),
-		bench.StakingLikeGenerator(versions),
-		bench.LockupLikeGenerator(versions),
+		bench.BankLikeGenerator(versions, scale),
+		bench.StakingLikeGenerator(versions, scale),
+		bench.LockupLikeGenerator(versions, scale),
 	}
 	return gens
 }
@@ -30,11 +29,8 @@ func main() {
 	}
 	cmd.Flags().Int64Var(&versions, "versions", 100, "number of versions to generate")
 	cmd.Flags().StringVar(&profile, "profile", "mixed", "data generation profile to use (mixed|osmo); default is small")
-	cmd.Flags().Float64Var(&scale, "scale", 1.0, "scale factor for the profile in the interval (0.0,1.0]; default is 1.0")
+	cmd.Flags().Float64Var(&scale, "scale", 1.0, "float64 scale factor for the profile; default is 1.0")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if scale <= 0.0 || scale > 1.0 {
-			return fmt.Errorf("scale must be in the interval (0.0,1.0], got %f", scale)
-		}
 		var gens []bench.StoreParams
 		switch profile {
 		case "mixed":
