@@ -6,6 +6,8 @@ install:
 	cd iavl-v2/alpha5 && go install .
 	cd iavl-v2/alpha6 && go install .
 	cd memiavl && go install .
+	cd memiavl/thread-safe && go install .
+	cd memiavl/query-thread-safe && go install .
 	cd store-v1/latest && go install .
 	cd store-v1/iavl-v2 && go install .
 	cd store-v1/memiavl && go install .

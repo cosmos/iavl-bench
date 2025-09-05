@@ -1,17 +1,12 @@
-module bench-memiavl
+module bench-memiavl-qts
 
-go 1.24.0
+go 1.25.0
 
-toolchain go1.24.2
-
-require (
-	cosmossdk.io/log v1.6.1
-	github.com/cosmos/iavl-bench/bench v0.0.4
-	github.com/crypto-org-chain/cronos/memiavl v0.1.0
-)
+require bench-memiavl v0.0.0
 
 require (
 	cosmossdk.io/api v0.9.2 // indirect
+	cosmossdk.io/log v1.6.1 // indirect
 	github.com/DataDog/zstd v1.5.5 // indirect
 	github.com/alitto/pond v1.8.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -29,7 +24,9 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/cosmos/iavl v1.2.0 // indirect
+	github.com/cosmos/iavl-bench/bench v0.0.4 // indirect
 	github.com/cosmos/ics23/go v0.10.0 // indirect
+	github.com/crypto-org-chain/cronos/memiavl v0.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/emicklei/dot v1.6.1 // indirect
@@ -84,5 +81,8 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 )
 
-replace github.com/cosmos/iavl-bench/bench => ../bench
-//replace github.com/crypto-org-chain/cronos/memiavl => ../../../misc/cronos/memiavl
+replace bench-memiavl => ../
+
+replace github.com/cosmos/iavl-bench/bench => ../../bench
+
+replace github.com/crypto-org-chain/cronos/memiavl => github.com/aaronc/cronos/memiavl v0.0.0-20250905184605-2b2097b3555c
