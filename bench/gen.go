@@ -65,10 +65,13 @@ func GenerateChangesets(g TreeParams, outDir string) error {
 	}
 
 	multiStoreState := map[string]*storeState{}
+	storeNames := make([]string, 0, len(g.StoreParams))
 	for _, gen := range g.StoreParams {
 		multiStoreState[gen.StoreKey] = newStoreState(gen)
 		fmt.Printf("Store %s params: %+v\n", gen.StoreKey, gen)
+		storeNames = append(storeNames, gen.StoreKey)
 	}
+
 	version := int64(1)
 	rng := rand.New(g.RandSource)
 	for ; version <= g.Versions; version++ {
@@ -99,18 +102,19 @@ func GenerateChangesets(g TreeParams, outDir string) error {
 		}
 
 		fmt.Printf("Wrote changeset for version %d to %s\n", version, filename)
+
+		// write changeset info file each iteration to ensure it is always present in case we stop or fail midway
+		err = writeChangesetInfo(outDir, changesetInfo{
+			Versions:    g.Versions,
+			StoreNames:  storeNames,
+			StoreParams: g.StoreParams,
+		})
+		if err != nil {
+			return fmt.Errorf("error writing changeset info file: %w", err)
+		}
 	}
 
-	// write info file
-	stores := make([]string, 0, len(multiStoreState))
-	for storeKey := range multiStoreState {
-		stores = append(stores, storeKey)
-	}
-	return writeChangesetInfo(outDir, changesetInfo{
-		Versions:    g.Versions,
-		StoreNames:  stores,
-		StoreParams: g.StoreParams,
-	})
+	return nil
 }
 
 type storeState struct {
