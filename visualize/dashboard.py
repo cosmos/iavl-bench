@@ -1,6 +1,8 @@
 import os
+import plistlib
 from pathlib import Path
 
+import polars
 import streamlit as st
 import pandas
 from read_logs import load_benchmark_dir
@@ -50,21 +52,21 @@ data = [d for d in data if d.name in names]
 # For now truncate all data to the shortest length
 min_versions = min(len(d.versions) for d in data)
 for d in data:
-    d.versions = d.versions[:min_versions]
+    d.versions_df = d.versions_df.head(min_versions)
 
 tab1, tab2, tab3 = st.tabs(['Ops/sec', 'Memory', 'Disk Usage'])
 
 with tab1:
-    ops_per_sec_df = pandas.DataFrame({d.name: [v.ops_per_sec for v in d.versions] for d in data})
+    ops_per_sec_df = polars.DataFrame({d.name: d.versions_df.select('ops_per_sec').to_series() for d in data})
     st.line_chart(ops_per_sec_df, x_label='version', y_label='ops/sec')
 
 with tab2:
-    mem_sys_df = pandas.DataFrame({d.name: [v.mem_sys / 1_000_000 for v in d.versions] for d in data})
-    st.line_chart(mem_sys_df, x_label='version', y_label='mem (MB)')
+    mem_df = polars.DataFrame({d.name: d.versions_df.select('heap_in_use').to_series() / 1000000000 for d in data})
+    st.line_chart(mem_df, x_label='version', y_label='mem (GB)')
 
 with tab3:
-    disk_usage_df = pandas.DataFrame({d.name: [v.disk_usage / 1_000_000 for v in d.versions] for d in data})
-    st.line_chart(disk_usage_df, x_label='version', y_label='disk usage (MB)')
+    disk_df = polars.DataFrame({d.name: d.versions_df.select('disk_usage').to_series() / 1000000000 for d in data})
+    st.line_chart(disk_df, x_label='version', y_label='disk (GB)')
 
 st.text(f'Showing data from {len(data)} benchmark logs in {Path(benchmark_dir).absolute()}')
 
@@ -77,11 +79,11 @@ for d in data:
             st.markdown(f'* Changeset Dir: `{changeset_dir}`')
         if 'start_version' in d.init_data:
             start_version = d.init_data['start_version']
-            if start_version != 0 :
+            if start_version != 0:
                 st.markdown(f'* Start Version: `{start_version}`')
         if 'target_version' in d.init_data:
             target_version = d.init_data['target_version']
-            if target_version != 0 :
+            if target_version != 0:
                 st.markdown(f'* Target Version: `{target_version}`')
         if 'db_options' in d.init_data:
             db_options = d.init_data['db_options']
@@ -91,4 +93,3 @@ for d in data:
             changeset_info = d.init_data['changeset_info']
             st.markdown(f'* Changeset Info:')
             st.json(changeset_info, expanded=False)
-

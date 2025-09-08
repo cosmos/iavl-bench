@@ -6,8 +6,9 @@ from typing import Optional, Generator
 
 import humanfriendly
 import os
+
+import polars
 import pydantic
-import polars as pl
 
 
 @dataclass
@@ -35,6 +36,8 @@ class FullVersionStats(pydantic.BaseModel):
 @dataclass
 class VersionLog:
     version: int
+    duration: float
+    count: int
     ops_per_sec: float
     mem_allocs: int
     mem_sys: int
@@ -47,6 +50,8 @@ class VersionLog:
     def from_dict(d: dict) -> 'VersionLog':
         return VersionLog(
             version=d['version'],
+            duration=d['duration'],
+            count=d['count'],
             ops_per_sec=d['ops_per_sec'],
             mem_allocs=humanfriendly.parse_size(d['mem_allocs']),
             mem_sys=humanfriendly.parse_size(d['mem_sys']),
@@ -56,6 +61,17 @@ class VersionLog:
             full_stats=None,
         )
 
+    def to_data_row(self) -> dict:
+        return {
+            'version': self.version,
+            'duration': self.duration,
+            'count': self.count,
+            'ops_per_sec': self.ops_per_sec,
+            'disk_usage': self.disk_usage,
+            'heap_sys': self.full_stats.mem_stats.get('HeapSys') if self.full_stats else None,
+            'heap_in_use': self.mem_heap_in_use,
+        }
+
 
 @dataclass
 class BenchmarkData:
@@ -63,29 +79,7 @@ class BenchmarkData:
     init_data: Optional[dict]
     summary: Optional[BenchmarkSummary]
     versions: list[VersionLog]
-
-
-def select_rows(msg: str, rows: list[dict]) -> list[dict]:
-    res = []
-    for row in rows:
-        if row.get('msg') == msg:
-            res.append(row)
-    return res
-
-
-def select_one(msg: str, rows: list[dict]) -> Optional[dict]:
-    rows = select_rows(msg, rows)
-    if len(rows) == 0:
-        return None
-    if len(rows) == 1:
-        return rows[0]
-    raise ValueError(f'Multiple rows found for msg: {msg}')
-
-
-def read_log(path: str) -> list[dict]:
-    with open(path, 'r') as f:
-        lines = f.readlines()
-    return [json.loads(line) for line in lines]
+    versions_df: polars.DataFrame
 
 
 def row_iterator(path: str) -> Generator[dict, None, None]:
@@ -96,7 +90,7 @@ def row_iterator(path: str) -> Generator[dict, None, None]:
 
 def load_benchmark_log(path: str) -> BenchmarkData:
     name = os.path.basename(path).removesuffix('.jsonl')
-    data = BenchmarkData(name=name, summary=None, versions=[], init_data=None)
+    data = BenchmarkData(name=name, summary=None, versions=[], init_data=None, versions_df=polars.DataFrame())
     for row in row_iterator(path):
         msg = row.get('msg')
         if msg == 'starting run':
@@ -111,18 +105,9 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                 raise ValueError(f'Full stats for version {version} found before version log')
             full_stats = FullVersionStats.model_validate(row)
             data.versions[version - 1].full_stats = full_stats
+    data.versions_df = polars.DataFrame([v.to_data_row() for v in data.versions])
     return data
 
-
-# def load_benchmark_log(path: str) -> BenchmarkData:
-#     """ Load a benchmark log from a .jsonl file. """
-#     name = os.path.basename(path).removesuffix('.jsonl')
-#     rows = read_log(path)
-#     init_row = select_one('starting run', rows)
-#     summary_row = select_one('benchmark run complete', rows)
-#     summary = BenchmarkSummary.from_dict(summary_row) if summary_row else None
-#     versions = [VersionLog.from_dict(row) for row in select_rows('committed version', rows)]
-#     return BenchmarkData(name=name, summary=summary, versions=versions, init_data=init_row)
 
 def load_benchmark_dir(path: str) -> list[BenchmarkData]:
     path = Path(path)
