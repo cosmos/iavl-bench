@@ -161,17 +161,18 @@ type runParams struct {
 }
 
 func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params runParams) error {
-	// capture exceptions and log stack trace
-	defer func() {
-		if r := recover(); r != nil {
-			params.Logger.Error("panic occurred", "error", r, "stack", string(debug.Stack()))
-		}
-	}()
-
 	logger := params.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
+
+	// capture exceptions and log stack trace
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("panic occurred", "error", r, "stack", string(debug.Stack()))
+		}
+	}()
+
 	version := tree.Version()
 	target := params.TargetVersion
 	logger.Info("starting run",

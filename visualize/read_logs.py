@@ -67,9 +67,9 @@ class VersionLog:
             'duration': self.duration,
             'count': self.count,
             'ops_per_sec': self.ops_per_sec,
-            'disk_usage': self.disk_usage,
-            'heap_sys': self.full_stats.mem_stats.get('HeapSys') if self.full_stats else None,
-            'heap_in_use': self.mem_heap_in_use,
+            'disk_usage_gb': self.disk_usage / 1_000_000_000,
+            'mem_gb': self.full_stats.mem_stats.get('HeapAlloc') / 1_000_000_000 if self.full_stats else None,
+            'disk_io': self.full_stats.disk_io_counters.get('vda').get('writeBytes') if self.full_stats else None,
         }
 
 
