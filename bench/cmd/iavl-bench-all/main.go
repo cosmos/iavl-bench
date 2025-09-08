@@ -82,7 +82,8 @@ func runOne(logger *slog.Logger, plan RunPlan, changesetDir string, versions int
 		return
 	}
 	logger.Info("starting run", "run_plan", string(bz))
-	dir, err := os.MkdirTemp("", plan.Runner)
+	dir := filepath.Join(resultDir, fmt.Sprintf("%s-tmp", plan.RunName))
+	err = os.Mkdir(dir, 0700)
 	if err != nil {
 		logger.Error("error creating db dir", "error", err)
 		return
