@@ -47,6 +47,11 @@ if len(names) == 0:
 
 data = [d for d in data if d.name in names]
 
+# For now truncate all data to the shortest length
+min_versions = min(len(d.versions) for d in data)
+for d in data:
+    d.versions = d.versions[:min_versions]
+
 tab1, tab2, tab3 = st.tabs(['Ops/sec', 'Memory', 'Disk Usage'])
 
 with tab1:
@@ -64,5 +69,26 @@ with tab3:
 st.text(f'Showing data from {len(data)} benchmark logs in {Path(benchmark_dir).absolute()}')
 
 for d in data:
-    st.markdown(f'#### {d.name}')
-    st.markdown(f'* Versions: {len(d.versions)}')
+    st.markdown(f'## {d.name}')
+    st.markdown(f'* Showing {len(d.versions)} Versions')
+    if d.init_data:
+        if 'changeset_dir' in d.init_data:
+            changeset_dir = d.init_data['changeset_dir']
+            st.markdown(f'* Changeset Dir: `{changeset_dir}`')
+        if 'start_version' in d.init_data:
+            start_version = d.init_data['start_version']
+            if start_version != 0 :
+                st.markdown(f'* Start Version: `{start_version}`')
+        if 'target_version' in d.init_data:
+            target_version = d.init_data['target_version']
+            if target_version != 0 :
+                st.markdown(f'* Target Version: `{target_version}`')
+        if 'db_options' in d.init_data:
+            db_options = d.init_data['db_options']
+            st.markdown(f'* DB Options:')
+            st.json(db_options, expanded=False)
+        if 'changeset_info' in d.init_data:
+            changeset_info = d.init_data['changeset_info']
+            st.markdown(f'* Changeset Info:')
+            st.json(changeset_info, expanded=False)
+

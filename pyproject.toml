@@ -7,5 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
     "humanfriendly>=10.0",
     "pandas>=2.3.2",
+    "polars>=1.33.0",
     "streamlit>=1.49.0",
 ]
