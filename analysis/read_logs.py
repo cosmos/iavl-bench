@@ -10,6 +10,8 @@ import os
 import polars
 import pydantic
 
+from memiavl_snapshots import capture_memiavl_snapshot_log
+
 
 @dataclass
 class BenchmarkSummary:
@@ -80,6 +82,7 @@ class BenchmarkData:
     summary: Optional[BenchmarkSummary]
     versions: list[VersionLog]
     versions_df: polars.DataFrame
+    memiavl_snapshots: Optional[polars.DataFrame]
 
 
 def row_iterator(path: str) -> Generator[dict, None, None]:
@@ -90,13 +93,14 @@ def row_iterator(path: str) -> Generator[dict, None, None]:
 
 def load_benchmark_log(path: str) -> BenchmarkData:
     name = os.path.basename(path).removesuffix('.jsonl')
-    data = BenchmarkData(name=name, summary=None, versions=[], init_data=None, versions_df=polars.DataFrame())
+    data = BenchmarkData(name=name, summary=None, versions=[], init_data=None, versions_df=polars.DataFrame(),
+                         memiavl_snapshots=None)
+    memiavl_snapshot_data = []
     for row in row_iterator(path):
         msg = row.get('msg')
+        module = row.get('module')
         if msg == 'starting run':
             data.init_data = row
-        elif msg == 'benchmark run complete':
-            data.summary = BenchmarkSummary.from_dict(row)
         elif msg == 'committed version':
             data.versions.append(VersionLog.from_dict(row))
         elif msg == 'full post-commit stats':
@@ -105,7 +109,21 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                 raise ValueError(f'Full stats for version {version} found before version log')
             full_stats = FullVersionStats.model_validate(row)
             data.versions[version - 1].full_stats = full_stats
+        elif module == 'memiavl':
+            capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
     data.versions_df = polars.DataFrame([v.to_data_row() for v in data.versions])
+    total_op_count = sum(v.count for v in data.versions)
+    total_duration = sum(v.duration for v in data.versions) / 1_000_000_000  # convert from nanoseconds
+    total_ops_per_sec = total_op_count / total_duration
+    max_mem = max(v.mem_heap_in_use for v in data.versions)
+    max_disk = max(v.disk_usage for v in data.versions)
+    data.summary = BenchmarkSummary(
+        ops_per_sec=total_ops_per_sec,
+        max_mem_gb=max_mem / 1_000_000_000,
+        max_disk_gb=max_disk / 1_000_000_000,
+    )
+    if len(memiavl_snapshot_data) > 0:
+        data.memiavl_snapshots = polars.DataFrame(memiavl_snapshot_data)
     return data
 
 

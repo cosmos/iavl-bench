@@ -1,9 +1,8 @@
 import os
-import plistlib
 from pathlib import Path
 
 import humanfriendly
-import polars
+import polars as pl
 import streamlit as st
 import pandas
 from read_logs import load_benchmark_dir
@@ -55,23 +54,23 @@ min_versions = min(len(d.versions) for d in data)
 for d in data:
     d.versions_df = d.versions_df.head(min_versions)
 
-tab1, tab2, tab3, tab4 = st.tabs(['Ops/sec', 'Memory', 'Disk Usage', 'Disk IO'])
+tab1, tab2, tab3 = st.tabs(['Ops/sec', 'Memory', 'Disk Usage'])
 
 with tab1:
-    ops_per_sec_df = polars.DataFrame({d.name: d.versions_df.select('ops_per_sec').to_series() for d in data})
+    ops_per_sec_df = pl.DataFrame({d.name: d.versions_df.select('ops_per_sec').to_series() for d in data})
     st.line_chart(ops_per_sec_df, x_label='version', y_label='ops/sec')
 
 with tab2:
-    mem_df = polars.DataFrame({d.name: d.versions_df.select('mem_gb').to_series() for d in data})
+    mem_df = pl.DataFrame({d.name: d.versions_df.select('mem_gb').to_series() for d in data})
     st.line_chart(mem_df, x_label='version', y_label='mem (GB)')
 
 with tab3:
-    disk_df = polars.DataFrame({d.name: d.versions_df.select('disk_usage_gb').to_series() for d in data})
+    disk_df = pl.DataFrame({d.name: d.versions_df.select('disk_usage_gb').to_series() for d in data})
     st.line_chart(disk_df, x_label='version', y_label='disk (GB)')
 
-with tab4:
-    disk_io_df = polars.DataFrame({d.name: d.versions_df.select('disk_io').to_series() for d in data})
-    st.line_chart(disk_io_df, x_label='version')
+# with tab4:
+#     disk_io_df = pl.DataFrame({d.name: d.versions_df.select('disk_io').to_series() for d in data})
+#     st.line_chart(disk_io_df, x_label='version')
 
 st.text(f'Showing data from {len(all_data)} benchmark logs in {Path(benchmark_dir).absolute()}')
 
@@ -82,8 +81,10 @@ st.markdown(f'Changeset Dir: `{changeset_dir0}`')
 st.markdown(f'Changeset Versions: `{changeset_info0.get("versions")}`')
 for store in changeset_info0.get('store_params'):
     st.markdown(f'Store: `{store["store_key"]}`')
-    st.markdown(f'* Initial Size=`{humanfriendly.format_number(store["initial_size"])}` -> Final Size=`{humanfriendly.format_number(store["final_size"])}` (over `{store["versions"]}` versions)')
-    st.markdown(f'* K mean=`{store["key_mean"]}`, stddev=`{store["key_std_dev"]}`, V mean=`{store["value_mean"]}`, stddev=`{store["value_std_dev"]}`')
+    st.markdown(
+        f'* Initial Size=`{humanfriendly.format_number(store["initial_size"])}` -> Final Size=`{humanfriendly.format_number(store["final_size"])}` (over `{store["versions"]}` versions)')
+    st.markdown(
+        f'* K mean=`{store["key_mean"]}`, stddev=`{store["key_std_dev"]}`, V mean=`{store["value_mean"]}`, stddev=`{store["value_std_dev"]}`')
     st.markdown(f'* Change per version=`{store["change_per_version"]}`, delete fraction=`{store["delete_fraction"]}`')
 
 for d in all_data:
@@ -106,3 +107,10 @@ for d in all_data:
             db_options = d.init_data['db_options']
             st.markdown(f'DB Options:')
             st.json(db_options, expanded=False)
+        if d.memiavl_snapshots is not None:
+            with st.expander('Memiavl Snapshot Details', expanded=False):
+                st.dataframe(d.memiavl_snapshots)
+                st.line_chart(d.memiavl_snapshots.select(
+                    "version",
+                    (pl.col("end") - pl.col("start")).dt.total_minutes().alias("snapshot_time"),
+                ), x="version", y="snapshot_time")
