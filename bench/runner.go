@@ -2,6 +2,7 @@ package bench
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,6 +49,22 @@ type RunConfig struct {
 }
 
 func Run(treeType string, cfg RunConfig) {
+	NewRunner(treeType, cfg).Run()
+}
+
+type Runner struct {
+	*cobra.Command
+}
+
+func (r Runner) Run() {
+	err := r.Command.Execute()
+	if err != nil {
+		slog.Error("error running benchmarks", "error", err)
+		os.Exit(1)
+	}
+}
+
+func NewRunner(treeType string, cfg RunConfig) Runner {
 	var treeDir string
 	var treeOptions string
 	var changesetDir string
@@ -91,7 +108,9 @@ func Run(treeType string, cfg RunConfig) {
 				if cfg.OptionsType == nil {
 					return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
 				}
-				err := json.Unmarshal([]byte(treeOptions), opts)
+				decoder := json.NewDecoder(bytes.NewReader([]byte(treeOptions)))
+				decoder.DisallowUnknownFields()
+				err := decoder.Decode(opts)
 				if err != nil {
 					return fmt.Errorf("error unmarshaling db-options: %w", err)
 				}
@@ -146,11 +165,7 @@ func Run(treeType string, cfg RunConfig) {
 
 	rootCmd := &cobra.Command{}
 	rootCmd.AddCommand(cmd)
-	err := rootCmd.Execute()
-	if err != nil {
-		slog.Error("error running benchmarks", "error", err)
-		os.Exit(1)
-	}
+	return Runner{Command: rootCmd}
 }
 
 type runParams struct {

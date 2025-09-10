@@ -40,15 +40,19 @@ type Options struct {
 	SnapshotInterval   uint32 `json:"snapshot_interval"`
 	// Buffer size for the asynchronous commit queue, -1 means synchronous commit,
 	// default to 0.
-	AsyncCommitBuffer int `json:"async-commit-buffer"`
+	AsyncCommitBuffer int `json:"async_commit_buffer"`
 	// ZeroCopy if true, the get and iterator methods could return a slice pointing to mmaped blob files.
-	ZeroCopy bool `json:"zero-copy"`
+	ZeroCopy bool `json:"zero_copy"`
 	// CacheSize defines the cache's max entry size for each memiavl store.
-	CacheSize int `json:"cache-size"`
+	CacheSize int `json:"cache_size"`
 }
 
 func Run() {
-	bench.Run("memiavl", bench.RunConfig{
+	Runner().Run()
+}
+
+func Runner() bench.Runner {
+	return bench.NewRunner("memiavl", bench.RunConfig{
 		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
 			benchmarkOpts := params.TreeOptions.(*Options)
