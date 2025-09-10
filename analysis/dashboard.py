@@ -110,7 +110,6 @@ for d in all_data:
         if d.memiavl_snapshots is not None:
             with st.expander('Memiavl Snapshot Details', expanded=False):
                 st.dataframe(d.memiavl_snapshots)
-                st.line_chart(d.memiavl_snapshots.select(
-                    "version",
-                    (pl.col("end") - pl.col("start")).dt.total_minutes().alias("snapshot_time"),
-                ), x="version", y="snapshot_time")
+                st.line_chart(d.memiavl_snapshots.select("version", pl.col("snapshot_duration").dt.total_minutes().alias("snapshot_minutes")),
+                              x="version",
+                              y="snapshot_minutes")
