@@ -109,6 +109,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 					return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
 				}
 				decoder := json.NewDecoder(bytes.NewReader([]byte(treeOptions)))
+				// we disallow unknown fields to catch typos with database options
 				decoder.DisallowUnknownFields()
 				err := decoder.Decode(opts)
 				if err != nil {

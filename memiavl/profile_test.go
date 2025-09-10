@@ -18,7 +18,8 @@ func TestProfile(t *testing.T) {
 		"bench",
 		"--changeset-dir=/Users/arc/iavl-bench-data/testdata",
 		"--db-dir=" + dir,
-		`--db-options={"snapshot_interval":10}`,
+		`--db-options={"snapshot_interval":10, "async_commit_buffer":-1}`,
+		"--log-type=json",
 	})
 	runner.Run()
 }

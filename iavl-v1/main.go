@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"cosmossdk.io/log"
 	"github.com/cosmos/iavl"
 	"github.com/cosmos/iavl/db"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -59,7 +60,9 @@ func main() {
 				return nil, err
 			}
 			trees := make(map[string]*iavl.MutableTree)
-			logger := util.NewSlogWrapper(params.Logger)
+			//logger := util.NewSlogWrapper(params.Logger)
+			// logging is very noisy, use a nop logger
+			logger := log.NewNopLogger()
 			for _, storeName := range params.StoreNames {
 				d, err := db.NewGoLevelDBWithOpts(storeName, dbDir, &opt.Options{})
 				if err != nil {
