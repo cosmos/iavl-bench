@@ -52,6 +52,7 @@ var _ bench.Tree = &MultiTreeWrapper{}
 type Options struct {
 	CheckpointInterval int64 `json:"checkpoint_interval"`
 	EvictionDepth      int8  `json:"eviction_depth"`
+	HeightFilter       int8  `json:"height_filter"`
 }
 
 func Runner(treeType string) bench.Runner {
@@ -85,6 +86,9 @@ func Runner(treeType string) bench.Runner {
 				}
 				if opts.EvictionDepth != 0 {
 					treeOpts.EvictionDepth = opts.EvictionDepth
+				}
+				if opts.HeightFilter != 0 {
+					treeOpts.HeightFilter = opts.HeightFilter
 				}
 				tree := iavl.NewTree(sqlite, nodePool, treeOpts)
 				if version != 0 {
