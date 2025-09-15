@@ -51,9 +51,16 @@ func (m *MultiTreeWrapper) Commit() error {
 
 var _ bench.Tree = &MultiTreeWrapper{}
 
+type Options struct {
+	SkipFastStorageUpgrade bool `json:"skip_fast_storage_upgrade"`
+	CacheSize              int  `json:"cache_size"`
+}
+
 func main() {
 	bench.Run("iavl/v1", bench.RunConfig{
+		OptionsType: &Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+			opts := params.TreeOptions.(*Options)
 			dbDir := params.TreeDir
 			version, err := util.LoadVersion(dbDir)
 			if err != nil {
@@ -68,7 +75,7 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				tree := iavl.NewMutableTree(d, 10_000, true, logger)
+				tree := iavl.NewMutableTree(d, opts.CacheSize, opts.SkipFastStorageUpgrade, logger)
 				if version != 0 {
 					_, err := tree.LoadVersion(version)
 					if err != nil {

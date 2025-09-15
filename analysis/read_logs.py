@@ -138,3 +138,8 @@ def load_benchmark_dir(path: str) -> list[BenchmarkData]:
             full_path = os.path.join(path, filename)
             res.append(load_benchmark_log(full_path))
     return res
+
+
+def load_benchmark_dir_dict(path: str) -> dict[str, BenchmarkData]:
+    data = load_benchmark_dir(path)
+    return {d.name: d for d in data}
