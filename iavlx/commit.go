@@ -1,6 +1,10 @@
 package iavlx
 
-import "fmt"
+import (
+	"fmt"
+
+	corestore "cosmossdk.io/core/store"
+)
 
 type CommitTree struct {
 	root      *Node
@@ -42,8 +46,12 @@ func (c *CommitTree) Remove(key []byte) error {
 	return c.ApplyBatch(batch)
 }
 
+func (c *CommitTree) Iterator(start, end []byte, ascending bool) (corestore.Iterator, error) {
+	return NewIterator(c.store, start, end, ascending, c.root, c.zeroCopy), nil
+}
+
 func (c *CommitTree) NewBatch() *BatchTree {
-	batch := NewBatchTree(c.root, MemStore{}, c.zeroCopy)
+	batch := NewBatchTree(c.root, NullStore{}, c.zeroCopy)
 	return batch
 }
 
@@ -56,10 +64,10 @@ func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
 	for _, node := range batch.batchNodes {
 		if node != nil {
 			if node.isLeaf() {
-				node.nodeKey = NewLeafNodeKey(c.version, c.leafSeq)
+				node.nodeKey = NewLeafNodeKey(c.version+1, c.leafSeq)
 				c.leafSeq++
 			} else {
-				node.nodeKey = NewBranchNodeKey(c.version, c.branchSeq)
+				node.nodeKey = NewBranchNodeKey(c.version+1, c.branchSeq)
 				c.branchSeq++
 			}
 			c.hashChan <- node
@@ -78,7 +86,7 @@ func (c *CommitTree) reinitHasher() {
 	c.hashDone = hashDone
 	go func() {
 		for node := range c.hashChan {
-			_, err := node.Hash(MemStore{})
+			_, err := node.Hash(NullStore{})
 			if err != nil {
 				hashDone <- err
 				break
@@ -103,7 +111,7 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	if c.root == nil {
 		return emptyHash, nil
 	}
-	return c.root.Hash(MemStore{})
+	return c.root.Hash(NullStore{})
 }
 
 func (c *CommitTree) Version() int64 {

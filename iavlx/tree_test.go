@@ -1,10 +1,12 @@
 package iavlx
 
 import (
+	"bytes"
 	"testing"
 
 	"fmt"
 
+	corestore "cosmossdk.io/core/store"
 	sdklog "cosmossdk.io/log"
 	"github.com/cosmos/iavl"
 	dbm "github.com/cosmos/iavl/db"
@@ -14,7 +16,7 @@ import (
 )
 
 func TestBasicTest(t *testing.T) {
-	tree := NewCommitTree(MemStore{})
+	tree := NewCommitTree(NullStore{})
 	require.NoError(t, tree.Set([]byte("key1"), []byte("value1")))
 
 	val, err := tree.Get([]byte("key1"))
@@ -65,11 +67,12 @@ func FuzzIAVLX(f *testing.F) {
 }
 
 func testIAVLXSims(t *rapid.T) {
-	logger := sdklog.NewTestLogger(t)
+	//logger := sdklog.NewTestLogger(t)
+	logger := sdklog.NewNopLogger()
 	dbV1 := dbm.NewMemDB()
 	treeV1 := iavl.NewMutableTree(dbV1, 500000, true, logger)
 
-	treeV2 := NewCommitTree(MemStore{})
+	treeV2 := NewCommitTree(NullStore{})
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
 		treeV2:       treeV2,
@@ -94,8 +97,8 @@ type SimMachine struct {
 }
 
 func (s *SimMachine) Check(t *rapid.T) {
-	//// after every operation we check that both trees are identical
-	//s.compareIterators(t, nil, nil, true)
+	// after every operation we check that both trees are identical
+	s.compareIterators(t, nil, nil, true)
 }
 
 func (s *SimMachine) UpdateN(t *rapid.T) {
@@ -204,17 +207,31 @@ func (s *SimMachine) Commit(t *rapid.T) {
 	require.NoError(t, err, "failed to save version in V1 tree")
 	hash2, err := s.treeV2.Commit()
 	require.NoError(t, err, "failed to save version in V2 tree")
+	s.debugDump(t)
 	require.Equal(t, hash1, hash2, "hash mismatch between V1 and V2 trees")
 	//require.Equal(t, v1, v2, "version mismatch between V1 and V2 trees")
-	s.debugDumpTree(t)
 }
 
-func (s *SimMachine) debugDumpTree(t *rapid.T) {
+func (s *SimMachine) debugDump(t *rapid.T) {
 	version := s.treeV1.Version()
-	dumpStr := fmt.Sprintf("Tree dump for version %d", version)
-	iter, err := s.treeV1.Iterator(nil, nil, true)
+	t.Logf("Dumping trees at version %d", version)
+	graph1 := &bytes.Buffer{}
+	//iavl.WriteDotGraphv2(graph1, s.treeV1.ImmutableTree)
+	t.Logf("V1 tree:\n%s", graph1.String())
+	s.debugDumpTree(t, s.treeV2)
+	graph2, err := RenderDotGraph(s.treeV2.store, s.treeV2.root)
+	require.NoError(t, err, "failed to render V2 tree graph")
+	t.Logf("V2 tree:\n%s", graph2)
+	s.debugDumpTree(t, s.treeV2)
+}
+
+func (s *SimMachine) debugDumpTree(t *rapid.T, tree iterable) {
+	dumpStr := "Tree dump:"
+	iter, err := tree.Iterator(nil, nil, true)
 	require.NoError(t, err, "failed to create iterator")
-	defer require.NoError(t, iter.Close(), "failed to close iterator")
+	defer func() {
+		require.NoError(t, iter.Close(), "failed to close iterator")
+	}()
 	for iter.Valid() {
 		key := iter.Key()
 		value := iter.Value()
@@ -243,42 +260,42 @@ func (s *SimMachine) debugDumpTree(t *rapid.T) {
 //	s.compareIterators(t, nil, nil, true)
 //	compareIteratorsAtVersion(t, itreeV1, s.treeV2, nil, nil, true)
 //}
-//
-//func (s *SimMachine) compareIterators(t *rapid.T, start, end []byte, ascending bool) {
-//	compareIteratorsAtVersion(t, s.treeV1, s.treeV2, start, end, ascending)
-//}
-//
-//func compareIteratorsAtVersion(t *rapid.T, treeV1 interface {
-//	Iterator(start, end []byte, ascending bool) (corestore.Iterator, error)
-//}, treeV2 *Tree, start, end []byte, ascending bool) {
-//	iterV1, errV1 := treeV1.Iterator(start, end, ascending)
-//	require.NoError(t, errV1, "failed to create iterator for V1 tree")
-//	defer require.NoError(t, iterV1.Close(), "failed to close iterator for V1 tree")
-//
-//	var iterV2 Iterator
-//	var errV2 error
-//	if ascending {
-//		iterV2, errV2 = treeV2.Iterator(start, end, false)
-//	} else {
-//		iterV2, errV2 = treeV2.ReverseIterator(start, end)
-//	}
-//	require.NoError(t, errV2, "failed to create iterator for V2 tree")
-//	defer require.NoError(t, iterV2.Close(), "failed to close iterator for V2 tree")
-//
-//	for {
-//		hasNextV1 := iterV1.Valid()
-//		hasNextV2 := iterV2.Valid()
-//		require.Equal(t, hasNextV1, hasNextV2, "iterator validity mismatch between V1 and V2 trees")
-//		if !hasNextV1 {
-//			break
-//		}
-//		keyV1 := iterV1.Key()
-//		valueV1 := iterV1.Value()
-//		keyV2 := iterV2.Key()
-//		valueV2 := iterV2.Value()
-//		require.Equal(t, keyV1, keyV2, "key mismatch between V1 and V2 trees")
-//		require.Equal(t, valueV1, valueV2, "value mismatch between V1 and V2 trees")
-//		iterV1.Next()
-//		iterV2.Next()
-//	}
-//}
+
+func (s *SimMachine) compareIterators(t *rapid.T, start, end []byte, ascending bool) {
+	compareIteratorsAtVersion(t, s.treeV1, s.treeV2, start, end, ascending)
+}
+
+type iterable interface {
+	Iterator(start, end []byte, ascending bool) (corestore.Iterator, error)
+}
+
+func compareIteratorsAtVersion(t *rapid.T, treeV1 iterable, treeV2 iterable, start, end []byte, ascending bool) {
+	iterV1, errV1 := treeV1.Iterator(start, end, ascending)
+	require.NoError(t, errV1, "failed to create iterator for V1 tree")
+	defer func() {
+		require.NoError(t, iterV1.Close(), "failed to close iterator for V1 tree")
+	}()
+
+	iterV2, errV2 := treeV2.Iterator(start, end, ascending)
+	require.NoError(t, errV2, "failed to create iterator for V2 tree")
+	defer func() {
+		require.NoError(t, iterV2.Close(), "failed to close iterator for V2 tree")
+	}()
+
+	for {
+		hasNextV1 := iterV1.Valid()
+		hasNextV2 := iterV2.Valid()
+		require.Equal(t, hasNextV1, hasNextV2, "iterator validity mismatch between V1 and V2 trees")
+		if !hasNextV1 {
+			break
+		}
+		keyV1 := iterV1.Key()
+		valueV1 := iterV1.Value()
+		keyV2 := iterV2.Key()
+		valueV2 := iterV2.Value()
+		require.Equal(t, keyV1, keyV2, "key mismatch between V1 and V2 trees")
+		require.Equal(t, valueV1, valueV2, "value mismatch between V1 and V2 trees")
+		iterV1.Next()
+		iterV2.Next()
+	}
+}

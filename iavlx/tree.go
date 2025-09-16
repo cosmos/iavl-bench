@@ -3,6 +3,8 @@ package iavlx
 import (
 	"bytes"
 	"fmt"
+
+	corestore "cosmossdk.io/core/store"
 )
 
 type Tree struct {
@@ -13,12 +15,6 @@ type Tree struct {
 
 func NewTree(root *Node, store NodeWriter, zeroCopy bool) *Tree {
 	return &Tree{root: root, store: store, zeroCopy: zeroCopy}
-}
-
-func NewMemTree() *Tree {
-	return &Tree{
-		store: &MemStore{},
-	}
 }
 
 func (t *Tree) Get(key []byte) ([]byte, error) {
@@ -33,6 +29,10 @@ func (t *Tree) Get(key []byte) ([]byte, error) {
 		value = bytes.Clone(value)
 	}
 	return value, nil
+}
+
+func (t *Tree) Iterator(start, end []byte, ascending bool) (corestore.Iterator, error) {
+	return NewIterator(t.store, start, end, ascending, t.root, t.zeroCopy), nil
 }
 
 func (t *Tree) Set(key, value []byte) error {
@@ -50,30 +50,30 @@ func (t *Tree) Remove(key []byte) error {
 	return err
 }
 
-type MemStore struct{}
+type NullStore struct{}
 
-func (m MemStore) Load(*NodePointer) (*Node, error) {
-	return nil, fmt.Errorf("MemStore does not support Load")
+func (m NullStore) Load(*NodePointer) (*Node, error) {
+	return nil, fmt.Errorf("NullStore does not support Load")
 }
 
-func (m MemStore) NewLeafNode(key, value []byte) *Node {
+func (m NullStore) NewLeafNode(key, value []byte) *Node {
 	return newLeafNode(key, value)
 }
 
-func (m MemStore) CopyLeafNode(node *Node, newValue []byte) *Node {
+func (m NullStore) CopyLeafNode(node *Node, newValue []byte) *Node {
 	newNode := node.copy()
 	newNode.value = newValue
 	return newNode
 }
 
-func (m MemStore) CopyNode(node *Node) *Node {
+func (m NullStore) CopyNode(node *Node) *Node {
 	return node.copy()
 }
 
-func (m MemStore) NewBranchNode() *Node {
+func (m NullStore) NewBranchNode() *Node {
 	return NewNode()
 }
 
-func (m MemStore) DeleteNode(*Node) {}
+func (m NullStore) DeleteNode(*Node) {}
 
-var _ NodeWriter = (*MemStore)(nil)
+var _ NodeWriter = (*NullStore)(nil)

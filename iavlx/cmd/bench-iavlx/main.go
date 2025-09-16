@@ -9,14 +9,14 @@ import (
 
 type MemMultiTree struct {
 	logger  *slog.Logger
-	trees   map[string]iavlx.CommitTree
+	trees   map[string]*iavlx.CommitTree
 	version int64
 }
 
 func NewMemMultiTree(logger *slog.Logger) *MemMultiTree {
 	return &MemMultiTree{
 		logger: logger,
-		trees:  make(map[string]iavlx.CommitTree),
+		trees:  make(map[string]*iavlx.CommitTree),
 	}
 }
 
@@ -27,7 +27,7 @@ func (m *MemMultiTree) Version() int64 {
 func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
-		tree = *iavlx.NewCommitTree(iavlx.MemStore{})
+		tree = iavlx.NewCommitTree(iavlx.NullStore{})
 		m.trees[storeKey] = tree
 	}
 	if delete {
