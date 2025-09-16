@@ -31,7 +31,7 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 		m.trees[storeKey] = tree
 	}
 	if delete {
-		return tree.Delete(key)
+		return tree.Remove(key)
 	} else {
 		return tree.Set(key, value)
 	}
