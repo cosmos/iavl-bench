@@ -9,11 +9,11 @@ import (
 
 type Tree struct {
 	root     *Node
-	store    NodeWriter
+	store    NodeFactory
 	zeroCopy bool
 }
 
-func NewTree(root *Node, store NodeWriter, zeroCopy bool) *Tree {
+func NewTree(root *Node, store NodeFactory, zeroCopy bool) *Tree {
 	return &Tree{root: root, store: store, zeroCopy: zeroCopy}
 }
 
@@ -52,28 +52,16 @@ func (t *Tree) Remove(key []byte) error {
 
 type NullStore struct{}
 
+func (m NullStore) SaveNode(node *Node) error {
+	return nil
+}
+
+func (m NullStore) DeleteNode(node *Node) error {
+	return nil
+}
+
 func (m NullStore) Load(*NodePointer) (*Node, error) {
 	return nil, fmt.Errorf("NullStore does not support Load")
 }
-
-func (m NullStore) NewLeafNode(key, value []byte) *Node {
-	return newLeafNode(key, value)
-}
-
-func (m NullStore) CopyLeafNode(node *Node, newValue []byte) *Node {
-	newNode := node.copy()
-	newNode.value = newValue
-	return newNode
-}
-
-func (m NullStore) CopyNode(node *Node) *Node {
-	return node.copy()
-}
-
-func (m NullStore) NewBranchNode() *Node {
-	return NewNode()
-}
-
-func (m NullStore) DeleteNode(*Node) {}
 
 var _ NodeWriter = (*NullStore)(nil)

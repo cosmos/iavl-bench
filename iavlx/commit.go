@@ -7,24 +7,33 @@ import (
 )
 
 type CommitTree struct {
-	root      *Node
-	store     NodeWriter
-	version   uint32
-	leafSeq   uint32
-	branchSeq uint32
-	hashChan  chan *Node
-	hashDone  chan error
-	zeroCopy  bool
+	root           *Node
+	store          NodeWriter
+	zeroCopy       bool
+	version        uint32
+	leafSeq        uint32
+	branchSeq      uint32
+	hashChan       chan *Node
+	hashDone       chan error
+	saveChan       chan *nodeUpdate
+	saveDone       chan error
+	backgroundSave bool
 }
 
 func NewCommitTree(store NodeWriter) *CommitTree {
 	tree := &CommitTree{
-		store:     store,
-		leafSeq:   1,
-		branchSeq: 1,
+		store:          store,
+		leafSeq:        1,
+		branchSeq:      1,
+		backgroundSave: true,
 		// TODO should we initialize version to 1?
 	}
 	tree.reinitHasher()
+	err := tree.reinitSave()
+	if err != nil {
+		// this should never happen at initialization
+		panic(err)
+	}
 	return tree
 }
 
@@ -61,20 +70,20 @@ func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
 	}
 	c.root = batchTree.root
 	batch := batchTree.store
-	for _, node := range batch.batchNodes {
-		if node != nil {
-			if node.isLeaf() {
-				node.nodeKey = NewLeafNodeKey(c.version+1, c.leafSeq)
-				c.leafSeq++
-			} else {
-				node.nodeKey = NewBranchNodeKey(c.version+1, c.branchSeq)
-				c.branchSeq++
+	for _, update := range batch.batchUpdates {
+		if update != nil {
+			if !update.deleted {
+				if update.isLeaf() {
+					update.nodeKey = NewLeafNodeKey(c.version+1, c.leafSeq)
+					c.leafSeq++
+				} else {
+					update.nodeKey = NewBranchNodeKey(c.version+1, c.branchSeq)
+					c.branchSeq++
+				}
+				c.hashChan <- update.Node
 			}
-			c.hashChan <- node
+			c.saveChan <- update
 		}
-	}
-	for _, _ = range batch.batchOrphans {
-		// TODO delete orphan nodes from storage
 	}
 	return nil
 }
@@ -96,17 +105,57 @@ func (c *CommitTree) reinitHasher() {
 	}()
 }
 
+func (c *CommitTree) reinitSave() error {
+	if c.saveChan != nil {
+		close(c.saveChan)
+	}
+	if c.saveDone != nil {
+		err := <-c.saveDone
+		if err != nil {
+			return err
+		}
+	}
+	saveChan := make(chan *nodeUpdate, 1024)
+	saveDone := make(chan error, 1)
+	c.saveChan = saveChan
+	c.saveDone = saveDone
+	store := c.store
+	go func() {
+		for update := range c.saveChan {
+			var err error
+			if update.deleted {
+				err = store.DeleteNode(update.Node)
+			} else {
+				err = store.SaveNode(update.Node)
+			}
+			if err != nil {
+				saveDone <- err
+				break
+			}
+		}
+		close(saveDone)
+	}()
+	return nil
+}
+
 func (c *CommitTree) Commit() ([]byte, error) {
 	close(c.hashChan)
 	err := <-c.hashDone
 	if err != nil {
 		return nil, err
 	}
+	c.reinitHasher()
+
+	if !c.backgroundSave {
+		err := c.reinitSave()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	c.version++
 	c.leafSeq = 1
 	c.branchSeq = 1
-	c.reinitHasher()
 
 	if c.root == nil {
 		return emptyHash, nil

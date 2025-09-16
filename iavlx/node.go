@@ -33,13 +33,19 @@ type NodeReader interface {
 	Load(*NodePointer) (*Node, error)
 }
 
-type NodeWriter interface {
+type NodeFactory interface {
 	NodeReader
 	NewLeafNode(key, value []byte) *Node
 	NewBranchNode() *Node
 	CopyLeafNode(node *Node, newValue []byte) *Node
 	CopyNode(*Node) *Node
 	DeleteNode(node *Node)
+}
+
+type NodeWriter interface {
+	NodeReader
+	SaveNode(*Node) error
+	DeleteNode(*Node) error
 }
 
 type nodeStatic struct {
@@ -142,7 +148,7 @@ func (node *Node) calcBalance(store NodeReader) (int, error) {
 }
 
 // IMPORTANT: nodes that call this method must be new or copies first
-func (node *Node) balance(store NodeWriter) (*Node, error) {
+func (node *Node) balance(store NodeFactory) (*Node, error) {
 	balance, err := node.calcBalance(store)
 	if err != nil {
 		return nil, err
@@ -201,7 +207,7 @@ func (node *Node) balance(store NodeWriter) (*Node, error) {
 }
 
 // IMPORTANT: nodes that call this method must be new or copies first
-func (node *Node) rotateRight(store NodeWriter) (*Node, error) {
+func (node *Node) rotateRight(store NodeFactory) (*Node, error) {
 	left, err := node.left.Get(store)
 	if err != nil {
 		return nil, err
@@ -227,7 +233,7 @@ func (node *Node) rotateRight(store NodeWriter) (*Node, error) {
 }
 
 // IMPORTANT: nodes that call this method must be new or copies first
-func (node *Node) rotateLeft(store NodeWriter) (*Node, error) {
+func (node *Node) rotateLeft(store NodeFactory) (*Node, error) {
 	right, err := node.right.Get(store)
 	if err != nil {
 		return nil, err
@@ -254,7 +260,7 @@ func (node *Node) rotateLeft(store NodeWriter) (*Node, error) {
 }
 
 // IMPORTANT: nodes that call this method must be new or copies first
-func (node *Node) updateHeightSize(store NodeWriter) error {
+func (node *Node) updateHeightSize(store NodeFactory) error {
 	leftNode, err := node.left.Get(store)
 	if err != nil {
 		return err
@@ -392,7 +398,7 @@ func maxInt8(a, b int8) int8 {
 
 // setRecursive do set operation.
 // returns if it's an update or insertion, if update, the tree height and balance is not changed.
-func setRecursive(store NodeWriter, node *Node, key, value []byte) (*Node, bool, error) {
+func setRecursive(store NodeFactory, node *Node, key, value []byte) (*Node, bool, error) {
 	if node == nil {
 		return store.NewLeafNode(key, value), true, nil
 	}
@@ -476,7 +482,7 @@ func newLeafNode(key, value []byte) *Node {
 // - (nil, origNode, nil, nil) -> nothing changed in subtree
 // - (value, nil, newKey, nil) -> leaf node is removed
 // - (value, new node, newKey, nil) -> subtree changed
-func removeRecursive(store NodeWriter, node *Node, key []byte) (value []byte, newNode *Node, newKey []byte, err error) {
+func removeRecursive(store NodeFactory, node *Node, key []byte) (value []byte, newNode *Node, newKey []byte, err error) {
 	if node == nil {
 		return nil, nil, nil, nil
 	}
