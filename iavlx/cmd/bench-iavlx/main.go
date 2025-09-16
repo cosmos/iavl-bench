@@ -38,12 +38,12 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 }
 
 func (m *MemMultiTree) Commit() error {
-	for _, tree := range m.trees {
+	for storeName, tree := range m.trees {
 		hash, err := tree.Commit()
 		if err != nil {
 			return err
 		}
-		m.logger.Info("committed", "hash", hash, "version", tree.Version())
+		m.logger.Info("committed", "hash", hash, "version", tree.Version(), "store", storeName)
 	}
 	m.version++
 	return nil
