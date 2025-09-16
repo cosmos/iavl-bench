@@ -16,4 +16,5 @@ dependencies = [
     "streamlit>=1.49.0",
     "vegafusion[embed]>=1.6.9",
     "vegafusion-jupyter>=1.6.9",
+    "kaleido>=1.1.0",
 ]
