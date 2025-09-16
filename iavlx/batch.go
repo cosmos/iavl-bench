@@ -2,9 +2,17 @@ package iavlx
 
 type BatchStore struct {
 	NodeReader
+	// TODO should/can we separate branches and leaves easily here so that it's easier to apply just leaves as a WAL if the original root differs?
 	batchNodes   []*Node
 	batchOrphans []*Node
 	batchNodeMap map[*Node]int
+}
+
+func NewBatchStore(nodeReader NodeReader) *BatchStore {
+	return &BatchStore{
+		NodeReader:   nodeReader,
+		batchNodeMap: make(map[*Node]int),
+	}
 }
 
 func (b *BatchStore) NewLeafNode(key, value []byte) *Node {
@@ -16,7 +24,7 @@ func (b *BatchStore) NewLeafNode(key, value []byte) *Node {
 }
 
 func (b *BatchStore) NewBranchNode() *Node {
-	return b.trackNode(&Node{})
+	return b.trackNode(NewNode())
 }
 
 func (b *BatchStore) CopyLeafNode(node *Node, newValue []byte) *Node {
@@ -57,3 +65,18 @@ func (b *BatchStore) ApplyBatch(other *BatchStore) {
 }
 
 var _ NodeWriter = (*BatchStore)(nil)
+
+type BatchTree struct {
+	origRoot *Node
+	store    *BatchStore
+	*Tree
+}
+
+func NewBatchTree(root *Node, reader NodeReader, zeroCopy bool) *BatchTree {
+	store := NewBatchStore(reader)
+	return &BatchTree{
+		origRoot: root,
+		store:    store,
+		Tree:     NewTree(root, store, zeroCopy),
+	}
+}

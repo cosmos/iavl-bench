@@ -1,18 +1,22 @@
 package main
 
 import (
+	"log/slog"
+
 	"github.com/cosmos/iavl-bench/bench"
 	"iavlx"
 )
 
 type MemMultiTree struct {
-	trees   map[string]iavlx.Tree
+	logger  *slog.Logger
+	trees   map[string]iavlx.CommitTree
 	version int64
 }
 
-func NewMemMultiTree() *MemMultiTree {
+func NewMemMultiTree(logger *slog.Logger) *MemMultiTree {
 	return &MemMultiTree{
-		trees: make(map[string]iavlx.Tree),
+		logger: logger,
+		trees:  make(map[string]iavlx.CommitTree),
 	}
 }
 
@@ -23,7 +27,7 @@ func (m *MemMultiTree) Version() int64 {
 func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
-		tree = *iavlx.NewMemTree()
+		tree = *iavlx.NewCommitTree(iavlx.MemStore{})
 		m.trees[storeKey] = tree
 	}
 	if delete {
@@ -34,6 +38,13 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 }
 
 func (m *MemMultiTree) Commit() error {
+	for _, tree := range m.trees {
+		hash, err := tree.Commit()
+		if err != nil {
+			return err
+		}
+		m.logger.Info("committed", "hash", hash, "version", tree.Version())
+	}
 	m.version++
 	return nil
 }
@@ -43,7 +54,7 @@ var _ bench.Tree = (*MemMultiTree)(nil)
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			return NewMemMultiTree(), nil
+			return NewMemMultiTree(params.Logger), nil
 		},
 	})
 }

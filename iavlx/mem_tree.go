@@ -11,6 +11,10 @@ type Tree struct {
 	zeroCopy bool
 }
 
+func NewTree(root *Node, store NodeWriter, zeroCopy bool) *Tree {
+	return &Tree{root: root, store: store, zeroCopy: zeroCopy}
+}
+
 func NewMemTree() *Tree {
 	return &Tree{
 		store: &MemStore{},
@@ -40,13 +44,17 @@ func (t *Tree) Set(key, value []byte) error {
 	return err
 }
 
-func (t *Tree) Delete(key []byte) error {
+func (t *Tree) Remove(key []byte) error {
 	var err error
 	_, t.root, _, err = removeRecursive(t.store, t.root, key)
 	return err
 }
 
 type MemStore struct{}
+
+func (m MemStore) Load(*NodePointer) (*Node, error) {
+	return nil, fmt.Errorf("MemStore does not support Load")
+}
 
 func (m MemStore) NewLeafNode(key, value []byte) *Node {
 	return newLeafNode(key, value)
@@ -62,20 +70,8 @@ func (m MemStore) CopyNode(node *Node) *Node {
 	return node.copy()
 }
 
-func (m MemStore) GetLeft(*Node) (*Node, error) {
-	return nil, fmt.Errorf("only memory nodes are supported")
-}
-
-func (m MemStore) GetRight(*Node) (*Node, error) {
-	return nil, fmt.Errorf("only memory nodes are supported")
-}
-
 func (m MemStore) NewBranchNode() *Node {
-	return &Node{}
-}
-
-func (m MemStore) CopyNode(node *Node) *Node {
-	return node.copy()
+	return NewNode()
 }
 
 func (m MemStore) DeleteNode(*Node) {}

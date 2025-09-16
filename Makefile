@@ -11,5 +11,6 @@ install:
 	cd store-v1/latest && go install .
 	cd store-v1/iavl-v2 && go install .
 	cd store-v1/memiavl && go install .
+	cd iavlx/cmd/bench-iavlx && go install .
 
 PHONY: install
