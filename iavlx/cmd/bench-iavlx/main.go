@@ -27,7 +27,7 @@ func (m *MemMultiTree) Version() int64 {
 func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
-		tree = iavlx.NewCommitTree(iavlx.NullStore{})
+		tree = iavlx.NewCommitTree(iavlx.NewNullStore(iavlx.NewVersionSeqNodeKeyGen()))
 		m.trees[storeKey] = tree
 	}
 	batch := tree.Branch()
