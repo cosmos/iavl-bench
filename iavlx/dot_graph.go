@@ -2,19 +2,26 @@ package iavlx
 
 import (
 	"fmt"
-
-	"github.com/emicklei/dot"
+	"io"
 )
 
-func RenderDotGraph(store NodeReader, root *Node) (string, error) {
-	graph := dot.NewGraph(dot.Directed)
-
+func RenderDotGraph(writer io.Writer, store NodeReader, root *Node) error {
+	_, err := fmt.Fprintln(writer, "graph G {")
+	if err != nil {
+		return err
+	}
+	finishGraph := func() error {
+		_, err := fmt.Fprintln(writer, "}")
+		return err
+	}
 	if root == nil {
-		return graph.String(), nil
+		return finishGraph()
 	}
 
-	var traverse func(node *Node, parent *dot.Node, direction string) error
-	traverse = func(node *Node, parent *dot.Node, direction string) error {
+	nodeIdx := uint64(1)
+
+	var traverse func(node *Node, parent string, direction string) error
+	traverse = func(node *Node, parent string, direction string) error {
 		var label string
 		// TODO render node keys
 		if node.isLeaf() {
@@ -23,9 +30,15 @@ func RenderDotGraph(store NodeReader, root *Node) (string, error) {
 			label = fmt.Sprintf("K:0x%x H:%d S:%d\n", node.key, node.subtreeHeight, node.size)
 		}
 
-		n := graph.Node(label)
-		if parent != nil {
-			parent.Edge(n, direction)
+		nodeId := fmt.Sprintf("n%d", nodeIdx)
+		nodeIdx++
+
+		_, err := fmt.Fprintf(writer, "%s [label=\"%s\"];\n", nodeId, label)
+		if err != nil {
+			return err
+		}
+		if parent != "" {
+			_, err = fmt.Fprintf(writer, "%s -> %s [label=\"%s\"];\n", parent, nodeId, direction)
 		}
 		if node.isLeaf() {
 			return nil
@@ -42,13 +55,13 @@ func RenderDotGraph(store NodeReader, root *Node) (string, error) {
 		}
 
 		if leftNode != nil {
-			err = traverse(leftNode, &n, "l")
+			err = traverse(leftNode, nodeId, "l")
 			if err != nil {
 				return err
 			}
 		}
 		if rightNode != nil {
-			err = traverse(rightNode, &n, "r")
+			err = traverse(rightNode, nodeId, "r")
 			if err != nil {
 				return err
 			}
@@ -56,10 +69,10 @@ func RenderDotGraph(store NodeReader, root *Node) (string, error) {
 		return nil
 	}
 
-	err := traverse(root, nil, "")
+	err = traverse(root, "", "")
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return graph.String(), nil
+	return finishGraph()
 }

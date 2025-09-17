@@ -39,15 +39,21 @@ func (t *Tree) Set(key, value []byte) error {
 	if value == nil {
 		return fmt.Errorf("nil value is not allowed")
 	}
-	var err error
-	t.root, _, err = setRecursive(t.store, t.root, key, value)
-	return err
+	root, _, err := setRecursive(t.store, wrapNewNode(t.root), key, value)
+	if err != nil {
+		return err
+	}
+	t.root = root.ptr.Load()
+	return nil
 }
 
 func (t *Tree) Remove(key []byte) error {
-	var err error
-	_, t.root, _, err = removeRecursive(t.store, t.root, key)
-	return err
+	_, root, _, err := removeRecursive(t.store, wrapNewNode(t.root), key)
+	if err != nil {
+		return err
+	}
+	t.root = root.ptr.Load()
+	return nil
 }
 
 type NullStore struct{}
@@ -58,6 +64,11 @@ func (m NullStore) SaveNode(node *Node) error {
 
 func (m NullStore) DeleteNode(node *Node) error {
 	return nil
+}
+
+func (m NullStore) SaveRoot(version int64, root *Node) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (m NullStore) Load(*NodePointer) (*Node, error) {

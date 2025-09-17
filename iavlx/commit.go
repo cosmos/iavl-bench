@@ -2,42 +2,55 @@ package iavlx
 
 import (
 	"fmt"
+	"io"
+	"sync"
+	"sync/atomic"
 
 	corestore "cosmossdk.io/core/store"
 )
 
 type CommitTree struct {
-	root           *Node
-	store          NodeWriter
-	zeroCopy       bool
-	version        uint32
-	leafSeq        uint32
-	branchSeq      uint32
-	hashChan       chan *Node
-	hashDone       chan error
-	saveChan       chan *nodeUpdate
-	saveDone       chan error
-	backgroundSave bool
+	root                *Node
+	store               NodeWriter
+	zeroCopy            bool
+	version             uint32
+	leafSeq             uint32
+	branchSeq           uint32
+	writeMutex          sync.Mutex
+	nodeKeyGen          NodeKeyGenerator
+	batchProcessChan    chan *Batch
+	batchDone           chan error
+	leafWriteChan       chan *nodeUpdate
+	leafWriteDone       chan error
+	branchWriteChan     chan branchUpdate
+	branchWriteDone     chan error
+	branchCommitVersion atomic.Uint32
+	// TODO settings for background saving, checkpointing, eviction, pruning, etc.
+}
+
+type branchUpdate struct {
+	nodeUpdate *nodeUpdate
+	commit     *struct {
+		version uint32
+		root    *Node
+	}
 }
 
 func NewCommitTree(store NodeWriter) *CommitTree {
 	tree := &CommitTree{
-		store:          store,
-		leafSeq:        1,
-		branchSeq:      1,
-		backgroundSave: true,
+		store:     store,
+		leafSeq:   1,
+		branchSeq: 1,
 		// TODO should we initialize version to 1?
 	}
-	tree.reinitHasher()
-	err := tree.reinitSave()
-	if err != nil {
-		// this should never happen at initialization
-		panic(err)
-	}
+	tree.reinitBatchChannels()
 	return tree
 }
 
 func (c *CommitTree) Set(key, value []byte) error {
+	c.writeMutex.Lock()
+	defer c.writeMutex.Unlock()
+
 	batch := c.NewBatch()
 	err := batch.Set(key, value)
 	if err != nil {
@@ -47,6 +60,9 @@ func (c *CommitTree) Set(key, value []byte) error {
 }
 
 func (c *CommitTree) Remove(key []byte) error {
+	c.writeMutex.Lock()
+	defer c.writeMutex.Unlock()
+
 	batch := c.NewBatch()
 	err := batch.Remove(key)
 	if err != nil {
@@ -60,68 +76,91 @@ func (c *CommitTree) Iterator(start, end []byte, ascending bool) (corestore.Iter
 }
 
 func (c *CommitTree) NewBatch() *BatchTree {
-	batch := NewBatchTree(c.root, NullStore{}, c.zeroCopy)
+	batch := NewBatchTree(c.root, c.store, c.zeroCopy)
 	return batch
 }
 
 func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
+	c.writeMutex.Lock()
+	defer c.writeMutex.Unlock()
+
 	if batchTree.origRoot != c.root {
+		// TODO apply the updates on top of the current root
+		//root := wrapNewNode(c.root)
+		//for _, update := range batchTree.store.leafNodes.updates {
+		//	if update != nil {
+		//		var err error
+		//		if update.deleted {
+		//			_, root, _, err = removeRecursive(c.store, root, update.key)
+		//		}
+		//	}
+		//}
 		return fmt.Errorf("batchTree original root does not match current root")
 	}
 	c.root = batchTree.root
-	batch := batchTree.store
-	for _, update := range batch.batchUpdates {
-		if update != nil {
-			if !update.deleted {
-				if update.isLeaf() {
-					update.nodeKey = NewLeafNodeKey(c.version+1, c.leafSeq)
-					c.leafSeq++
-				} else {
-					update.nodeKey = NewBranchNodeKey(c.version+1, c.branchSeq)
-					c.branchSeq++
-				}
-				c.hashChan <- update.Node
-			}
-			c.saveChan <- update
-		}
-	}
+	c.batchProcessChan <- batchTree.store
 	return nil
 }
 
-func (c *CommitTree) reinitHasher() {
-	hashChan := make(chan *Node, 1024)
-	hashDone := make(chan error, 1)
-	c.hashChan = hashChan
-	c.hashDone = hashDone
+func (c *CommitTree) reinitBatchChannels() {
+	batchChan := make(chan *Batch, 256)
+	batchDone := make(chan error, 1)
+	c.batchProcessChan = batchChan
+	c.batchDone = batchDone
+	leafWriteChan := make(chan *nodeUpdate, 2048)
+	leafWriteDone := make(chan error, 1)
+	c.leafWriteChan = leafWriteChan
+	c.leafWriteDone = leafWriteDone
+	nodeKeyGen := c.nodeKeyGen
+	store := c.store
+
+	// process batches
 	go func() {
-		for node := range c.hashChan {
-			_, err := node.Hash(NullStore{})
-			if err != nil {
-				hashDone <- err
-				break
+		defer close(c.batchDone)
+		// we also close the leafWriteChan here, after all batches have been processed
+		defer close(c.leafWriteChan)
+		for batch := range c.batchProcessChan {
+			// First:
+			// - assign each new leaf node a node key
+			// - hash each leaf node
+			// - push each leaf node to walWriteChan
+			for _, update := range batch.leafNodes.updates {
+				if update == nil {
+					continue
+				}
+				if !update.deleted {
+					nodeKeyGen.AssignNodeKey(update.Node)
+					if _, err := update.Node.Hash(store); err != nil {
+						c.batchDone <- err
+						return
+					}
+				}
+				c.leafWriteChan <- update
+			}
+			// Second:
+			// - assign each new branch node a node key
+			// - hash each branch node
+			// - push each branch node to branchWriteChan
+			for _, update := range batch.branchNodes.updates {
+				if update == nil {
+					continue
+				}
+				if !update.deleted {
+					nodeKeyGen.AssignNodeKey(update.Node)
+					if _, err := update.Node.Hash(store); err != nil {
+						c.batchDone <- err
+						return
+					}
+				}
+				c.branchWriteChan <- branchUpdate{nodeUpdate: update}
 			}
 		}
-		close(hashDone)
 	}()
-}
 
-func (c *CommitTree) reinitSave() error {
-	if c.saveChan != nil {
-		close(c.saveChan)
-	}
-	if c.saveDone != nil {
-		err := <-c.saveDone
-		if err != nil {
-			return err
-		}
-	}
-	saveChan := make(chan *nodeUpdate, 1024)
-	saveDone := make(chan error, 1)
-	c.saveChan = saveChan
-	c.saveDone = saveDone
-	store := c.store
+	// write leave nodes
 	go func() {
-		for update := range c.saveChan {
+		defer close(leafWriteDone)
+		for update := range leafWriteChan {
 			var err error
 			if update.deleted {
 				err = store.DeleteNode(update.Node)
@@ -129,29 +168,49 @@ func (c *CommitTree) reinitSave() error {
 				err = store.SaveNode(update.Node)
 			}
 			if err != nil {
-				saveDone <- err
+				leafWriteDone <- err
 				break
 			}
 		}
-		close(saveDone)
 	}()
-	return nil
+
+	if c.branchWriteChan == nil {
+		branchWriteChan := make(chan branchUpdate, 2048)
+		branchWriteDone := make(chan error, 1)
+		c.branchWriteChan = branchWriteChan
+		c.branchWriteDone = branchWriteDone
+		go func() {
+			defer close(branchWriteDone)
+			for update := range branchWriteChan {
+				nodeUpdate := update.nodeUpdate
+				if nodeUpdate != nil {
+					var err error
+					if update.nodeUpdate.deleted {
+						err = store.DeleteNode(update.nodeUpdate.Node)
+					} else {
+						err = store.SaveNode(update.nodeUpdate.Node)
+					}
+					if err != nil {
+						branchWriteDone <- err
+						return
+					}
+				} else if update.commit != nil {
+					err := store.SaveRoot(int64(update.commit.version), update.commit.root)
+					if err != nil {
+						branchWriteDone <- err
+						return
+					}
+				}
+			}
+		}()
+	}
 }
 
 func (c *CommitTree) Commit() ([]byte, error) {
-	close(c.hashChan)
-	err := <-c.hashDone
-	if err != nil {
-		return nil, err
-	}
-	c.reinitHasher()
+	c.writeMutex.Lock()
+	defer c.writeMutex.Unlock()
 
-	if !c.backgroundSave {
-		err := c.reinitSave()
-		if err != nil {
-			return nil, err
-		}
-	}
+	close(c.batchProcessChan)
 
 	c.version++
 	c.leafSeq = 1
@@ -160,7 +219,7 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	if c.root == nil {
 		return emptyHash, nil
 	}
-	return c.root.Hash(NullStore{})
+	return c.root.Hash(c.store)
 }
 
 func (c *CommitTree) Version() int64 {
@@ -174,3 +233,11 @@ func (c *CommitTree) Get(key []byte) ([]byte, error) {
 	_, value, err := c.root.get(c.store, key)
 	return value, err
 }
+
+func (c *CommitTree) Close() error {
+	// shutdown all write channels and wait for branch write completion
+	//TODO implement me
+	panic("implement me")
+}
+
+var _ io.Closer = (*CommitTree)(nil)

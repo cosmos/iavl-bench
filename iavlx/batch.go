@@ -1,10 +1,48 @@
 package iavlx
 
-type BatchStore struct {
+type Batch struct {
 	NodeReader
-	// TODO should/can we separate branches and leaves easily here so that it's easier to apply just leaves as a WAL if the original root differs?
-	batchUpdates []*nodeUpdate
-	batchNodeMap map[*Node]int
+	leafNodes   *nodeTracker
+	branchNodes *nodeTracker
+}
+
+type nodeTracker struct {
+	updates []*nodeUpdate
+	nodeMap map[*Node]int
+}
+
+func newNodeTracker() *nodeTracker {
+	return &nodeTracker{
+		nodeMap: make(map[*Node]int),
+	}
+}
+
+func (nt *nodeTracker) trackNode(node *Node) *Node {
+	n := len(nt.updates)
+	nt.updates = append(nt.updates, &nodeUpdate{Node: node})
+	nt.nodeMap[node] = n
+	return node
+}
+
+func (nt *nodeTracker) dropNode(node *Node) {
+	if n, exists := nt.nodeMap[node]; exists {
+		nt.updates[n] = nil
+		delete(nt.nodeMap, node)
+	} else {
+		nt.updates = append(nt.updates, &nodeUpdate{Node: node, deleted: true})
+	}
+}
+func (nt *nodeTracker) apply(other *nodeTracker) {
+	for _, node := range other.updates {
+		if node != nil {
+			if node.deleted {
+				nt.dropNode(node.Node)
+			} else {
+				nt.trackNode(node.Node)
+			}
+		}
+	}
+
 }
 
 type nodeUpdate struct {
@@ -12,73 +50,67 @@ type nodeUpdate struct {
 	deleted bool
 }
 
-func NewBatchStore(nodeReader NodeReader) *BatchStore {
-	return &BatchStore{
-		NodeReader:   nodeReader,
-		batchNodeMap: make(map[*Node]int),
+func NewBatch(nodeReader NodeReader) *Batch {
+	return &Batch{
+		NodeReader:  nodeReader,
+		leafNodes:   newNodeTracker(),
+		branchNodes: newNodeTracker(),
 	}
 }
 
-func (b *BatchStore) NewLeafNode(key, value []byte) *Node {
+func (b *Batch) NewLeafNode(key, value []byte) *Node {
 	node := newLeafNode(key, value)
-	n := len(b.batchUpdates)
-	b.batchUpdates = append(b.batchUpdates, &nodeUpdate{Node: node})
-	b.batchNodeMap[node] = n
-	return node
+	return b.trackNode(node)
 }
 
-func (b *BatchStore) NewBranchNode() *Node {
+func (b *Batch) NewBranchNode() *Node {
 	return b.trackNode(NewNode())
 }
 
-func (b *BatchStore) CopyLeafNode(node *Node, newValue []byte) *Node {
+func (b *Batch) MutateLeafNode(node *Node, newValue []byte) *Node {
+	b.DropNode(node)
 	newNode := node.copy()
 	newNode.value = newValue
 	return b.trackNode(newNode)
 }
 
-func (b *BatchStore) CopyNode(node *Node) *Node {
+func (b *Batch) MutateBranchNode(node *Node) *Node {
+	b.DropNode(node)
 	return b.trackNode(node.copy())
 }
 
-func (b *BatchStore) trackNode(node *Node) *Node {
-	n := len(b.batchUpdates)
-	b.batchUpdates = append(b.batchUpdates, &nodeUpdate{Node: node})
-	b.batchNodeMap[node] = n
+func (b *Batch) trackNode(node *Node) *Node {
+	if node.isLeaf() {
+		b.leafNodes.trackNode(node)
+	} else {
+		b.branchNodes.trackNode(node)
+	}
 	return node
 }
 
-func (b *BatchStore) DeleteNode(node *Node) {
-	if n, exists := b.batchNodeMap[node]; exists {
-		b.batchUpdates[n] = nil
-		delete(b.batchNodeMap, node)
+func (b *Batch) DropNode(node *Node) {
+	if node.isLeaf() {
+		b.leafNodes.dropNode(node)
 	} else {
-		b.batchUpdates = append(b.batchUpdates, &nodeUpdate{Node: node, deleted: true})
+		b.branchNodes.dropNode(node)
 	}
 }
 
-func (b *BatchStore) ApplyBatch(other *BatchStore) {
-	for _, node := range other.batchUpdates {
-		if node != nil {
-			if node.deleted {
-				b.DeleteNode(node.Node)
-			} else {
-				b.trackNode(node.Node)
-			}
-		}
-	}
+func (b *Batch) ApplyBatch(other *Batch) {
+	b.leafNodes.apply(other.leafNodes)
+	b.branchNodes.apply(other.branchNodes)
 }
 
-var _ NodeFactory = (*BatchStore)(nil)
+var _ NodeFactory = (*Batch)(nil)
 
 type BatchTree struct {
 	origRoot *Node
-	store    *BatchStore
+	store    *Batch
 	*Tree
 }
 
 func NewBatchTree(root *Node, reader NodeReader, zeroCopy bool) *BatchTree {
-	store := NewBatchStore(reader)
+	store := NewBatch(reader)
 	return &BatchTree{
 		origRoot: root,
 		store:    store,
