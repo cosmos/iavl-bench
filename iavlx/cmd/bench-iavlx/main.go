@@ -30,11 +30,17 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 		tree = iavlx.NewCommitTree(iavlx.NullStore{})
 		m.trees[storeKey] = tree
 	}
+	batch := tree.Branch()
+	var err error
 	if delete {
-		return tree.Remove(key)
+		err = batch.Remove(key)
 	} else {
-		return tree.Set(key, value)
+		err = batch.Set(key, value)
 	}
+	if err != nil {
+		return err
+	}
+	return tree.ApplyBatch(batch)
 }
 
 func (m *MemMultiTree) Commit() error {

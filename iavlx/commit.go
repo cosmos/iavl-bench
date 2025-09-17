@@ -44,22 +44,7 @@ func (c *CommitTree) Branch() *BatchTree {
 	return batch
 }
 
-func (c *CommitTree) checkError() error {
-	select {
-	case err := <-c.leafWriteDone:
-		if err != nil {
-			return fmt.Errorf("fatal error: %w", err)
-		}
-	default:
-	}
-	return nil
-}
-
 func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
-	if err := c.checkError(); err != nil {
-		return err
-	}
-
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
@@ -83,78 +68,7 @@ func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
 }
 
 func (c *CommitTree) reinitBatchChannels() {
-	batchChan := make(chan *Batch, 256)
-	batchDone := make(chan error, 1)
-	c.batchProcessChan = batchChan
-	c.batchDone = batchDone
-	leafWriteChan := make(chan *nodeUpdate, 2048)
-	leafWriteDone := make(chan error, 1)
-	c.leafWriteChan = leafWriteChan
-	c.leafWriteDone = leafWriteDone
 	store := c.store
-
-	// process batches
-	go func() {
-		defer close(c.batchDone)
-		// we also close the leafWriteChan here, after all batches have been processed
-		defer close(c.leafWriteChan)
-		for batch := range c.batchProcessChan {
-			// First:
-			// - assign each new leaf node a node key
-			// - hash each leaf node
-			// - push each leaf node to walWriteChan
-			for _, update := range batch.leafNodes.updates {
-				if update == nil {
-					continue
-				}
-				if !update.deleted {
-					store.AssignNodeKey(update.Node)
-					if _, err := update.Node.Hash(store); err != nil {
-						c.batchDone <- err
-						return
-					}
-				} else {
-					update.deleteKey = store.AssignDeleteLeafKey(update.Node)
-				}
-				c.leafWriteChan <- update
-			}
-			// Second:
-			// - assign each new branch node a node key
-			// - hash each branch node
-			// - push each branch node to branchWriteChan
-			for _, update := range batch.branchNodes.updates {
-				if update == nil {
-					continue
-				}
-				if !update.deleted {
-					store.AssignNodeKey(update.Node)
-					if _, err := update.Node.Hash(store); err != nil {
-						c.batchDone <- err
-						return
-					}
-				}
-				c.branchWriteChan <- branchUpdate{nodeUpdate: update}
-			}
-		}
-	}()
-
-	// write leave nodes
-	go func() {
-		defer close(leafWriteDone)
-		for update := range leafWriteChan {
-			var err error
-			if update.deleted {
-				err = store.DeleteNode(update.deleteKey, update.Node)
-			} else {
-				err = store.SaveNode(update.Node)
-			}
-			if err != nil {
-				leafWriteDone <- err
-				break
-			}
-		}
-	}()
-
 	if c.branchWriteChan == nil {
 		branchWriteChan := make(chan branchUpdate, 2048)
 		branchWriteDone := make(chan error, 1)
@@ -186,6 +100,78 @@ func (c *CommitTree) reinitBatchChannels() {
 			}
 		}()
 	}
+
+	batchChan := make(chan *Batch, 256)
+	batchDone := make(chan error, 1)
+	c.batchProcessChan = batchChan
+	c.batchDone = batchDone
+	leafWriteChan := make(chan *nodeUpdate, 2048)
+	leafWriteDone := make(chan error, 1)
+	c.leafWriteChan = leafWriteChan
+	c.leafWriteDone = leafWriteDone
+
+	// process batches
+	go func() {
+		defer close(batchDone)
+		// we also close the leafWriteChan here, after all batches have been processed
+		defer close(leafWriteChan)
+		for batch := range batchChan {
+			// First:
+			// - assign each new leaf node a node key
+			// - hash each leaf node
+			// - push each leaf node to walWriteChan
+			for _, update := range batch.leafNodes.updates {
+				if update == nil {
+					continue
+				}
+				if !update.deleted {
+					store.AssignNodeKey(update.Node)
+					if _, err := update.Node.Hash(store); err != nil {
+						batchDone <- err
+						return
+					}
+				} else {
+					update.deleteKey = store.AssignDeleteLeafKey(update.Node)
+				}
+				leafWriteChan <- update
+			}
+			// Second:
+			// - assign each new branch node a node key
+			// - hash each branch node
+			// - push each branch node to branchWriteChan
+			for _, update := range batch.branchNodes.updates {
+				if update == nil {
+					continue
+				}
+				if !update.deleted {
+					store.AssignNodeKey(update.Node)
+					if _, err := update.Node.Hash(store); err != nil {
+						batchDone <- err
+						return
+					}
+				}
+				c.branchWriteChan <- branchUpdate{nodeUpdate: update}
+			}
+		}
+	}()
+
+	// write leave nodes
+	go func() {
+		defer close(leafWriteDone)
+		for update := range leafWriteChan {
+			var err error
+			if update.deleted {
+				err = store.DeleteNode(update.deleteKey, update.Node)
+			} else {
+				err = store.SaveNode(update.Node)
+			}
+			if err != nil {
+				leafWriteDone <- err
+				break
+			}
+		}
+	}()
+
 }
 
 func (c *CommitTree) Commit() ([]byte, error) {
@@ -198,16 +184,27 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		return nil, err
 	}
 
+	// wait for all leaf writes to complete
+	err = <-c.leafWriteDone
+	if err != nil {
+		return nil, err
+	}
+
+	var root *Node
+	var hash []byte
 	if c.root == nil {
-		return emptyHash, nil
-	}
-	root, err := c.root.Get(c.store)
-	if err != nil {
-		return nil, err
-	}
-	hash, err := root.Hash(c.store)
-	if err != nil {
-		return nil, err
+		root = nil
+		hash = emptyHash
+	} else {
+		var err error
+		root, err = c.root.Get(c.store)
+		if err != nil {
+			return nil, err
+		}
+		hash, err = root.Hash(c.store)
+		if err != nil {
+			return nil, err
+		}
 	}
 	c.branchWriteChan <- branchUpdate{commit: &struct {
 		version uint32
