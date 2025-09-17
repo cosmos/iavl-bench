@@ -74,7 +74,7 @@ func testIAVLXSims(t *rapid.T) {
 	dbV1 := dbm.NewMemDB()
 	treeV1 := iavl.NewMutableTree(dbV1, 500000, true, logger)
 
-	treeV2 := NewCommitTree(NullStore{})
+	treeV2 := NewCommitTree(NewNullStore(NewVersionSeqNodeKeyGen()))
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
 		treeV2:       treeV2,
@@ -129,8 +129,9 @@ func (s *SimMachine) set(t *rapid.T) {
 	// set in both trees
 	updated, errV1 := s.treeV1.Set(key, value)
 	require.NoError(t, errV1, "failed to set key in V1 tree")
-	errV2 := s.treeV2.Set(key, value)
-	require.NoError(t, errV2, "failed to set key in V2 tree")
+	branch := s.treeV2.Branch()
+	require.NoError(t, branch.Set(key, value), "failed to set key in V2 tree")
+	require.NoError(t, s.treeV2.ApplyBatch(branch), "failed to apply batch to V2 tree")
 	//require.Equal(t, updated, updatedV2, "update status mismatch between V1 and V2 trees")
 	if updated {
 		require.NotNil(t, s.existingKeys[string(key)], "key shouldn't have been marked as updated")
@@ -174,8 +175,9 @@ func (s *SimMachine) delete(t *rapid.T) {
 	// delete in both trees
 	_, removedV1, errV1 := s.treeV1.Remove(key)
 	require.NoError(t, errV1, "failed to remove key from V1 tree")
-	errV2 := s.treeV2.Remove(key)
-	require.NoError(t, errV2, "failed to remove key from V2 tree")
+	branch := s.treeV2.Branch()
+	require.NoError(t, branch.Remove(key), "failed to remove key from V2 tree")
+	require.NoError(t, s.treeV2.ApplyBatch(branch), "failed to apply batch to V2 tree")
 	//require.Equal(t, removedV1, removedV2, "removed status mismatch between V1 and V2 trees")
 	// TODO v1 & v2 have slightly different behaviors for the value returned on removal. We should re-enable this and check.
 	//if valueV1 == nil || len(valueV1) == 0 {

@@ -6,12 +6,7 @@ import (
 )
 
 func RenderDotGraph(writer io.Writer, tree *Tree) error {
-	root, err := tree.root.Get(tree.store)
-	if err != nil {
-		return fmt.Errorf("failed to load root node: %w", err)
-	}
-
-	_, err = fmt.Fprintln(writer, "graph G {")
+	_, err := fmt.Fprintln(writer, "graph G {")
 	if err != nil {
 		return err
 	}
@@ -19,8 +14,13 @@ func RenderDotGraph(writer io.Writer, tree *Tree) error {
 		_, err := fmt.Fprintln(writer, "}")
 		return err
 	}
-	if root == nil {
+	if tree.root == nil {
 		return finishGraph()
+	}
+
+	root, err := tree.root.Get(tree.store)
+	if err != nil {
+		return fmt.Errorf("failed to load root node: %w", err)
 	}
 
 	nodeIdx := uint64(1)

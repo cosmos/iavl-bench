@@ -14,7 +14,7 @@ func (m NullStore) SaveNode(node *Node) error {
 	return nil
 }
 
-func (m NullStore) DeleteNode(node *Node) error {
+func (m NullStore) DeleteNode(deleteKey NodeKey, node *Node) error {
 	return nil
 }
 

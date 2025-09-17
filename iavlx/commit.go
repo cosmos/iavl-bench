@@ -13,7 +13,6 @@ type CommitTree struct {
 	zeroCopy            bool
 	version             uint32
 	writeMutex          sync.Mutex
-	nodeKeyGen          NodeKeyGenerator
 	batchProcessChan    chan *Batch
 	batchDone           chan error
 	leafWriteChan       chan *nodeUpdate
@@ -40,40 +39,32 @@ func NewCommitTree(store NodeWriter) *CommitTree {
 	return tree
 }
 
-func (c *CommitTree) Set(key, value []byte) error {
-	c.writeMutex.Lock()
-	defer c.writeMutex.Unlock()
-
-	batch := c.Branch()
-	err := batch.Set(key, value)
-	if err != nil {
-		return err
-	}
-	return c.ApplyBatch(batch)
-}
-
-func (c *CommitTree) Remove(key []byte) error {
-	c.writeMutex.Lock()
-	defer c.writeMutex.Unlock()
-
-	batch := c.Branch()
-	err := batch.Remove(key)
-	if err != nil {
-		return err
-	}
-	return c.ApplyBatch(batch)
-}
-
 func (c *CommitTree) Branch() *BatchTree {
 	batch := NewBatchTree(c.root, c.store, c.zeroCopy)
 	return batch
 }
 
+func (c *CommitTree) checkError() error {
+	select {
+	case err := <-c.leafWriteDone:
+		if err != nil {
+			return fmt.Errorf("fatal error: %w", err)
+		}
+	default:
+	}
+	return nil
+}
+
 func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
+	if err := c.checkError(); err != nil {
+		return err
+	}
+
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
 	if batchTree.origRoot != c.root {
+		// TODO do a proper comparison between node keys
 		// TODO apply the updates on top of the current root
 		//root := wrapNewNode(c.root)
 		//for _, update := range batchTree.store.leafNodes.updates {
@@ -100,7 +91,6 @@ func (c *CommitTree) reinitBatchChannels() {
 	leafWriteDone := make(chan error, 1)
 	c.leafWriteChan = leafWriteChan
 	c.leafWriteDone = leafWriteDone
-	nodeKeyGen := c.nodeKeyGen
 	store := c.store
 
 	// process batches
@@ -118,11 +108,13 @@ func (c *CommitTree) reinitBatchChannels() {
 					continue
 				}
 				if !update.deleted {
-					nodeKeyGen.AssignNodeKey(update.Node)
+					store.AssignNodeKey(update.Node)
 					if _, err := update.Node.Hash(store); err != nil {
 						c.batchDone <- err
 						return
 					}
+				} else {
+					update.deleteKey = store.AssignDeleteLeafKey(update.Node)
 				}
 				c.leafWriteChan <- update
 			}
@@ -135,7 +127,7 @@ func (c *CommitTree) reinitBatchChannels() {
 					continue
 				}
 				if !update.deleted {
-					nodeKeyGen.AssignNodeKey(update.Node)
+					store.AssignNodeKey(update.Node)
 					if _, err := update.Node.Hash(store); err != nil {
 						c.batchDone <- err
 						return
@@ -152,7 +144,7 @@ func (c *CommitTree) reinitBatchChannels() {
 		for update := range leafWriteChan {
 			var err error
 			if update.deleted {
-				err = store.DeleteNode(update.Node)
+				err = store.DeleteNode(update.deleteKey, update.Node)
 			} else {
 				err = store.SaveNode(update.Node)
 			}
@@ -175,7 +167,7 @@ func (c *CommitTree) reinitBatchChannels() {
 				if nodeUpdate != nil {
 					var err error
 					if update.nodeUpdate.deleted {
-						err = store.DeleteNode(update.nodeUpdate.Node)
+						err = store.DeleteNode(EmptyNodeKey, update.nodeUpdate.Node)
 					} else {
 						err = store.SaveNode(update.nodeUpdate.Node)
 					}
@@ -201,7 +193,10 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	defer c.writeMutex.Unlock()
 
 	close(c.batchProcessChan)
-	c.version++
+	err := <-c.batchDone
+	if err != nil {
+		return nil, err
+	}
 
 	if c.root == nil {
 		return emptyHash, nil
@@ -221,6 +216,8 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		version: c.version,
 		root:    root,
 	}}
+
+	c.version++
 	c.store.SetNodeKeyVersion(c.version + 1)
 
 	c.reinitBatchChannels()

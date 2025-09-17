@@ -5,6 +5,8 @@ import "encoding/binary"
 // NodeKey uniquely represents nodes.
 type NodeKey [12]byte
 
+var EmptyNodeKey NodeKey = NodeKey{}
+
 type NodeKeyGenerator interface {
 	AssignNodeKey(*Node)
 	AssignDeleteLeafKey(*Node) NodeKey

@@ -47,7 +47,8 @@ func (nt *nodeTracker) apply(other *nodeTracker) {
 
 type nodeUpdate struct {
 	*Node
-	deleted bool
+	deleted   bool
+	deleteKey NodeKey
 }
 
 func NewBatch(nodeReader NodeReader) *Batch {
