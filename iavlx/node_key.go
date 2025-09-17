@@ -5,6 +5,10 @@ import "encoding/binary"
 // NodeKey uniquely represents nodes.
 type NodeKey [12]byte
 
+func (k NodeKey) IsEmpty() bool {
+	return k == EmptyNodeKey
+}
+
 var EmptyNodeKey NodeKey = NodeKey{}
 
 type NodeKeyGenerator interface {

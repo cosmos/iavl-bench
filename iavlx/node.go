@@ -32,7 +32,7 @@ type NodeWriter interface {
 	NodeReader
 	NodeKeyGenerator
 	SaveNode(*Node) error
-	DeleteNode(NodeKey, *Node) error
+	DeleteNode(version int64, deleteKey NodeKey, node *Node) error
 	SaveRoot(version int64, root *Node) error
 }
 

@@ -45,6 +45,22 @@ func (c *CommitTree) Branch() *BatchTree {
 }
 
 func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
+	select {
+	case err := <-c.batchDone:
+		if err != nil {
+			return err
+		}
+	case err := <-c.leafWriteDone:
+		if err != nil {
+			return err
+		}
+	case err := <-c.branchWriteDone:
+		if err != nil {
+			return err
+		}
+	default:
+	}
+
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
@@ -74,6 +90,7 @@ func (c *CommitTree) reinitBatchChannels() {
 		branchWriteDone := make(chan error, 1)
 		c.branchWriteChan = branchWriteChan
 		c.branchWriteDone = branchWriteDone
+		stagedVersion := c.version + 1
 		go func() {
 			defer close(branchWriteDone)
 			for update := range branchWriteChan {
@@ -81,7 +98,7 @@ func (c *CommitTree) reinitBatchChannels() {
 				if nodeUpdate != nil {
 					var err error
 					if update.nodeUpdate.deleted {
-						err = store.DeleteNode(EmptyNodeKey, update.nodeUpdate.Node)
+						err = store.DeleteNode(int64(stagedVersion), EmptyNodeKey, update.nodeUpdate.Node)
 					} else {
 						err = store.SaveNode(update.nodeUpdate.Node)
 					}
@@ -96,6 +113,7 @@ func (c *CommitTree) reinitBatchChannels() {
 						return
 					}
 					c.branchCommitVersion.Store(update.commit.version)
+					stagedVersion = update.commit.version + 1
 				}
 			}
 		}()
@@ -109,6 +127,7 @@ func (c *CommitTree) reinitBatchChannels() {
 	leafWriteDone := make(chan error, 1)
 	c.leafWriteChan = leafWriteChan
 	c.leafWriteDone = leafWriteDone
+	stagedVersion := c.version + 1
 
 	// process batches
 	go func() {
@@ -161,7 +180,7 @@ func (c *CommitTree) reinitBatchChannels() {
 		for update := range leafWriteChan {
 			var err error
 			if update.deleted {
-				err = store.DeleteNode(update.deleteKey, update.Node)
+				err = store.DeleteNode(int64(stagedVersion), update.deleteKey, update.Node)
 			} else {
 				err = store.SaveNode(update.Node)
 			}

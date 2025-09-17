@@ -2,12 +2,14 @@ package iavlx
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"fmt"
 
 	corestore "cosmossdk.io/core/store"
 	sdklog "cosmossdk.io/log"
+	db "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
 	dbm "github.com/cosmos/iavl/db"
 	"github.com/stretchr/testify/require"
@@ -16,7 +18,7 @@ import (
 )
 
 func TestBasicTest(t *testing.T) {
-	commitTree := NewCommitTree(NewNullStore(NewVersionSeqNodeKeyGen()))
+	commitTree := NewCommitTree(NewCosmosDBStore(db.NewMemDB(), CosmosDBStoreOptions{}))
 	tree := commitTree.Branch()
 	require.NoError(t, tree.Set([]byte("key1"), []byte("value1")))
 
@@ -74,7 +76,12 @@ func testIAVLXSims(t *rapid.T) {
 	dbV1 := dbm.NewMemDB()
 	treeV1 := iavl.NewMutableTree(dbV1, 500000, true, logger)
 
-	treeV2 := NewCommitTree(NewNullStore(NewVersionSeqNodeKeyGen()))
+	tempDir, err := os.MkdirTemp("", "iavlx")
+	require.NoError(t, err, "failed to create temp directory")
+	defer os.RemoveAll(tempDir)
+	levelDb, err := db.NewGoLevelDB("test", tempDir, nil)
+	require.NoError(t, err, "failed to create leveldb database")
+	treeV2 := NewCommitTree(NewCosmosDBStore(levelDb, CosmosDBStoreOptions{}))
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
 		treeV2:       treeV2,

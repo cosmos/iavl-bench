@@ -3,20 +3,24 @@ package main
 import (
 	"log/slog"
 
+	dbm "github.com/cosmos/cosmos-db"
+
 	"github.com/cosmos/iavl-bench/bench"
 	"iavlx"
 )
 
 type MemMultiTree struct {
 	logger  *slog.Logger
+	dbDir   string
 	trees   map[string]*iavlx.CommitTree
 	version int64
 }
 
-func NewMemMultiTree(logger *slog.Logger) *MemMultiTree {
+func NewMemMultiTree(logger *slog.Logger, dbDir string) *MemMultiTree {
 	return &MemMultiTree{
 		logger: logger,
 		trees:  make(map[string]*iavlx.CommitTree),
+		dbDir:  dbDir,
 	}
 }
 
@@ -27,7 +31,11 @@ func (m *MemMultiTree) Version() int64 {
 func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
-		tree = iavlx.NewCommitTree(iavlx.NewNullStore(iavlx.NewVersionSeqNodeKeyGen()))
+		db, err := dbm.NewGoLevelDB(m.dbDir, storeKey, nil)
+		if err != nil {
+			return err
+		}
+		tree = iavlx.NewCommitTree(iavlx.NewCosmosDBStore(db, iavlx.CosmosDBStoreOptions{}))
 		m.trees[storeKey] = tree
 	}
 	batch := tree.Branch()
@@ -60,7 +68,7 @@ var _ bench.Tree = (*MemMultiTree)(nil)
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			return NewMemMultiTree(params.Logger), nil
+			return NewMemMultiTree(params.Logger, params.TreeDir), nil
 		},
 	})
 }
