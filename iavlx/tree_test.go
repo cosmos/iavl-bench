@@ -16,7 +16,8 @@ import (
 )
 
 func TestBasicTest(t *testing.T) {
-	tree := NewCommitTree(NullStore{})
+	commitTree := NewCommitTree(NewNullStore(NewVersionSeqNodeKeyGen()))
+	tree := commitTree.Branch()
 	require.NoError(t, tree.Set([]byte("key1"), []byte("value1")))
 
 	val, err := tree.Get([]byte("key1"))
@@ -52,7 +53,8 @@ func TestBasicTest(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, val)
 
-	hash, err := tree.Commit()
+	require.NoError(t, commitTree.ApplyBatch(tree))
+	hash, err := commitTree.Commit()
 	require.NoError(t, err)
 	require.NotNil(t, hash)
 	t.Logf("committed with root hash: %X", hash)
@@ -145,7 +147,7 @@ func (s *SimMachine) get(t *rapid.T) {
 	var key = s.selectKey(t)
 	valueV1, errV1 := s.treeV1.Get(key)
 	require.NoError(t, errV1, "failed to get key from V1 tree")
-	valueV2, errV2 := s.treeV2.Get(key)
+	valueV2, errV2 := s.treeV2.Branch().Get(key)
 	require.NoError(t, errV2, "failed to get key from V2 tree")
 	require.Equal(t, valueV1, valueV2, "value mismatch between V1 and V2 trees")
 	expectedValue, found := s.existingKeys[string(key)]
@@ -221,11 +223,12 @@ func (s *SimMachine) debugDump(t *rapid.T) {
 	graph1 := &bytes.Buffer{}
 	//iavl.WriteDotGraphv2(graph1, s.treeV1.ImmutableTree)
 	t.Logf("V1 tree:\n%s", graph1.String())
-	s.debugDumpTree(t, s.treeV2)
-	graph2, err := RenderDotGraph(s.treeV2.store, s.treeV2.root)
+	s.debugDumpTree(t, s.treeV2.Branch())
+	graph2 := &bytes.Buffer{}
+	err := RenderDotGraph(graph2, s.treeV2.Branch().Tree)
 	require.NoError(t, err, "failed to render V2 tree graph")
-	t.Logf("V2 tree:\n%s", graph2)
-	s.debugDumpTree(t, s.treeV2)
+	t.Logf("V2 tree:\n%s", graph2.String())
+	s.debugDumpTree(t, s.treeV2.Branch())
 }
 
 func (s *SimMachine) debugDumpTree(t *rapid.T, tree iterable) {
@@ -265,7 +268,7 @@ func (s *SimMachine) debugDumpTree(t *rapid.T, tree iterable) {
 //}
 
 func (s *SimMachine) compareIterators(t *rapid.T, start, end []byte, ascending bool) {
-	compareIteratorsAtVersion(t, s.treeV1, s.treeV2, start, end, ascending)
+	compareIteratorsAtVersion(t, s.treeV1, s.treeV2.Branch(), start, end, ascending)
 }
 
 type iterable interface {

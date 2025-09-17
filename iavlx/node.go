@@ -30,6 +30,7 @@ type NodeFactory interface {
 
 type NodeWriter interface {
 	NodeReader
+	NodeKeyGenerator
 	SaveNode(*Node) error
 	DeleteNode(*Node) error
 	SaveRoot(version int64, root *Node) error

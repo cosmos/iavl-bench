@@ -7,7 +7,8 @@ type NodeKey [12]byte
 
 type NodeKeyGenerator interface {
 	AssignNodeKey(*Node)
-	SetVersion(uint32)
+	AssignDeleteLeafKey(*Node) NodeKey
+	SetNodeKeyVersion(uint32)
 	Version() uint32
 }
 
@@ -17,8 +18,17 @@ type VersionSeqNodeKeyGen struct {
 	branchSeq uint32
 }
 
-func (v *VersionSeqNodeKeyGen) SetVersion(x uint32) {
+func NewVersionSeqNodeKeyGen() *VersionSeqNodeKeyGen {
+	res := &VersionSeqNodeKeyGen{}
+	res.SetNodeKeyVersion(1)
+	return res
+}
+
+func (v *VersionSeqNodeKeyGen) SetNodeKeyVersion(x uint32) {
 	v.version = x
+	v.branchSeq = 0
+	// leafSeq has high bit set to distinguish from branch nodes
+	v.leafSeq = 1 << 31
 }
 
 func (v *VersionSeqNodeKeyGen) Version() uint32 {
@@ -26,6 +36,10 @@ func (v *VersionSeqNodeKeyGen) Version() uint32 {
 }
 
 func (v *VersionSeqNodeKeyGen) AssignNodeKey(node *Node) {
+	node.nodeKey = v.assignNodeKey(node)
+}
+
+func (v *VersionSeqNodeKeyGen) assignNodeKey(node *Node) NodeKey {
 	var seq uint32
 	if node.isLeaf() {
 		v.leafSeq++
@@ -37,6 +51,11 @@ func (v *VersionSeqNodeKeyGen) AssignNodeKey(node *Node) {
 	binary.BigEndian.PutUint32(node.nodeKey[0:4], v.version)
 	binary.BigEndian.PutUint32(node.nodeKey[4:8], seq)
 	// last 4 bytes are zero (for now)
+	return node.nodeKey
+}
+
+func (v *VersionSeqNodeKeyGen) AssignDeleteLeafKey(node *Node) NodeKey {
+	return v.assignNodeKey(node)
 }
 
 var _ NodeKeyGenerator = (*VersionSeqNodeKeyGen)(nil)

@@ -5,8 +5,13 @@ import (
 	"io"
 )
 
-func RenderDotGraph(writer io.Writer, store NodeReader, root *Node) error {
-	_, err := fmt.Fprintln(writer, "graph G {")
+func RenderDotGraph(writer io.Writer, tree *Tree) error {
+	root, err := tree.root.Get(tree.store)
+	if err != nil {
+		return fmt.Errorf("failed to load root node: %w", err)
+	}
+
+	_, err = fmt.Fprintln(writer, "graph G {")
 	if err != nil {
 		return err
 	}
@@ -44,12 +49,12 @@ func RenderDotGraph(writer io.Writer, store NodeReader, root *Node) error {
 			return nil
 		}
 
-		leftNode, err := node.left.Get(store)
+		leftNode, err := node.left.Get(tree.store)
 		if err != nil {
 			return err
 		}
 
-		rightNode, err := node.right.Get(store)
+		rightNode, err := node.right.Get(tree.store)
 		if err != nil {
 			return err
 		}

@@ -104,12 +104,12 @@ func (b *Batch) ApplyBatch(other *Batch) {
 var _ NodeFactory = (*Batch)(nil)
 
 type BatchTree struct {
-	origRoot *Node
+	origRoot *NodePointer
 	store    *Batch
 	*Tree
 }
 
-func NewBatchTree(root *Node, reader NodeReader, zeroCopy bool) *BatchTree {
+func NewBatchTree(root *NodePointer, reader NodeReader, zeroCopy bool) *BatchTree {
 	store := NewBatch(reader)
 	return &BatchTree{
 		origRoot: root,

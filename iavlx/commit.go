@@ -5,17 +5,13 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
-
-	corestore "cosmossdk.io/core/store"
 )
 
 type CommitTree struct {
-	root                *Node
+	root                *NodePointer
 	store               NodeWriter
 	zeroCopy            bool
 	version             uint32
-	leafSeq             uint32
-	branchSeq           uint32
 	writeMutex          sync.Mutex
 	nodeKeyGen          NodeKeyGenerator
 	batchProcessChan    chan *Batch
@@ -38,10 +34,7 @@ type branchUpdate struct {
 
 func NewCommitTree(store NodeWriter) *CommitTree {
 	tree := &CommitTree{
-		store:     store,
-		leafSeq:   1,
-		branchSeq: 1,
-		// TODO should we initialize version to 1?
+		store: store,
 	}
 	tree.reinitBatchChannels()
 	return tree
@@ -51,7 +44,7 @@ func (c *CommitTree) Set(key, value []byte) error {
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
-	batch := c.NewBatch()
+	batch := c.Branch()
 	err := batch.Set(key, value)
 	if err != nil {
 		return err
@@ -63,7 +56,7 @@ func (c *CommitTree) Remove(key []byte) error {
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
-	batch := c.NewBatch()
+	batch := c.Branch()
 	err := batch.Remove(key)
 	if err != nil {
 		return err
@@ -71,11 +64,7 @@ func (c *CommitTree) Remove(key []byte) error {
 	return c.ApplyBatch(batch)
 }
 
-func (c *CommitTree) Iterator(start, end []byte, ascending bool) (corestore.Iterator, error) {
-	return NewIterator(c.store, start, end, ascending, c.root, c.zeroCopy), nil
-}
-
-func (c *CommitTree) NewBatch() *BatchTree {
+func (c *CommitTree) Branch() *BatchTree {
 	batch := NewBatchTree(c.root, c.store, c.zeroCopy)
 	return batch
 }
@@ -200,6 +189,7 @@ func (c *CommitTree) reinitBatchChannels() {
 						branchWriteDone <- err
 						return
 					}
+					c.branchCommitVersion.Store(update.commit.version)
 				}
 			}
 		}()
@@ -211,29 +201,36 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	defer c.writeMutex.Unlock()
 
 	close(c.batchProcessChan)
-
 	c.version++
-	c.leafSeq = 1
-	c.branchSeq = 1
 
 	if c.root == nil {
 		return emptyHash, nil
 	}
-	return c.root.Hash(c.store)
+	root, err := c.root.Get(c.store)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := root.Hash(c.store)
+	if err != nil {
+		return nil, err
+	}
+	c.branchWriteChan <- branchUpdate{commit: &struct {
+		version uint32
+		root    *Node
+	}{
+		version: c.version,
+		root:    root,
+	}}
+	c.store.SetNodeKeyVersion(c.version + 1)
+
+	c.reinitBatchChannels()
+
+	return hash, nil
 }
 
 func (c *CommitTree) Version() int64 {
 	return int64(c.version)
 }
-
-func (c *CommitTree) Get(key []byte) ([]byte, error) {
-	if c.root == nil {
-		return nil, nil
-	}
-	_, value, err := c.root.get(c.store, key)
-	return value, err
-}
-
 func (c *CommitTree) Close() error {
 	// shutdown all write channels and wait for branch write completion
 	//TODO implement me

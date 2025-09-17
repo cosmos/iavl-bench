@@ -13,6 +13,9 @@ func (node *Node) copy() *Node {
 // possible to use a node pool for memory management when we evict nodes.
 // Code reviewers should use find usages to ensure that all callers follow this rule!
 func wrapNewNode(node *Node) *NodePointer {
+	if node == nil {
+		return nil
+	}
 	ptr := &NodePointer{}
 	ptr.ptr.Store(node)
 	return ptr
