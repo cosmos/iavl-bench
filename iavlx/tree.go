@@ -8,13 +8,14 @@ import (
 )
 
 type Tree struct {
+	origRoot *NodePointer
 	root     *NodePointer
 	store    NodeFactory
 	zeroCopy bool
 }
 
 func NewTree(root *NodePointer, store NodeFactory, zeroCopy bool) *Tree {
-	return &Tree{root: root, store: store, zeroCopy: zeroCopy}
+	return &Tree{origRoot: root, root: root, store: store, zeroCopy: zeroCopy}
 }
 
 func (t *Tree) Get(key []byte) ([]byte, error) {
@@ -52,7 +53,10 @@ func (t *Tree) Set(key, value []byte) error {
 	}
 	var err error
 	t.root, _, err = setRecursive(t.store, t.root, key, value)
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (t *Tree) Remove(key []byte) error {

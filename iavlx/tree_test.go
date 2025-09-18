@@ -9,7 +9,6 @@ import (
 
 	corestore "cosmossdk.io/core/store"
 	sdklog "cosmossdk.io/log"
-	db "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
 	dbm "github.com/cosmos/iavl/db"
 	"github.com/stretchr/testify/require"
@@ -18,10 +17,11 @@ import (
 )
 
 func TestBasicTest(t *testing.T) {
-	commitTree := NewCommitTree(NewCosmosDBStore(CosmosDBStoreOptions{
-		LeafDB:   dbm.NewMemDB(),
-		BranchDB: dbm.NewMemDB(),
-	}))
+	dir, err := os.MkdirTemp("", "iavlx")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	commitTree, err := NewCommitTree(dir)
+	require.NoError(t, err)
 	tree := commitTree.Branch()
 	require.NoError(t, tree.Set([]byte("key1"), []byte("value1")))
 
@@ -82,14 +82,12 @@ func testIAVLXSims(t *rapid.T) {
 	tempDir, err := os.MkdirTemp("", "iavlx")
 	require.NoError(t, err, "failed to create temp directory")
 	defer os.RemoveAll(tempDir)
-	leavesDb, err := db.NewGoLevelDB("leaves", tempDir, nil)
-	require.NoError(t, err, "failed to create leveldb database")
-	branchesDb, err := db.NewGoLevelDB("branches", tempDir, nil)
-	require.NoError(t, err, "failed to create leveldb database")
-	treeV2 := NewCommitTree(NewCosmosDBStore(CosmosDBStoreOptions{
-		LeafDB:   leavesDb,
-		BranchDB: branchesDb,
-	}))
+	//leavesDb, err := db.NewGoLevelDB("leaves", tempDir, nil)
+	//require.NoError(t, err, "failed to create leveldb database")
+	//branchesDb, err := db.NewGoLevelDB("branches", tempDir, nil)
+	//require.NoError(t, err, "failed to create leveldb database")
+	treeV2, err := NewCommitTree(tempDir)
+	require.NoError(t, err, "failed to create iavlx tree")
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
 		treeV2:       treeV2,
@@ -242,7 +240,7 @@ func (s *SimMachine) debugDump(t *rapid.T) {
 	t.Logf("V1 tree:\n%s", graph1.String())
 	s.debugDumpTree(t, s.treeV2.Branch())
 	graph2 := &bytes.Buffer{}
-	err := RenderDotGraph(graph2, s.treeV2.Branch().Tree)
+	err := RenderDotGraph(graph2, s.treeV2.Branch())
 	require.NoError(t, err, "failed to render V2 tree graph")
 	t.Logf("V2 tree:\n%s", graph2.String())
 	s.debugDumpTree(t, s.treeV2.Branch())
