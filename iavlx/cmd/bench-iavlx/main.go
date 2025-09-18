@@ -39,7 +39,8 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 		//	return err
 		//}
 		dbDir := filepath.Join(m.dbDir, storeKey)
-		tree, err := iavlx.NewCommitTree(dbDir)
+		var err error
+		tree, err = iavlx.NewCommitTree(dbDir)
 		if err != nil {
 			return err
 		}
