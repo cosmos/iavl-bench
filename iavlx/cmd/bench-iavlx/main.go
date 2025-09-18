@@ -2,8 +2,7 @@ package main
 
 import (
 	"log/slog"
-
-	dbm "github.com/cosmos/cosmos-db"
+	"path/filepath"
 
 	"github.com/cosmos/iavl-bench/bench"
 	"iavlx"
@@ -39,13 +38,11 @@ func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bo
 		//if err != nil {
 		//	return err
 		//}
-		tree = iavlx.NewCommitTree(
-			//iavlx.NewNullStore(iavlx.NewVersionSeqNodeKeyGen()),
-			iavlx.NewCosmosDBStore(iavlx.CosmosDBStoreOptions{
-				LeafDB:   dbm.NewMemDB(),
-				BranchDB: dbm.NewMemDB(),
-			}),
-		)
+		dbDir := filepath.Join(m.dbDir, storeKey)
+		tree, err := iavlx.NewCommitTree(dbDir)
+		if err != nil {
+			return err
+		}
 		m.trees[storeKey] = tree
 	}
 	batch := tree.Branch()
