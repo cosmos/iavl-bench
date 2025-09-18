@@ -86,7 +86,7 @@ func (c *CommitTree) ApplyBatch(batchTree *BatchTree) error {
 func (c *CommitTree) reinitBatchChannels() {
 	store := c.store
 	if c.branchWriteChan == nil {
-		branchWriteChan := make(chan branchUpdate, 2048)
+		branchWriteChan := make(chan branchUpdate, 65536)
 		branchWriteDone := make(chan error, 1)
 		c.branchWriteChan = branchWriteChan
 		c.branchWriteDone = branchWriteDone
@@ -123,7 +123,7 @@ func (c *CommitTree) reinitBatchChannels() {
 	batchDone := make(chan error, 1)
 	c.batchProcessChan = batchChan
 	c.batchDone = batchDone
-	leafWriteChan := make(chan *nodeUpdate, 2048)
+	leafWriteChan := make(chan *nodeUpdate, 65536)
 	leafWriteDone := make(chan error, 1)
 	c.leafWriteChan = leafWriteChan
 	c.leafWriteDone = leafWriteDone

@@ -4,32 +4,43 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	db "github.com/cosmos/cosmos-db"
+	dmb "github.com/cosmos/cosmos-db"
 )
 
 type CosmosDBStore struct {
 	*VersionSeqNodeKeyGen
-	db   db.DB
 	opts CosmosDBStoreOptions
 }
 
 type CosmosDBStoreOptions struct {
-	Evict bool
+	Evict    bool
+	LeafDB   dmb.DB
+	BranchDB dmb.DB
 }
 
-func NewCosmosDBStore(db db.DB, opts CosmosDBStoreOptions) *CosmosDBStore {
+func NewCosmosDBStore(opts CosmosDBStoreOptions) *CosmosDBStore {
 	return &CosmosDBStore{
-		db:                   db,
 		VersionSeqNodeKeyGen: NewVersionSeqNodeKeyGen(),
 		opts:                 opts,
 	}
 }
 
+func isLeafKey(nodeKey NodeKey) bool {
+	return (binary.BigEndian.Uint32(nodeKey[4:8]) & (1 << 31)) != 0
+}
+
 func (c CosmosDBStore) Load(pointer *NodePointer) (*Node, error) {
+	key := pointer.key
 	bz := make([]byte, len(pointer.key)+1)
 	bz[0] = 'n'
 	copy(bz[1:], pointer.key[:])
-	val, err := c.db.Get(bz)
+	var val []byte
+	var err error
+	if isLeafKey(key) {
+		val, err = c.opts.LeafDB.Get(bz)
+	} else {
+		val, err = c.opts.BranchDB.Get(bz)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +60,11 @@ func (c CosmosDBStore) SaveNode(node *Node) error {
 	if err != nil {
 		return err
 	}
-	return c.db.Set(keyBz, valueBz)
+	if node.isLeaf() {
+		return c.opts.LeafDB.Set(keyBz, valueBz)
+	} else {
+		return c.opts.BranchDB.Set(keyBz, valueBz)
+	}
 }
 
 func encodeNode(node *Node, opts CosmosDBStoreOptions) ([]byte, error) {
@@ -190,12 +205,13 @@ func decodeNode(bz []byte) (*Node, error) {
 }
 
 func (c CosmosDBStore) DeleteNode(version int64, deleteKey NodeKey, node *Node) error {
+	// TODO handle case where we're deleting something that was inserted in this version
 	if node.isLeaf() {
 		bz := make([]byte, len(deleteKey)+2)
 		bz[0] = 'n'
 		copy(bz[1:], deleteKey[:])
 		bz[len(bz)-1] = 'd' // mark as deleted
-		return c.db.Set(bz, node.nodeKey[:])
+		return c.opts.LeafDB.Set(bz, node.nodeKey[:])
 	} else {
 		// TODO all children are orphans too
 		bz := make([]byte, len(node.nodeKey)+5)
@@ -204,7 +220,7 @@ func (c CosmosDBStore) DeleteNode(version int64, deleteKey NodeKey, node *Node) 
 		binary.BigEndian.PutUint32(bz[1:5], uint32(version))
 		// write node key
 		copy(bz[5:], node.nodeKey[:])
-		return c.db.Set(bz, []byte{})
+		return c.opts.BranchDB.Set(bz, []byte{})
 	}
 }
 
@@ -219,12 +235,13 @@ func (c CosmosDBStore) SaveRoot(version int64, root *Node) error {
 	} else {
 		valueBz = []byte{}
 	}
-	err := c.db.Set(bz, valueBz)
+	db := c.opts.BranchDB
+	err := db.Set(bz, valueBz)
 	if err != nil {
 		return err
 	}
 	// save latest version pointer
-	return c.db.Set([]byte("latest"), bz)
+	return db.Set([]byte("latest"), bz)
 }
 
 var _ NodeWriter = &CosmosDBStore{}

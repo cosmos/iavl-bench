@@ -18,7 +18,10 @@ import (
 )
 
 func TestBasicTest(t *testing.T) {
-	commitTree := NewCommitTree(NewCosmosDBStore(db.NewMemDB(), CosmosDBStoreOptions{}))
+	commitTree := NewCommitTree(NewCosmosDBStore(CosmosDBStoreOptions{
+		LeafDB:   dbm.NewMemDB(),
+		BranchDB: dbm.NewMemDB(),
+	}))
 	tree := commitTree.Branch()
 	require.NoError(t, tree.Set([]byte("key1"), []byte("value1")))
 
@@ -79,9 +82,14 @@ func testIAVLXSims(t *rapid.T) {
 	tempDir, err := os.MkdirTemp("", "iavlx")
 	require.NoError(t, err, "failed to create temp directory")
 	defer os.RemoveAll(tempDir)
-	levelDb, err := db.NewGoLevelDB("test", tempDir, nil)
+	leavesDb, err := db.NewGoLevelDB("leaves", tempDir, nil)
 	require.NoError(t, err, "failed to create leveldb database")
-	treeV2 := NewCommitTree(NewCosmosDBStore(levelDb, CosmosDBStoreOptions{}))
+	branchesDb, err := db.NewGoLevelDB("branches", tempDir, nil)
+	require.NoError(t, err, "failed to create leveldb database")
+	treeV2 := NewCommitTree(NewCosmosDBStore(CosmosDBStoreOptions{
+		LeafDB:   leavesDb,
+		BranchDB: branchesDb,
+	}))
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
 		treeV2:       treeV2,

@@ -31,11 +31,21 @@ func (m *MemMultiTree) Version() int64 {
 func (m *MemMultiTree) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	tree, ok := m.trees[storeKey]
 	if !ok {
-		db, err := dbm.NewGoLevelDB(m.dbDir, storeKey, nil)
-		if err != nil {
-			return err
-		}
-		tree = iavlx.NewCommitTree(iavlx.NewCosmosDBStore(db, iavlx.CosmosDBStoreOptions{}))
+		//leafDb, err := dbm.NewGoLevelDB(fmt.Sprintf("%s.leaves", storeKey), m.dbDir, nil)
+		//if err != nil {
+		//	return err
+		//}
+		//branchDb, err := dbm.NewGoLevelDB(fmt.Sprintf("%s.branches", storeKey), m.dbDir, nil)
+		//if err != nil {
+		//	return err
+		//}
+		tree = iavlx.NewCommitTree(
+			//iavlx.NewNullStore(iavlx.NewVersionSeqNodeKeyGen()),
+			iavlx.NewCosmosDBStore(iavlx.CosmosDBStoreOptions{
+				LeafDB:   dbm.NewMemDB(),
+				BranchDB: dbm.NewMemDB(),
+			}),
+		)
 		m.trees[storeKey] = tree
 	}
 	batch := tree.Branch()
