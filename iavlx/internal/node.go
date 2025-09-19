@@ -1,195 +1,264 @@
 package internal
 
-import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/binary"
-	"fmt"
-)
+import "sync/atomic"
 
-// Node interface encapsulate the interface of both PersistedNode and MemNode.
 type Node interface {
 	Height() uint8
 	IsLeaf() bool
 	Size() int64
 	Version() uint64
-	Key() []byte
-	Value() []byte
-	Left() Node
-	Right() Node
+	Key() ([]byte, error)
+	Value() ([]byte, error)
+	Left() *NodePointer
+	Right() *NodePointer
 	Hash() []byte
 	SafeHash() []byte
-	MutateBranch(version uint64) *MemBranch
-	Get(key []byte) ([]byte, uint64, error)
+	MutateBranch(MutationContext) (*MemNode, error)
+	Get(key []byte) (value []byte, index int64, err error)
 }
 
-// setRecursive do set operation.
-// it always do modification and return new `MemNode`, even if the value is the same.
-// also returns if it's an update or insertion, if update, the tree height and balance is not changed.
-func setRecursive(node Node, key, value []byte, version, cowVersion uint32) (*MemNode, bool) {
-	if node == nil {
-		return newLeafNode(key, value, version), true
-	}
-
-	nodeKey := node.Key()
-	if node.IsLeaf() {
-		switch bytes.Compare(key, nodeKey) {
-		case -1:
-			n := &MemNode{
-				height:  1,
-				size:    2,
-				version: version,
-				key:     nodeKey,
-			}
-			n.SetLeft(newLeafNode(key, value, version))
-			n.SetRight(node)
-			return n, false
-		case 1:
-			n := &MemNode{
-				height:  1,
-				size:    2,
-				version: version,
-				key:     key,
-			}
-			n.SetLeft(node)
-			n.SetRight(newLeafNode(key, value, version))
-			return n, false
-		default:
-			newNode := node.Mutate(version, cowVersion)
-			newNode.value = value
-			return newNode, true
-		}
-	} else {
-		var (
-			newChild, newNode *MemNode
-			updated           bool
-		)
-		if bytes.Compare(key, nodeKey) == -1 {
-			newChild, updated = setRecursive(node.Left(), key, value, version, cowVersion)
-			newNode = node.Mutate(version, cowVersion)
-			newNode.SetLeft(newChild)
-		} else {
-			newChild, updated = setRecursive(node.Right(), key, value, version, cowVersion)
-			newNode = node.Mutate(version, cowVersion)
-			newNode.SetRight(newChild)
-		}
-
-		if !updated {
-			newNode.updateHeightSize()
-			newNode = newNode.reBalance(version, cowVersion)
-		}
-
-		return newNode, updated
-	}
+type NodePointer struct {
+	mem        atomic.Pointer[MemNode]
+	fileOffset int64
+	store      NodeStore
+	id         NodeID
 }
 
-// removeRecursive returns:
-// - (nil, origNode, nil) -> nothing changed in subtree
-// - (value, nil, newKey) -> leaf node is removed
-// - (value, new node, newKey) -> subtree changed
-func removeRecursive(node Node, key []byte, version, cowVersion uint32) ([]byte, Node, []byte) {
-	if node == nil {
-		return nil, nil, nil
-	}
-
-	if node.IsLeaf() {
-		if bytes.Equal(node.Key(), key) {
-			return node.Value(), nil, nil
-		}
-		return nil, node, nil
-	}
-
-	if bytes.Compare(key, node.Key()) == -1 {
-		value, newLeft, newKey := removeRecursive(node.Left(), key, version, cowVersion)
-		if value == nil {
-			return nil, node, nil
-		}
-		if newLeft == nil {
-			return value, node.Right(), node.Key()
-		}
-		newNode := node.Mutate(version, cowVersion)
-		newNode.SetLeft(newLeft)
-		newNode.updateHeightSize()
-		return value, newNode.reBalance(version, cowVersion), newKey
-	}
-
-	value, newRight, newKey := removeRecursive(node.Right(), key, version, cowVersion)
-	if value == nil {
-		return nil, node, nil
-	}
-	if newRight == nil {
-		return value, node.Left(), nil
-	}
-
-	newNode := node.Mutate(version, cowVersion)
-	newNode.SetRight(newRight)
-	if newKey != nil {
-		newNode.key = newKey
-	}
-	newNode.updateHeightSize()
-	return value, newNode.reBalance(version, cowVersion), nil
+func NewNodePointer(memNode *MemNode) *NodePointer {
+	n := &NodePointer{}
+	n.mem.Store(memNode)
+	return n
 }
 
-// Writes the node's hash to the given `io.Writer`. This function recursively calls
-// children to update hashes.
-func writeHashBytes(node Node, w io.Writer) error {
-	var (
-		n   int
-		buf [binary.MaxVarintLen64]byte
-	)
-
-	n = binary.PutVarint(buf[:], int64(node.Height()))
-	if _, err := w.Write(buf[0:n]); err != nil {
-		return fmt.Errorf("writing height, %w", err)
+func (p *NodePointer) Resolve() (Node, error) {
+	mem := p.mem.Load()
+	if mem != nil {
+		return mem, nil
 	}
-	n = binary.PutVarint(buf[:], node.Size())
-	if _, err := w.Write(buf[0:n]); err != nil {
-		return fmt.Errorf("writing size, %w", err)
+	panic("TODO")
+}
+
+type MemNode struct {
+	height  uint8
+	size    int64
+	version uint64
+	key     []byte
+	value   []byte
+	left    *NodePointer
+	right   *NodePointer
+	hash    []byte
+
+	_walOffset int    // only valid for leaf nodes
+	_keyRef    KeyRef // used when copying branch nodes
+}
+
+func (node *MemNode) Height() uint8 {
+	return node.height
+}
+
+func (node *MemNode) Size() int64 {
+	return node.size
+}
+
+func (node *MemNode) Version() uint64 {
+	return node.version
+}
+
+func (node *MemNode) Key() ([]byte, error) {
+	return node.key, nil
+}
+
+func (node *MemNode) Value() ([]byte, error) {
+	return node.value, nil
+}
+
+func (node *MemNode) Left() *NodePointer {
+	return node.left
+}
+
+func (node *MemNode) Right() *NodePointer {
+	return node.right
+}
+
+func (node *MemNode) SafeHash() []byte {
+	panic("TODO")
+}
+
+func (node *MemNode) MutateBranch(context MutationContext) (*MemNode, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (node *MemNode) Get(key []byte) (value []byte, index int64, err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (node *MemNode) IsLeaf() bool {
+	return node.height == 0
+}
+
+func (node *MemNode) Hash() []byte {
+	panic("TODO")
+}
+
+// IMPORTANT: nodes called with this method must be new or copies first.
+// Code reviewers should use find usages to ensure that all callers follow this rule!
+func (node *MemNode) updateHeightSize() error {
+	leftNode, err := node.left.Resolve()
+	if err != nil {
+		return err
 	}
-	n = binary.PutVarint(buf[:], int64(node.Version()))
-	if _, err := w.Write(buf[0:n]); err != nil {
-		return fmt.Errorf("writing version, %w", err)
+
+	rightNode, err := node.right.Resolve()
+	if err != nil {
+		return err
 	}
 
-	// Key is not written for inner nodes, unlike writeBytes.
-
-	if node.IsLeaf() {
-		if err := EncodeBytes(w, node.Key()); err != nil {
-			return fmt.Errorf("writing key, %w", err)
-		}
-
-		// Indirection needed to provide proofs without values.
-		// (e.g. ProofLeafNode.ValueHash)
-		valueHash := sha256.Sum256(node.Value())
-
-		if err := EncodeBytes(w, valueHash[:]); err != nil {
-			return fmt.Errorf("writing value, %w", err)
-		}
-	} else {
-		if err := EncodeBytes(w, node.Left().Hash()); err != nil {
-			return fmt.Errorf("writing left hash, %w", err)
-		}
-		if err := EncodeBytes(w, node.Right().Hash()); err != nil {
-			return fmt.Errorf("writing right hash, %w", err)
-		}
-	}
-
+	node.height = maxUint8(leftNode.Height(), rightNode.Height()) + 1
+	node.size = leftNode.Size() + rightNode.Size()
 	return nil
 }
 
-// HashNode computes the hash of the node.
-func HashNode(node Node) []byte {
-	if node == nil {
-		return nil
+func maxUint8(a, b uint8) uint8 {
+	if a > b {
+		return a
 	}
-	h := sha256.New()
-	if err := writeHashBytes(node, h); err != nil {
-		panic(err)
-	}
-	return h.Sum(nil)
+	return b
 }
 
-// VerifyHash compare node's cached hash with computed one
-func VerifyHash(node Node) bool {
-	return bytes.Equal(HashNode(node), node.Hash())
+// IMPORTANT: nodes called with this method must be new or copies first.
+// Code reviewers should use find usages to ensure that all callers follow this rule!
+func (node *MemNode) reBalance(ctx MutationContext) (*MemNode, error) {
+	balance, err := calcBalance(node)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case balance > 1:
+		left, err := node.left.Resolve()
+		if err != nil {
+			return nil, err
+		}
+
+		leftBalance, err := calcBalance(left)
+		if err != nil {
+			return nil, err
+		}
+
+		if leftBalance >= 0 {
+			// left left
+			return node.rotateRight(ctx)
+		}
+
+		// left right
+		newLeft, err := left.MutateBranch(ctx)
+		if err != nil {
+			return nil, err
+		}
+		newLeft, err = newLeft.rotateLeft(ctx)
+		if err != nil {
+			return nil, err
+		}
+		node.left = NewNodePointer(newLeft)
+		return node.rotateRight(ctx)
+	case balance < -1:
+		right, err := node.right.Resolve()
+		if err != nil {
+			return nil, err
+		}
+
+		rightBalance, err := calcBalance(right)
+		if err != nil {
+			return nil, err
+		}
+
+		if rightBalance <= 0 {
+			// right right
+			return node.rotateLeft(ctx)
+		}
+
+		// right left
+		newRight, err := right.MutateBranch(ctx)
+		if err != nil {
+			return nil, err
+		}
+		newRight, err = newRight.rotateRight(ctx)
+		node.right = NewNodePointer(newRight)
+		return node.rotateLeft(ctx)
+	default:
+		// nothing changed
+		return node, err
+	}
 }
+
+func calcBalance(node Node) (int, error) {
+	leftNode, err := node.Left().Resolve()
+	if err != nil {
+		return 0, err
+	}
+
+	rightNode, err := node.Right().Resolve()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(leftNode.Height()) - int(rightNode.Height()), nil
+}
+
+// IMPORTANT: nodes called with this method must be new or copies first.
+// Code reviewers should use find usages to ensure that all callers follow this rule!
+func (node *MemNode) rotateRight(ctx MutationContext) (*MemNode, error) {
+	left, err := node.left.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	newSelf, err := left.MutateBranch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	node.left = left.Right()
+	newSelf.right = NewNodePointer(node)
+
+	err = node.updateHeightSize()
+	if err != nil {
+		return nil, err
+	}
+	err = newSelf.updateHeightSize()
+	if err != nil {
+		return nil, err
+	}
+
+	return newSelf, nil
+}
+
+// IMPORTANT: nodes called with this method must be new or copies first.
+// Code reviewers should use find usages to ensure that all callers follow this rule!
+func (node *MemNode) rotateLeft(ctx MutationContext) (*MemNode, error) {
+	right, err := node.right.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	newSelf, err := right.MutateBranch(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	node.right = right.Left()
+	newSelf.left = NewNodePointer(node)
+
+	err = node.updateHeightSize()
+	if err != nil {
+		return nil, err
+	}
+
+	err = newSelf.updateHeightSize()
+	if err != nil {
+		return nil, err
+	}
+
+	return newSelf, nil
+}
+
+var _ Node = &MemNode{}

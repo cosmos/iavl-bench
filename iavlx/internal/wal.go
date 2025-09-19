@@ -1,1 +1,171 @@
 package internal
+
+import (
+	"bufio"
+	"encoding/binary"
+	"os"
+
+	"github.com/edsrzf/mmap-go"
+)
+
+type WAL struct {
+	file       *os.File
+	commitFile *os.File
+	mmap       mmap.MMap
+	data       []byte
+	writer     *bufio.Writer
+	curOffset  int
+	version    uint64
+}
+
+func NewWAL(path string, startVersion uint64) (*WAL, error) {
+	//file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	//if err != nil {
+	//	return nil, err
+	//}
+	panic("not implemented")
+}
+
+type WALEntryType byte
+
+const (
+	WALEntryTypeSet WALEntryType = iota
+	WALEntryTypeDelete
+	WALEntryTypeCommit
+)
+
+func (w *WAL) WriteUpdates(updates KVUpdateBatch) error {
+	var varintBytes [binary.MaxVarintLen64]byte
+	for _, update := range updates.Updates {
+		if setNode := update.SetNode; setNode != nil {
+			n, err := w.writer.Write([]byte{byte(WALEntryTypeSet)})
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			// varint prefix len(key) + key + varint len(value) + value
+			key := setNode.key
+			lenKey := uint64(len(key))
+			n = binary.PutUvarint(varintBytes[:], lenKey)
+			n, err = w.writer.Write(varintBytes[:n])
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			// save the offset of the key for when leaf nodes are written to the leaves file
+			setNode._walOffset = w.curOffset
+
+			n, err = w.writer.Write(key)
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			value := setNode.value
+			lenValue := uint64(len(value))
+			n = binary.PutUvarint(varintBytes[:], lenValue)
+			n, err = w.writer.Write(varintBytes[:n])
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			n, err = w.writer.Write(value)
+			if err != nil {
+				return err
+			}
+
+			w.curOffset += n
+		} else {
+			n, err := w.writer.Write([]byte{byte(WALEntryTypeDelete)})
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			// varint prefix len(key) + key + varint len(value) + value
+			key := update.DeleteKey
+			lenKey := uint64(len(key))
+			n = binary.PutUvarint(varintBytes[:], lenKey)
+			n, err = w.writer.Write(varintBytes[:n])
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+
+			n, err = w.writer.Write(key)
+			if err != nil {
+				return err
+			}
+			w.curOffset += n
+		}
+	}
+	return nil
+}
+
+func (w *WAL) CommitNoSync() error {
+	n, err := w.writer.Write([]byte{byte(WALEntryTypeCommit)})
+	if err != nil {
+		return err
+	}
+	w.curOffset += n
+	w.version++
+
+	var varintBytes [binary.MaxVarintLen64]byte
+	n = binary.PutUvarint(varintBytes[:], w.version)
+	n, err = w.writer.Write(varintBytes[:n])
+	if err != nil {
+		return err
+	}
+	w.curOffset += n
+
+	// write version to commit file
+	var bz [8]byte
+	binary.LittleEndian.PutUint64(bz[:], w.version)
+	_, err = w.commitFile.WriteAt(bz[:], 0)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *WAL) CommitSync() error {
+	err := w.CommitNoSync()
+	if err != nil {
+		return err
+	}
+
+	err = w.writer.Flush()
+	if err != nil {
+		return err
+	}
+
+	err = w.file.Sync()
+	if err != nil {
+		return err
+	}
+
+	// TODO reopen memmap
+
+	return nil
+}
+
+type KVData interface {
+	Read(offset uint64, size uint32) ([]byte, error)
+	ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err error)
+}
+
+func (w *WAL) Read(offset uint64, size uint32) ([]byte, error) {
+	extent := int(offset) + int(size)
+	if extent > len(w.mmap) {
+		return nil, os.ErrInvalid
+	}
+	return w.mmap[offset:extent], nil
+}
+
+func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err error) {
+	panic("TODO")
+}

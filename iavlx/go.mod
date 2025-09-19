@@ -9,6 +9,7 @@ require (
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/iavl v1.3.5
 	github.com/cosmos/iavl-bench/bench v0.0.4
+	github.com/edsrzf/mmap-go v1.2.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621
 	pgregory.net/rapid v1.1.0
