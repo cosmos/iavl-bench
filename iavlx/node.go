@@ -43,7 +43,7 @@ type Node struct {
 	version       uint32
 	nodeKey       NodeKey
 	size          int64
-	subtreeHeight int8
+	subtreeHeight uint8
 	left          *NodePointer
 	right         *NodePointer
 }

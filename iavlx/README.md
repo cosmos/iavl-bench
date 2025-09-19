@@ -9,25 +9,22 @@ The WAL can get truncated when snapshots are created to remove all pre-snapshot 
 
 ```
 BranchNode {
-    subtree_bz_len: u64,
-    size: u32,
-    self_bz_len: u32,
-    version: u64,
-    left_ptr: u64,
-    right_ptr: u64
-    version: varint,
     height: u8,
-    hash: byte[32],
+    subtree_bz_len: u64,
+    left_ptr: u64,
+    right_ptr: u64,
+    version: varint,
     key: varint prefixed bytes,
+    size: varint,
+    hash: byte[32],
 }
 
 LeafNode {
-    subtree_bz_len: u64,
-    size: 1u32
+    height: 0u8,
     version: varint
-    hash: byte[32]
     key: varint prefixed bytes,
     value: varint prefixed bytes
+    hash: byte[32]
 }
 ```
 
