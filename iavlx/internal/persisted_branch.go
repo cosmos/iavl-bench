@@ -57,7 +57,7 @@ func (p PersistedBranch) resolveNodePointer(ref NodeRef) *NodePointer {
 		store: p.store,
 	}
 	if ref.IsRelativePointer() {
-		np.fileOffset = p.selfOffset + ref.AsRelativePointer().Offset()
+		np.fileIdx = p.selfOffset + ref.AsRelativePointer().Offset()
 		// TODO should we traverse to the root to find the node ID and then set it here?
 	} else {
 		np.id = ref.AsNodeID()
@@ -65,12 +65,12 @@ func (p PersistedBranch) resolveNodePointer(ref NodeRef) *NodePointer {
 	return np
 }
 
-func (p PersistedBranch) Hash() []byte {
-	return p.layout.Hash()
+func (p PersistedBranch) Hash() ([]byte, error) {
+	return p.layout.Hash(), nil
 }
 
-func (p PersistedBranch) SafeHash() []byte {
-	return p.layout.Hash()
+func (p PersistedBranch) SafeHash() ([]byte, error) {
+	return p.layout.Hash(), nil
 }
 
 func (p PersistedBranch) MutateBranch(ctx MutationContext) (*MemNode, error) {

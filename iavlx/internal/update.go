@@ -6,5 +6,6 @@ type KVUpdate struct {
 }
 
 type KVUpdateBatch struct {
-	Updates []KVUpdate
+	StagedVersion uint64
+	Updates       []KVUpdate
 }

@@ -7,6 +7,23 @@ package internal
 // bits 22-0 (23 bits) are for index
 type NodeID uint64
 
+func NewNodeID(isLeaf bool, version uint64, index uint32) NodeID {
+	// check 40 bits for version and 23 bits for index
+	if version >= 0x10000000000 {
+		panic("version too large for NodeID")
+	}
+	if index >= 0x800000 {
+		panic("index too large for NodeID")
+	}
+	var id uint64
+	if isLeaf {
+		id |= 1 << 62
+	}
+	id |= (version & 0x7FFFFFFFFF) << 23
+	id |= uint64(index & 0x7FFFFF)
+	return NodeID(id)
+}
+
 func (id NodeID) IsLeaf() bool {
 	// check if second highest bit is set
 	return id&(1<<62) != 0
@@ -48,6 +65,25 @@ func (ref NodeRef) AsRelativePointer() NodeRelativePointer {
 // bit 62 indicates whether this is a leaf (1) or branch (0)
 // bits 61-0 (62 bits) are for signed offset
 type NodeRelativePointer uint64
+
+func NewNodeRelativePointer(isLeaf bool, offset int64) NodeRelativePointer {
+	// check offset fits in 61 bits signed
+	if offset < -0x200000000000000 || offset >= 0x200000000000000 {
+		panic("offset too large for NodeRelativePointer")
+	}
+	var ptr uint64
+	ptr |= 1 << 63 // set bit 63 to indicate relative pointer
+	if isLeaf {
+		ptr |= 1 << 62
+	}
+	if offset < 0 {
+		offset = -offset
+		ptr |= (uint64(offset) &^ (1 << 61)) | (1 << 61) // set bit 61 to indicate negative
+	} else {
+		ptr |= uint64(offset) &^ (3 << 62) // clear bits 63 and 62
+	}
+	return NodeRelativePointer(ptr)
+}
 
 func (ptr NodeRelativePointer) IsLeaf() bool {
 	// check if second highest bit is set

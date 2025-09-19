@@ -1,0 +1,113 @@
+package internal
+
+import "bytes"
+
+type MemNode struct {
+	height  uint8
+	size    int64
+	version uint64
+	key     []byte
+	value   []byte
+	left    *NodePointer
+	right   *NodePointer
+	hash    []byte
+
+	_keyRef    keyRefLink // used for linking new nodes to the position of the key in the kv storage
+	_walOffset uint64     // used for tracking the write-ahead-log position of this node
+}
+
+func (node *MemNode) Hash() ([]byte, error) {
+	hash := node.hash
+	if hash != nil {
+		return hash, nil
+	}
+
+	hash, err := HashNode(node)
+	if err != nil {
+		return nil, err
+	}
+
+	node.hash = hash
+	return hash, nil
+}
+
+func (node *MemNode) SafeHash() ([]byte, error) {
+	// TODO what needs to be safe??
+	return node.Hash()
+}
+
+func (node *MemNode) Height() uint8 {
+	return node.height
+}
+
+func (node *MemNode) Size() int64 {
+	return node.size
+}
+
+func (node *MemNode) Version() uint64 {
+	return node.version
+}
+
+func (node *MemNode) Key() ([]byte, error) {
+	return node.key, nil
+}
+
+func (node *MemNode) Value() ([]byte, error) {
+	return node.value, nil
+}
+
+func (node *MemNode) Left() *NodePointer {
+	return node.left
+}
+
+func (node *MemNode) Right() *NodePointer {
+	return node.right
+}
+
+func (node *MemNode) MutateBranch(context MutationContext) (*MemNode, error) {
+	n := *node
+	n.version = context.Version
+	n.hash = nil
+	return &n, nil
+}
+
+func (node *MemNode) Get(key []byte) (value []byte, index int64, err error) {
+	if node.IsLeaf() {
+		switch bytes.Compare(node.key, key) {
+		case -1:
+			return nil, 1, nil
+		case 1:
+			return nil, 0, nil
+		default:
+			return node.value, 0, nil
+		}
+	}
+
+	if bytes.Compare(key, node.key) < 0 {
+		leftNode, err := node.left.Resolve()
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return leftNode.Get(key)
+	}
+
+	rightNode, err := node.right.Resolve()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	value, index, err = rightNode.Get(key)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	index += node.size - rightNode.Size()
+	return value, index, nil
+}
+
+func (node *MemNode) IsLeaf() bool {
+	return node.height == 0
+}
+
+var _ Node = &MemNode{}

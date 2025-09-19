@@ -37,8 +37,8 @@ func (node PersistedLeaf) Right() *NodePointer {
 	return nil
 }
 
-func (node PersistedLeaf) SafeHash() []byte {
-	return node.layout.Hash()
+func (node PersistedLeaf) SafeHash() ([]byte, error) {
+	return node.layout.Hash(), nil
 }
 
 func (node PersistedLeaf) MutateBranch(MutationContext) (*MemNode, error) {
@@ -68,8 +68,8 @@ func (node PersistedLeaf) IsLeaf() bool {
 	return true
 }
 
-func (node PersistedLeaf) Hash() []byte {
-	return node.layout.Hash()
+func (node PersistedLeaf) Hash() ([]byte, error) {
+	return node.layout.Hash(), nil
 }
 
 var _ Node = PersistedLeaf{}

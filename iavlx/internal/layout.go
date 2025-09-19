@@ -3,6 +3,7 @@ package internal
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 )
 
 const (
@@ -13,7 +14,9 @@ const (
 
 	OffsetLeafNodeID    = 0
 	OffsetLeafKeyLen    = OffsetLeafNodeID + SizeNodeID
+	KeyLenMax           = 0xFFFFFF // 3 bytes
 	OffsetLeafKeyOffset = OffsetLeafKeyLen + SizeKeyLen
+	KeyOffsetMax        = 0xFFFFFFFFFF // 5 bytes
 	OffsetLeafHash      = OffsetLeafKeyOffset + SizeKeyOffset
 	SizeLeafWithoutHash = OffsetLeafHash
 	SizeLeaf            = SizeLeafWithoutHash + SizeHash
@@ -29,6 +32,7 @@ const (
 	SizeBranchSubtreeSize   = 3
 	OffsetBranchSize        = OffsetBranchSubtreeSize + SizeBranchSubtreeSize
 	SizeBranchSize          = 5
+	BranchSizeMax           = 0xFFFFFFFFFF // 5 bytes
 	OffsetBranchHash        = OffsetBranchSize + SizeBranchSize
 	SizeBranchWithoutHash   = OffsetBranchHash
 	SizeBranch              = SizeBranchWithoutHash + SizeHash
@@ -128,4 +132,41 @@ func uint32LE3(b []byte) uint32 {
 func uint64LE5(b []byte) uint64 {
 	_ = b[4] // bounds check hint to compiler; see golang.org/issue/14808
 	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 | uint64(b[4])<<32
+}
+
+func encodeLeafNode(node *MemNode, buf [SizeLeaf]byte, nodeId NodeID) error {
+	binary.LittleEndian.PutUint64(buf[OffsetLeafNodeID:OffsetLeafNodeID+SizeNodeID], uint64(nodeId))
+	keyLen := len(node.key)
+	if keyLen > KeyLenMax {
+		return fmt.Errorf("key length %d exceeds maximum of %d", keyLen, KeyLenMax)
+	}
+	buf[OffsetLeafKeyLen] = byte(keyLen)
+	buf[OffsetLeafKeyLen+1] = byte(keyLen >> 8)
+	buf[OffsetLeafKeyLen+2] = byte(keyLen >> 16)
+	walOffset := node._walOffset
+	if walOffset > KeyOffsetMax {
+		return fmt.Errorf("key offset %d exceeds maximum of %d", walOffset, KeyOffsetMax)
+	}
+	buf[OffsetLeafKeyOffset] = byte(walOffset)
+	buf[OffsetLeafKeyOffset+1] = byte(walOffset >> 8)
+	buf[OffsetLeafKeyOffset+2] = byte(walOffset >> 16)
+	buf[OffsetLeafKeyOffset+3] = byte(walOffset >> 24)
+	buf[OffsetLeafKeyOffset+4] = byte(walOffset >> 32)
+	copy(buf[OffsetLeafHash:OffsetLeafHash+SizeHash], node.hash)
+	return nil
+}
+
+func encodeBranchNode(node *MemNode, buf [SizeBranch]byte, nodeId NodeID, left, right NodeRef, keyRef KeyRef) error {
+	binary.LittleEndian.PutUint64(buf[OffsetBranchNodeID:OffsetBranchNodeID+SizeNodeID], uint64(nodeId))
+	binary.LittleEndian.PutUint64(buf[OffsetBranchLeft:OffsetBranchLeft+SizeNodeID], uint64(left))
+	binary.LittleEndian.PutUint64(buf[OffsetBranchRight:OffsetBranchRight+SizeNodeID], uint64(right))
+	binary.LittleEndian.PutUint64(buf[OffsetBranchKeyRef:OffsetBranchKeyRef+SizeKeyRef], uint64(keyRef))
+
+	buf[OffsetBranchHeight] = node.height
+	size := node.size
+	if size > BranchSizeMax {
+		return fmt.Errorf("branch node size %d exceeds maximum of %d", size, BranchSizeMax)
+	}
+
+	panic("TODO")
 }

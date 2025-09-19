@@ -45,3 +45,15 @@ func (ref WALRef) Length() (len uint32, overflow bool) {
 func (ref WALRef) Offset() uint64 {
 	return uint64(ref & 0xFFFFFFFFFF) // 40 bits for offset
 }
+
+type keyRefLink interface {
+	toKeyRef() KeyRef
+}
+
+func (ref KeyRef) toKeyRef() KeyRef {
+	return ref
+}
+
+func (p *NodePointer) toKeyRef() KeyRef {
+	return p._keyRef.toKeyRef()
+}
