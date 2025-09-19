@@ -1,4 +1,4 @@
-package iavlx
+package x1
 
 import (
 	"bytes"
@@ -43,7 +43,7 @@ type Node struct {
 	version       uint32
 	nodeKey       NodeKey
 	size          int64
-	subtreeHeight uint8
+	subtreeHeight int8
 	left          *NodePointer
 	right         *NodePointer
 }

@@ -1,4 +1,4 @@
-package iavlx
+package x1
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ type CommitTree struct {
 	walDone        chan error
 	walWriter      *WALWriter
 	pond           pond.Pool
-	hashGroup      pond.TaskGroup
+	//hashGroup      pond.TaskGroup
 	//branchWriteChan     chan branchUpdate
 	//branchWriteDone     chan error
 	//branchCommitVersion atomic.Uint32
@@ -130,24 +130,24 @@ func (c *CommitTree) reinitBatchChannels() {
 	batchDone := make(chan error, 1)
 	c.walProcessChan = batchChan
 	c.walDone = batchDone
-	c.hashGroup = c.pond.NewGroup()
+	//c.hashGroup = c.pond.NewGroup()
 	//stagedVersion := c.version + 1
 
 	// process batches
 	go func() {
 		defer close(batchDone)
 		for batch := range batchChan {
-			c.hashGroup.SubmitErr(func() error {
-				for _, update := range batch.leafUpdates {
-					if !update.deleted {
-						_, err := update.Node.Hash(c.store)
-						if err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			})
+			//c.hashGroup.SubmitErr(func() error {
+			//	for _, update := range batch.leafUpdates {
+			//		if !update.deleted {
+			//			_, err := update.Node.Hash(c.store)
+			//			if err != nil {
+			//				return err
+			//			}
+			//		}
+			//	}
+			//	return nil
+			//})
 			// First:
 			// - assign each new leaf node a node key
 			// - hash each leaf node
@@ -184,10 +184,10 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		return nil, err
 	}
 
-	err = c.hashGroup.Wait()
-	if err != nil {
-		return nil, err
-	}
+	//err = c.hashGroup.Wait()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	c.version, err = c.walWriter.CommitVersion()
 	if err != nil {

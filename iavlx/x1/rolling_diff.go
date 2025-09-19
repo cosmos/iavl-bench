@@ -1,4 +1,4 @@
-package iavlx
+package x1
 
 import (
 	"encoding/binary"
@@ -30,10 +30,10 @@ func (r *RollingDiffWriter) writeNodePointer(ptr *NodePointer) (start int64, end
 }
 
 func (r *RollingDiffWriter) writeNode(node *Node) (start int64, end int64, err error) {
-	if node.isLeaf() {
-		return r.writeLeaf(node)
-	} else {
+	if !node.isLeaf() {
 		return r.writeBranch(node)
+	} else {
+		panic("not implemented")
 	}
 }
 
@@ -43,7 +43,7 @@ func (r *RollingDiffWriter) writeBranch(node *Node) (start int64, end int64, err
 		return
 	}
 
-	_, err = r.file.Write([]byte{node.subtreeHeight}) // branch height
+	_, err = r.file.Write([]byte{byte(node.subtreeHeight)}) // branch height
 	if err != nil {
 		return
 	}
@@ -132,8 +132,4 @@ func (r *RollingDiffWriter) writeBranch(node *Node) (start int64, end int64, err
 	}
 
 	return
-}
-
-func (r *RollingDiffWriter) writeLeaf(node *Node) (start int64, end int64, err error) {
-	panic("not implemented")
 }
