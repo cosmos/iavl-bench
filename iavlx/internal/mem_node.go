@@ -12,8 +12,9 @@ type MemNode struct {
 	right   *NodePointer
 	hash    []byte
 
+	// when creating branch nodes
 	_keyRef    keyRefLink // used for linking new nodes to the position of the key in the kv storage
-	_walOffset uint64     // used for tracking the write-ahead-log position of this node
+	_walOffset uint64     // used for tracking the write-ahead-log position of the key for leaf nodes
 }
 
 func (node *MemNode) Hash() ([]byte, error) {
