@@ -1,6 +1,7 @@
 package iavlx
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ type WALWriter struct {
 	info          *walInfo
 	activeVersion uint64
 	file          *os.File
+	writer        *bufio.Writer
 }
 
 type walInfo struct {
@@ -61,10 +63,19 @@ func (w *WALWriter) WriteUpdates(updates []*leafUpdate) error {
 func (w *WALWriter) initWalFile() error {
 	var err error
 	w.file, err = os.Create(filepath.Join(w.dir, walFileName(w.activeVersion)))
+	w.writer = bufio.NewWriter(w.file)
 	return err
 }
 
 func (w *WALWriter) CommitVersion() (committedVersion uint64, err error) {
+	err = w.writer.Flush()
+	if err != nil {
+		return 0, err
+	}
+	err = w.file.Sync()
+	if err != nil {
+		return 0, err
+	}
 	err = w.file.Close()
 	if err != nil {
 		return 0, err
@@ -95,9 +106,9 @@ func walFileName(version uint64) string {
 func (w *WALWriter) writeUpdate(update *leafUpdate) error {
 	var err error
 	if update.deleted {
-		_, err = w.file.Write([]byte{1})
+		_, err = w.writer.Write([]byte{1})
 	} else {
-		_, err = w.file.Write([]byte{0})
+		_, err = w.writer.Write([]byte{0})
 	}
 	if err != nil {
 		return err
@@ -107,11 +118,11 @@ func (w *WALWriter) writeUpdate(update *leafUpdate) error {
 	// write varint
 	var varintBuf [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(varintBuf[:], uint64(keyLen))
-	_, err = w.file.Write(varintBuf[:n])
+	_, err = w.writer.Write(varintBuf[:n])
 	if err != nil {
 		return err
 	}
-	_, err = w.file.Write(update.key)
+	_, err = w.writer.Write(update.key)
 	if err != nil {
 		return err
 	}
@@ -120,12 +131,12 @@ func (w *WALWriter) writeUpdate(update *leafUpdate) error {
 		valueLen := len(update.value)
 		// write varint
 		n = binary.PutUvarint(varintBuf[:], uint64(valueLen))
-		_, err = w.file.Write(varintBuf[:n])
+		_, err = w.writer.Write(varintBuf[:n])
 		if err != nil {
 			return err
 		}
 
-		_, err = w.file.Write(update.value)
+		_, err = w.writer.Write(update.value)
 		if err != nil {
 			return err
 		}

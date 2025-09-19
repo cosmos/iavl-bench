@@ -5,10 +5,10 @@ go 1.25
 require (
 	cosmossdk.io/core v1.0.0
 	cosmossdk.io/log v1.6.1
+	github.com/alitto/pond/v2 v2.5.0
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/iavl v1.3.5
 	github.com/cosmos/iavl-bench/bench v0.0.4
-	github.com/emicklei/dot v1.6.2
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621
 	pgregory.net/rapid v1.1.0
@@ -34,6 +34,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
+	github.com/emicklei/dot v1.6.2 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
