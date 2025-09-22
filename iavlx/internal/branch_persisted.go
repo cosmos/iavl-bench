@@ -6,9 +6,18 @@ import (
 )
 
 type BranchPersisted struct {
-	layout     BranchLayout
-	store      NodeStore
-	selfOffset int64
+	store NodeStore
+	BranchData
+}
+
+type BranchData struct {
+	layout          BranchLayout
+	selfOffset      int64
+	leftId, rightId NodeID // cached for convenience if not present in the layout
+}
+
+func (p BranchPersisted) Hash() []byte {
+	return p.layout.Hash()
 }
 
 func (p BranchPersisted) Height() uint8 {
@@ -45,32 +54,28 @@ func (p BranchPersisted) Value() ([]byte, error) {
 }
 
 func (p BranchPersisted) Left() *NodePointer {
-	return p.resolveNodePointer(p.layout.Left())
+	return p.resolveNodePointer(p.layout.Left(), p.leftId)
 }
 
 func (p BranchPersisted) Right() *NodePointer {
-	return p.resolveNodePointer(p.layout.Right())
+	return p.resolveNodePointer(p.layout.Right(), p.rightId)
 }
 
-func (p BranchPersisted) resolveNodePointer(ref NodeRef) *NodePointer {
+func (p BranchPersisted) resolveNodePointer(ref NodeRef, cachedId NodeID) *NodePointer {
 	np := &NodePointer{
 		store: p.store,
 	}
 	if ref.IsRelativePointer() {
 		np.fileIdx = p.selfOffset + ref.AsRelativePointer().Offset()
-		// TODO should we traverse to the root to find the node ID and then set it here?
+		np.id = cachedId
 	} else {
 		np.id = ref.AsNodeID()
 	}
 	return np
 }
 
-func (p BranchPersisted) Hash() ([]byte, error) {
-	return p.layout.Hash(), nil
-}
-
-func (p BranchPersisted) SafeHash() ([]byte, error) {
-	return p.layout.Hash(), nil
+func (p BranchPersisted) SafeHash() []byte {
+	return p.layout.Hash()
 }
 
 func (p BranchPersisted) MutateBranch(ctx MutationContext) (*MemNode, error) {

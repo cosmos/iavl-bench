@@ -140,7 +140,7 @@ func (c *CommitTree) reinitBatchChannels() {
 			//c.hashGroup.SubmitErr(func() error {
 			//	for _, update := range batch.leafUpdates {
 			//		if !update.deleted {
-			//			_, err := update.Node.Hash(c.store)
+			//			_, err := update.Node.ComputeHash(c.store)
 			//			if err != nil {
 			//				return err
 			//			}
@@ -163,7 +163,7 @@ func (c *CommitTree) reinitBatchChannels() {
 			//	}
 			//	if !update.deleted {
 			//		//store.AssignNodeKey(update.Node)
-			//		if _, err := update.Node.Hash(store); err != nil {
+			//		if _, err := update.Node.ComputeHash(store); err != nil {
 			//			batchDone <- err
 			//			return
 			//		}

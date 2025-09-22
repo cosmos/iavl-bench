@@ -2,5 +2,6 @@ package internal
 
 type NodeStore interface {
 	KVData
-	Get(ref NodeRef) (Node, error)
+	ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, error)
+	ResolveBranch(nodeId NodeID, fileIdx int64) (BranchData, error)
 }

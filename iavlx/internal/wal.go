@@ -1,31 +1,24 @@
 package internal
 
 import (
-	"bufio"
 	"encoding/binary"
 	"os"
 	"path/filepath"
-
-	"github.com/edsrzf/mmap-go"
 )
 
 type WAL struct {
-	file       *os.File
+	walData    *MmapFile
 	commitFile *os.File
-	mmap       mmap.MMap
-	data       []byte
-	writer     *bufio.Writer
 	curOffset  int
 	version    uint64
 }
 
 func OpenWAL(dir string, startVersion uint64) (*WAL, error) {
 	walFilename := filepath.Join(dir, "wal.log")
-	file, err := os.OpenFile(walFilename, os.O_RDWR|os.O_CREATE, 0o644)
+	walData, err := NewMmapFile(walFilename)
 	if err != nil {
 		return nil, err
 	}
-	writer := bufio.NewWriter(file)
 
 	commitFilename := filepath.Join(dir, "wal.commit")
 	commitFile, err := os.OpenFile(commitFilename, os.O_RDWR|os.O_CREATE, 0o644)
@@ -34,9 +27,8 @@ func OpenWAL(dir string, startVersion uint64) (*WAL, error) {
 	}
 
 	return &WAL{
-		file:       file,
+		walData:    walData,
 		commitFile: commitFile,
-		writer:     writer,
 		curOffset:  0,
 		version:    startVersion,
 	}, nil
@@ -54,7 +46,7 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 	var varintBytes [binary.MaxVarintLen64]byte
 	for _, update := range updates.Updates {
 		if setNode := update.SetNode; setNode != nil {
-			n, err := w.writer.Write([]byte{byte(WALEntryTypeSet)})
+			n, err := w.walData.Write([]byte{byte(WALEntryTypeSet)})
 			if err != nil {
 				return err
 			}
@@ -64,7 +56,7 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 			key := setNode.key
 			lenKey := uint64(len(key))
 			n = binary.PutUvarint(varintBytes[:], lenKey)
-			n, err = w.writer.Write(varintBytes[:n])
+			n, err = w.walData.Write(varintBytes[:n])
 			if err != nil {
 				return err
 			}
@@ -73,7 +65,7 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 			// save the offset of the key for when leaf nodes are written to the leaves file
 			setNode._walOffset = uint64(w.curOffset)
 
-			n, err = w.writer.Write(key)
+			n, err = w.walData.Write(key)
 			if err != nil {
 				return err
 			}
@@ -82,20 +74,20 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 			value := setNode.value
 			lenValue := uint64(len(value))
 			n = binary.PutUvarint(varintBytes[:], lenValue)
-			n, err = w.writer.Write(varintBytes[:n])
+			n, err = w.walData.Write(varintBytes[:n])
 			if err != nil {
 				return err
 			}
 			w.curOffset += n
 
-			n, err = w.writer.Write(value)
+			n, err = w.walData.Write(value)
 			if err != nil {
 				return err
 			}
 
 			w.curOffset += n
 		} else {
-			n, err := w.writer.Write([]byte{byte(WALEntryTypeDelete)})
+			n, err := w.walData.Write([]byte{byte(WALEntryTypeDelete)})
 			if err != nil {
 				return err
 			}
@@ -105,13 +97,13 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 			key := update.DeleteKey
 			lenKey := uint64(len(key))
 			n = binary.PutUvarint(varintBytes[:], lenKey)
-			n, err = w.writer.Write(varintBytes[:n])
+			n, err = w.walData.Write(varintBytes[:n])
 			if err != nil {
 				return err
 			}
 			w.curOffset += n
 
-			n, err = w.writer.Write(key)
+			n, err = w.walData.Write(key)
 			if err != nil {
 				return err
 			}
@@ -123,7 +115,7 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 
 func (w *WAL) CommitNoSync() error {
 	// write commit entry to WAL
-	n, err := w.writer.Write([]byte{byte(WALEntryTypeCommit)})
+	n, err := w.walData.Write([]byte{byte(WALEntryTypeCommit)})
 	if err != nil {
 		return err
 	}
@@ -132,7 +124,7 @@ func (w *WAL) CommitNoSync() error {
 
 	var varintBytes [binary.MaxVarintLen64]byte
 	n = binary.PutUvarint(varintBytes[:], w.version)
-	n, err = w.writer.Write(varintBytes[:n])
+	n, err = w.walData.Write(varintBytes[:n])
 	if err != nil {
 		return err
 	}
@@ -162,19 +154,7 @@ func (w *WAL) CommitSync() error {
 		return err
 	}
 
-	err = w.writer.Flush()
-	if err != nil {
-		return err
-	}
-
-	err = w.file.Sync()
-	if err != nil {
-		return err
-	}
-
-	// TODO reopen memmap
-
-	return nil
+	return w.walData.SaveAndRemap()
 }
 
 type KVData interface {
@@ -183,11 +163,7 @@ type KVData interface {
 }
 
 func (w *WAL) Read(offset uint64, size uint32) ([]byte, error) {
-	extent := int(offset) + int(size)
-	if extent > len(w.mmap) {
-		return nil, os.ErrInvalid
-	}
-	return w.mmap[offset:extent], nil
+	return w.walData.Slice(int(offset), int(size))
 }
 
 func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err error) {

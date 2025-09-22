@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -10,9 +9,52 @@ import (
 	"sync"
 )
 
+// ComputeHashAndAssignIDs computes the hash of the node pointed to by `np` and assigns
+// node IDs for the current staged version.
+// These two are done in one traversal to improve performance because node ID assignment
+// is based on pre-order traversal which is the order we traverse here.
+// If `assigner` is nil, node IDs are not assigned.
+func ComputeHashAndAssignIDs(np *NodePointer, assigner *NodeIDAssigner) ([]byte, error) {
+	memNode := np.mem.Load()
+	if memNode != nil {
+		// if we've already computed the hash, return it
+		if memNode.hash != nil {
+			return memNode.hash, nil
+		}
+
+		// first assign node ID if needed (visit root first then children for pre-order traversal)
+		if assigner != nil && memNode.version == assigner.version {
+			if memNode.IsLeaf() {
+				assigner.leafNodeIdx++
+				np.id = NewNodeID(true, assigner.version, assigner.leafNodeIdx)
+			} else {
+				assigner.branchNodeIdx++
+				np.id = NewNodeID(false, assigner.version, assigner.branchNodeIdx)
+			}
+		}
+
+		// now compute hash which also causes left and right sub-trees to have their node IDs assigned
+		hasher := hashPool.Get().(hash.Hash)
+		if err := writeHashBytes(memNode, hasher, assigner); err != nil {
+			return nil, err
+		}
+		hasher.Reset()
+		hashPool.Put(hasher)
+		h := hasher.Sum(nil)
+		memNode.hash = h
+
+		return h, nil
+	}
+	node, err := np.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	return node.Hash(), nil
+}
+
 // Writes the node's hash to the given `io.Writer`. This function recursively calls
 // children to update hashes.
-func writeHashBytes(node Node, w io.Writer) error {
+func writeHashBytes(node Node, w io.Writer, assigner *NodeIDAssigner) error {
 	var (
 		n   int
 		buf [binary.MaxVarintLen64]byte
@@ -55,22 +97,12 @@ func writeHashBytes(node Node, w io.Writer) error {
 			return fmt.Errorf("writing value, %w", err)
 		}
 	} else {
-		left, err := node.Left().Resolve()
-		if err != nil {
-			return fmt.Errorf("resolving left, %w", err)
-		}
-
-		leftHash, err := left.Hash()
+		leftHash, err := ComputeHashAndAssignIDs(node.Left(), assigner)
 		if err != nil {
 			return fmt.Errorf("getting left hash, %w", err)
 		}
 
-		right, err := node.Right().Resolve()
-		if err != nil {
-			return fmt.Errorf("resolving right, %w", err)
-		}
-
-		rightHash, err := right.Hash()
+		rightHash, err := ComputeHashAndAssignIDs(node.Right(), assigner)
 		if err != nil {
 			return fmt.Errorf("getting right hash, %w", err)
 		}
@@ -95,33 +127,10 @@ var (
 	emptyHash = sha256.New().Sum(nil)
 )
 
-// HashNode computes the hash of the node.
-func HashNode(node Node) ([]byte, error) {
-	if node == nil {
-		return nil, nil
-	}
-	h := hashPool.Get().(hash.Hash)
-	if err := writeHashBytes(node, h); err != nil {
-		return nil, err
-	}
-	h.Reset()
-	hashPool.Put(h)
-	return h.Sum(nil), nil
-}
-
-// VerifyHash compare node's cached hash with computed one
-func VerifyHash(node Node) (bool, error) {
-	hash, err := HashNode(node)
-	if err != nil {
-		return false, err
-	}
-
-	nodeHash, err := node.Hash()
-	if err != nil {
-		return false, err
-	}
-
-	return bytes.Equal(hash, nodeHash), nil
+type NodeIDAssigner struct {
+	version       uint64
+	branchNodeIdx uint32
+	leafNodeIdx   uint32
 }
 
 // EncodeBytes writes a varint length-prefixed byte slice to the writer,

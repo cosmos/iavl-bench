@@ -9,8 +9,8 @@ type Node interface {
 	Value() ([]byte, error)
 	Left() *NodePointer
 	Right() *NodePointer
-	Hash() ([]byte, error)
-	SafeHash() ([]byte, error)
+	Hash() []byte
+	SafeHash() []byte
 	MutateBranch(MutationContext) (*MemNode, error)
 	Get(key []byte) (value []byte, index int64, err error)
 }

@@ -7,6 +7,10 @@ type LeafPersisted struct {
 	kvData KVData
 }
 
+func (node LeafPersisted) Hash() []byte {
+	return node.layout.Hash()
+}
+
 func (node LeafPersisted) Height() uint8 {
 	return 0
 }
@@ -37,8 +41,8 @@ func (node LeafPersisted) Right() *NodePointer {
 	return nil
 }
 
-func (node LeafPersisted) SafeHash() ([]byte, error) {
-	return node.layout.Hash(), nil
+func (node LeafPersisted) SafeHash() []byte {
+	return node.layout.Hash()
 }
 
 func (node LeafPersisted) MutateBranch(MutationContext) (*MemNode, error) {
@@ -66,10 +70,6 @@ func (node LeafPersisted) Get(key []byte) ([]byte, int64, error) {
 
 func (node LeafPersisted) IsLeaf() bool {
 	return true
-}
-
-func (node LeafPersisted) Hash() ([]byte, error) {
-	return node.layout.Hash(), nil
 }
 
 var _ Node = LeafPersisted{}

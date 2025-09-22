@@ -112,11 +112,7 @@ func encodeBranchNode(node *MemNode, buf [SizeBranch]byte, nodeId NodeID, left, 
 	buf[OffsetBranchSize+4] = byte(size >> 32)
 
 	// write hash (32 bytes)
-	hash, err := HashNode(node)
-	if err != nil {
-		return err
-	}
-	copy(buf[OffsetBranchHash:OffsetBranchHash+32], hash)
+	copy(buf[OffsetBranchHash:OffsetBranchHash+32], node.Hash())
 
 	return nil
 }

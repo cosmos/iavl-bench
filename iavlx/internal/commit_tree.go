@@ -110,18 +110,13 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	default:
 	}
 
-	var root Node
 	var hash []byte
 	if c.root == nil {
-		root = nil
 		hash = emptyHash
 	} else {
+		// compute hash and assign node IDs
 		var err error
-		root, err = c.root.Resolve()
-		if err != nil {
-			return nil, err
-		}
-		hash, err = root.Hash()
+		hash, err = ComputeHashAndAssignIDs(c.root, &NodeIDAssigner{version: c.stagedVersion()})
 		if err != nil {
 			return nil, err
 		}

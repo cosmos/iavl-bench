@@ -2,22 +2,26 @@ package internal
 
 import (
 	"bufio"
-	"fmt"
 	"os"
+
+	"github.com/edsrzf/mmap-go"
 )
 
 type RollingDiff struct {
 	*WAL
-	stagedVersion    uint64
-	leafVersionIdx   uint32 // the index within the version of the leaf nodes
-	branchVersionIdx uint32 // the index within the version of the branch nodes
-	leafFileIdx      int64  // the offset within the leaf file in number of nodes
-	branchFileIdx    int64  // the offset within the branch file in number of nodes
+	stagedVersion       uint64
+	leafFileIdx         int64 // the offset within the leaf file in number of nodes
+	branchFileIdx       int64 // the offset within the branch file in number of nodes
+	leafVersionStartIdx int64 // the offset within the leaf file in number of nodes for the start of this version
 
 	leafFile     *os.File
 	leafWriter   *bufio.Writer
+	leafMmap     mmap.MMap
+	leafData     []byte
 	branchFile   *os.File
 	branchWriter *bufio.Writer
+	branchMmap   mmap.MMap
+	branchData   []byte
 }
 
 //func (rd *RollingDiff) WriteVersion(version uint64, rootPtr *NodePointer) error {
@@ -41,109 +45,97 @@ type RollingDiff struct {
 //			return rd.writeBranch(node)
 //		}
 //	}
-func (rd *RollingDiff) writeRoot(root *NodePointer) error {
+func (rd *RollingDiff) writeRoot(root *NodePointer, lastBranchIdx uint32) error {
 	if root == nil {
 		// TODO advance the version even if root is nil
 		return nil
 	}
 
-	// post-order traversal
-	stack1 := []*NodePointer{root}
-	var stack2 []*NodePointer
-
-	for len(stack1) > 0 {
-		nodePtr := stack1[len(stack1)-1]
-		stack1 = stack1[:len(stack1)-1]
-		stack2 = append(stack2, nodePtr)
-		node := nodePtr.mem.Load()
-		if node.left.mem.Load() != nil {
-			stack1 = append(stack1, node.left)
-		}
-		if node.right.mem.Load() != nil {
-			stack1 = append(stack1, node.right)
-		}
-	}
-
-	for i := len(stack2) - 1; i >= 0; i-- {
-		nodePtr := stack2[i]
-		node := nodePtr.mem.Load()
-		if node == nil {
-			return fmt.Errorf("node is nil, expected an in-memory node")
-		}
-
-		if node.IsLeaf() {
-			nodeId, fileIdx, err := rd.writeLeaf(node)
-			if err != nil {
-				return err
-			}
-			nodePtr.id = nodeId
-			nodePtr.fileIdx = fileIdx
-			// TODO reference key offset in the WAL here (or we can move writing that to *NodePointer too?)
-		} else {
-			// TODO subtree size
-			id, fileIdx, err := rd.writeBranch(node, 0)
-			if err != nil {
-				return err
-			}
-			nodePtr.id = id
-			nodePtr.fileIdx = fileIdx
-			// TODO reference key ref here too
-		}
-
-	}
-	panic("not implemented")
+	// TODO write root node index to commit file
+	return rd.writeNode(root, lastBranchIdx)
 }
 
-func (rd *RollingDiff) writeLeaf(node *MemNode) (id NodeID, fileOffset int64, err error) {
-	id = NewNodeID(true, rd.stagedVersion, rd.leafVersionIdx)
-	rd.leafVersionIdx++
-	var buf [SizeLeaf]byte
-	err = encodeLeafNode(node, buf, id)
+func (rd *RollingDiff) writeNode(np *NodePointer, span uint32) error {
+	memNode := np.mem.Load()
+	if memNode == nil {
+		return nil // already persisted
+	}
+	if memNode.version != rd.stagedVersion {
+		return nil // not part of this version
+	}
+	if memNode.IsLeaf() {
+		return rd.writeLeaf(np.id, memNode)
+	} else {
+		// TODO subtree size (can be figured out by the ID of the sibling if any)
+		return rd.writeBranch(np.id, memNode, span)
+	}
+}
+
+func (rd *RollingDiff) writeBranch(nodeId NodeID, node *MemNode, subtreeSpan uint32) error {
+	leftRef := rd.createNodeRef(nodeId, node.left)
+	rightRef := rd.createNodeRef(nodeId, node.right)
+	var buf [SizeBranch]byte
+	keyRef := node._keyRef.toKeyRef()
+	err := encodeBranchNode(node, buf, nodeId, leftRef, rightRef, keyRef, subtreeSpan)
 	if err != nil {
-		return 0, 0, err
+		return err
+	}
+	_, err = rd.branchWriter.Write(buf[:])
+	if err != nil {
+		return err
+	}
+	rd.branchFileIdx++
+	// recursively write children
+	leftSpan := node.right.id.Index() - nodeId.Index() - 1
+	err = rd.writeNode(node.left, leftSpan)
+	if err != nil {
+		return err
+	}
+	rightSpan := subtreeSpan - leftSpan - 1
+	err = rd.writeNode(node.right, rightSpan)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (rd *RollingDiff) writeLeaf(nodeId NodeID, node *MemNode) error {
+	var buf [SizeLeaf]byte
+	err := encodeLeafNode(node, buf, nodeId)
+	if err != nil {
+		return err
 	}
 	_, err = rd.leafWriter.Write(buf[:])
 	if err != nil {
-		return 0, 0, err
+		return err
 	}
 
-	offset := rd.leafFileIdx
 	rd.leafFileIdx++
-	return 0, offset, nil
+	return nil
 }
 
-func (rd *RollingDiff) Get(ref NodeRef) (Node, error) {
+func (rd *RollingDiff) createNodeRef(parentId NodeID, np *NodePointer) NodeRef {
+	if np.store == rd {
+		if np.id.IsLeaf() {
+			// for leaf nodes the relative offset is the leaf ID index plus the starting index for this version
+			return NodeRef(NewNodeRelativePointer(true, int64(np.id.Index())+rd.leafVersionStartIdx))
+		} else {
+			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
+			return NodeRef(NewNodeRelativePointer(false, int64(np.id.Index()-parentId.Index())))
+		}
+	} else {
+		return NodeRef(np.id)
+	}
+}
+
+func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (rd *RollingDiff) writeBranch(node *MemNode, subtreeSize uint32) (id NodeID, fileOffset int64, err error) {
-	id = NewNodeID(true, rd.stagedVersion, rd.branchVersionIdx)
-	rd.branchVersionIdx++
-	fileIdx := rd.branchFileIdx
-	leftRef := rd.createNodeRef(fileIdx, node.left)
-	rightRef := rd.createNodeRef(fileIdx, node.right)
-	var buf [SizeBranch]byte
-	keyRef := node._keyRef.toKeyRef()
-	err = encodeBranchNode(node, buf, id, leftRef, rightRef, keyRef, subtreeSize)
-	if err != nil {
-		return 0, 0, err
-	}
-	_, err = rd.branchWriter.Write(buf[:])
-	if err != nil {
-		return 0, 0, err
-	}
-	rd.branchFileIdx++
-	return id, fileIdx, nil
-}
-
-func (rd *RollingDiff) createNodeRef(curFileIdx int64, np *NodePointer) NodeRef {
-	if np.store == rd {
-		isLeaf := np.id.IsLeaf()
-		return NodeRef(NewNodeRelativePointer(isLeaf, curFileIdx-np.fileIdx))
-	} else {
-		return NodeRef(np.id)
-	}
+func (rd *RollingDiff) ResolveBranch(nodeId NodeID, fileIdx int64) (BranchData, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 var _ NodeStore = &RollingDiff{}

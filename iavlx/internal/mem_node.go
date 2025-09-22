@@ -20,27 +20,6 @@ type MemNode struct {
 	_walOffset uint64     // used for tracking the write-ahead-log position of the key for leaf nodes
 }
 
-func (node *MemNode) Hash() ([]byte, error) {
-	// TODO we might want to assign node indexes here if we want a checkpoint first design
-	hash := node.hash
-	if hash != nil {
-		return hash, nil
-	}
-
-	hash, err := HashNode(node)
-	if err != nil {
-		return nil, err
-	}
-
-	node.hash = hash
-	return hash, nil
-}
-
-func (node *MemNode) SafeHash() ([]byte, error) {
-	// TODO what needs to be safe??
-	return node.Hash()
-}
-
 func (node *MemNode) Height() uint8 {
 	return node.height
 }
@@ -67,6 +46,15 @@ func (node *MemNode) Left() *NodePointer {
 
 func (node *MemNode) Right() *NodePointer {
 	return node.right
+}
+
+func (node *MemNode) Hash() []byte {
+	return node.hash
+}
+
+func (node *MemNode) SafeHash() []byte {
+	// TODO what needs to be safe??
+	return node.hash
 }
 
 func (node *MemNode) MutateBranch(context MutationContext) (*MemNode, error) {
