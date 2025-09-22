@@ -32,6 +32,7 @@ type Tree interface {
 	ApplyUpdate(storeKey string, key, value []byte, delete bool) error
 	// Commit should persist all changes made since the last commit and return the new version's hash.
 	Commit() error
+	io.Closer
 }
 
 type LoaderParams struct {
@@ -214,6 +215,12 @@ func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params run
 		}
 		i++
 	}
+
+	err := tree.Close()
+	if err != nil {
+		return fmt.Errorf("error closing tree: %w", err)
+	}
+	logger.Info("closed tree")
 
 	opsPerSec := float64(stats.totalOps) / stats.totalTime.Seconds()
 	logger.Info(

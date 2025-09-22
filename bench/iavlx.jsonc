@@ -1,0 +1,12 @@
+{
+  "runs": [
+    {
+      "name": "iavlx",
+      "runner": "bench-iavlx"
+    },
+    {
+      "name": "memiavl",
+      "runner": "bench-memiavl"
+    }
+  ]
+}

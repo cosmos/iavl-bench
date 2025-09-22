@@ -38,10 +38,12 @@ func NewCommitTree(wal *WAL, zeroCopy bool) *CommitTree {
 	}()
 
 	return &CommitTree{
-		root:     nil,
-		zeroCopy: zeroCopy,
-		version:  0,
-		wal:      wal,
+		root:         nil,
+		zeroCopy:     zeroCopy,
+		version:      0,
+		wal:          wal,
+		walWriteChan: walWriteChan,
+		walDone:      walDone,
 	}
 }
 
@@ -127,4 +129,9 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	c.version++
 
 	return hash, nil
+}
+
+func (c *CommitTree) Close() error {
+	close(c.walWriteChan)
+	return <-c.walDone
 }

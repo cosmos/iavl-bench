@@ -13,6 +13,11 @@ type CommitMultiStoreWrapper struct {
 	store     types.CommitMultiStore
 }
 
+func (s *CommitMultiStoreWrapper) Close() error {
+	// TODO
+	return nil
+}
+
 func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeNames []string) (*CommitMultiStoreWrapper, error) {
 	storeKeys := make(map[string]types.StoreKey)
 	for _, name := range storeNames {

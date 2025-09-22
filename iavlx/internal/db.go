@@ -2,9 +2,11 @@ package internal
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
 	"github.com/alitto/pond/v2"
 )
 
@@ -84,18 +86,47 @@ func (db *DB) Apply(mt *MultiTree) error {
 	return nil
 }
 
-func (db *DB) Commit() error {
+func (db *DB) Commit(logger *slog.Logger) (*storev1beta1.CommitInfo, error) {
 	taskGroup := db.hashPool.NewGroup()
 	for _, tree := range db.trees {
 		t := tree
 		taskGroup.SubmitErr(func() ([]byte, error) {
+			if t.root == nil {
+				logger.Warn("skipping hash of empty tree")
+			}
 			return t.Commit()
 		})
 	}
-	_, err := taskGroup.Wait()
+	hashes, err := taskGroup.Wait()
 	if err != nil {
-		return fmt.Errorf("failed to commit trees: %w", err)
+		return nil, fmt.Errorf("failed to commit trees: %w", err)
 	}
 	db.version++
-	return err
+	commitInfo := &storev1beta1.CommitInfo{
+		Version:    int64(db.version),
+		StoreInfos: make([]*storev1beta1.StoreInfo, len(db.trees)),
+	}
+	for i, treeName := range db.treeNames {
+		if hashes[i] == nil {
+			return nil, fmt.Errorf("tree %s returned nil hash", treeName)
+		}
+		commitInfo.StoreInfos[i] = &storev1beta1.StoreInfo{
+			Name: treeName,
+			CommitId: &storev1beta1.CommitID{
+				Version: int64(db.version),
+				Hash:    hashes[i],
+			},
+		}
+	}
+	return commitInfo, nil
+}
+
+func (db *DB) Close() error {
+	for _, tree := range db.trees {
+		err := tree.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
