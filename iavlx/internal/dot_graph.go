@@ -6,7 +6,7 @@ import (
 )
 
 func RenderDotGraph(writer io.Writer, nodePtr *NodePointer) error {
-	_, err := fmt.Fprintln(writer, "graph G {")
+	_, err := fmt.Fprintln(writer, "digraph G {")
 	if err != nil {
 		return err
 	}

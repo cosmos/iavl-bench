@@ -34,16 +34,18 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx MutationContext) 
 			height:  1,
 			size:    2,
 			version: ctx.Version,
-			key:     nodeKey,
-			_keyRef: leafNode._keyRef,
 		}
 		switch cmp {
 		case -1:
 			n.left = leafNodePtr
 			n.right = nodePtr
+			n.key = nodeKey
+			n._keyRef = nodePtr.id // TODO we can optimize this and check if node is a MemNode
 		case 1:
 			n.left = nodePtr
 			n.right = leafNodePtr
+			n.key = leafNode.key
+			n._keyRef = leafNode
 		default:
 			panic("unreachable")
 		}

@@ -63,7 +63,8 @@ func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 			w.curOffset += n
 
 			// save the offset of the key for when leaf nodes are written to the leaves file
-			setNode._walOffset = uint64(w.curOffset)
+			// TODO handle case where key could be larger than 2^23-1 bytes - we need to set offset to start of varint
+			setNode._keyRef = NewWALRef(uint32(lenKey), uint64(w.curOffset))
 
 			n, err = w.walData.Write(key)
 			if err != nil {

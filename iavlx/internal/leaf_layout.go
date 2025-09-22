@@ -75,7 +75,11 @@ func encodeLeafNode(node *MemNode, buf [SizeLeaf]byte, nodeId NodeID) error {
 	buf[OffsetLeafKeyLen] = byte(keyLen)
 	buf[OffsetLeafKeyLen+1] = byte(keyLen >> 8)
 	buf[OffsetLeafKeyLen+2] = byte(keyLen >> 16)
-	walOffset := node._walOffset
+	walRef, ok := node._keyRef.(WALRef)
+	if !ok {
+		return fmt.Errorf("expected WALRef for leaf node key reference, got %T", node._keyRef)
+	}
+	walOffset := walRef.Offset()
 	if walOffset > KeyOffsetMax {
 		return fmt.Errorf("key offset %d exceeds maximum of %d", walOffset, KeyOffsetMax)
 	}

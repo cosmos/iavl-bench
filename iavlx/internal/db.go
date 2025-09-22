@@ -38,11 +38,10 @@ func LoadDB(opts DBOptions) (*DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tree dir %s: %w", dir, err)
 		}
-		wal, err := OpenWAL(dir, 0)
+		trees[i], err = NewCommitTree(dir, opts.ZeroCopy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open WAL for tree %s: %w", name, err)
+			return nil, fmt.Errorf("failed to load tree %s: %w", name, err)
 		}
-		trees[i] = NewCommitTree(wal, opts.ZeroCopy)
 	}
 
 	db := &DB{

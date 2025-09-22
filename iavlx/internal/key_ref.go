@@ -57,3 +57,11 @@ func (ref KeyRef) toKeyRef() KeyRef {
 func (node *MemNode) toKeyRef() KeyRef {
 	return node._keyRef.toKeyRef()
 }
+
+func (ref WALRef) toKeyRef() KeyRef {
+	return KeyRef(ref)
+}
+
+func (id NodeID) toKeyRef() KeyRef {
+	return KeyRef(id)
+}

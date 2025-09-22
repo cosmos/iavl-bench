@@ -1,11 +1,6 @@
 package internal
 
-import (
-	"bufio"
-	"os"
-
-	"github.com/edsrzf/mmap-go"
-)
+import "path/filepath"
 
 type RollingDiff struct {
 	*WAL
@@ -14,14 +9,34 @@ type RollingDiff struct {
 	branchFileIdx       int64 // the offset within the branch file in number of nodes
 	leafVersionStartIdx int64 // the offset within the leaf file in number of nodes for the start of this version
 
-	leafFile     *os.File
-	leafWriter   *bufio.Writer
-	leafMmap     mmap.MMap
-	leafData     []byte
-	branchFile   *os.File
-	branchWriter *bufio.Writer
-	branchMmap   mmap.MMap
-	branchData   []byte
+	leafData   *MmapFile
+	branchData *MmapFile
+}
+
+func NewRollingDiff(wal *WAL, dir string, startVersion uint64) (*RollingDiff, error) {
+	leafFile := filepath.Join(dir, "leaves.dat")
+	leafData, err := NewMmapFile(leafFile)
+	if err != nil {
+		return nil, err
+	}
+
+	branchFile := filepath.Join(dir, "branches.dat")
+	branchData, err := NewMmapFile(branchFile)
+	if err != nil {
+		return nil, err
+	}
+
+	rd := &RollingDiff{
+		WAL:                 wal,
+		stagedVersion:       startVersion + 1,
+		leafFileIdx:         int64(leafData.Offset() / SizeLeaf),
+		branchFileIdx:       int64(branchData.Offset() / SizeBranch),
+		leafVersionStartIdx: int64(leafData.Offset() / SizeLeaf),
+		leafData:            leafData,
+		branchData:          branchData,
+	}
+
+	return rd, nil
 }
 
 //func (rd *RollingDiff) WriteVersion(version uint64, rootPtr *NodePointer) error {
@@ -80,7 +95,7 @@ func (rd *RollingDiff) writeBranch(nodeId NodeID, node *MemNode, subtreeSpan uin
 	if err != nil {
 		return err
 	}
-	_, err = rd.branchWriter.Write(buf[:])
+	_, err = rd.branchData.Write(buf[:])
 	if err != nil {
 		return err
 	}
@@ -105,7 +120,7 @@ func (rd *RollingDiff) writeLeaf(nodeId NodeID, node *MemNode) error {
 	if err != nil {
 		return err
 	}
-	_, err = rd.leafWriter.Write(buf[:])
+	_, err = rd.leafData.Write(buf[:])
 	if err != nil {
 		return err
 	}
@@ -129,13 +144,26 @@ func (rd *RollingDiff) createNodeRef(parentId NodeID, np *NodePointer) NodeRef {
 }
 
 func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, error) {
-	//TODO implement me
-	panic("implement me")
+	offset := fileIdx * SizeLeaf
+	bz, err := rd.leafData.Slice(int(offset), SizeLeaf)
+	if err != nil {
+		return LeafLayout{}, err
+	}
+	return LeafLayout{data: (*[SizeLeaf]byte)(bz)}, nil
 }
 
 func (rd *RollingDiff) ResolveBranch(nodeId NodeID, fileIdx int64) (BranchData, error) {
-	//TODO implement me
-	panic("implement me")
+	offset := fileIdx * SizeLeaf
+	bz, err := rd.leafData.Slice(int(offset), SizeLeaf)
+	if err != nil {
+		return BranchData{}, err
+	}
+	branchLayout := BranchLayout{data: (*[SizeBranch]byte)(bz)}
+	// TODO resolve left and right ID if they are relative pointers
+	return BranchData{
+		selfOffset: fileIdx,
+		layout:     branchLayout,
+	}, nil
 }
 
 var _ NodeStore = &RollingDiff{}

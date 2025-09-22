@@ -16,8 +16,7 @@ type MemNode struct {
 	// when we store a node to disk we may clear its mem pointer to save memory
 	// branch nodes need some way to get the key for the node in the WAL (or wherever it's stored).
 	// on leaf nodes this should be set with a reference to the key in the KV storage when leaf nodes are serialized
-	_keyRef    keyRefLink // used for linking new nodes to the position of the key in the kv storage
-	_walOffset uint64     // used for tracking the write-ahead-log position of the key for leaf nodes
+	_keyRef keyRefLink // used for linking new nodes to the position of the key in the kv storage
 }
 
 func (node *MemNode) Height() uint8 {

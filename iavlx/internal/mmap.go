@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -10,89 +11,85 @@ import (
 )
 
 type MmapFile struct {
-	flushLock   sync.RWMutex
-	writeLock   sync.Mutex
-	file        *os.File
-	handle      mmap.MMap
-	writeBuffer []byte
+	flushLock sync.RWMutex
+	file      *os.File
+	writer    *bufio.Writer
+	handle    mmap.MMap
 }
 
 func NewMmapFile(path string) (*MmapFile, error) {
-	file, err := os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
+	}
+
+	// check file size
+	fi, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
+	}
+
+	writer := bufio.NewWriter(file)
+
+	res := &MmapFile{
+		file:   file,
+		writer: writer,
+	}
+
+	if fi.Size() == 0 {
+		return res, nil
 	}
 
 	handle, err := mmap.Map(file, mmap.RDONLY, 0)
 	if err != nil {
 		_ = file.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to mmap file %s: %w", path, err)
 	}
 
-	return &MmapFile{
-		file:   file,
-		handle: handle,
-	}, nil
+	res.handle = handle
+	return res, nil
 }
 
 func (m *MmapFile) Slice(offset, size int) ([]byte, error) {
 	m.flushLock.RLock()
 	defer m.flushLock.RUnlock()
 
-	if offset >= len(m.handle) {
-		// read from write buffer
-		offset -= len(m.handle)
-		if offset+size >= len(m.writeBuffer) {
-			return nil, fmt.Errorf("trying to read beyond write buffer: %d + %d >= %d", offset, size, len(m.writeBuffer))
-		}
-		return m.writeBuffer[offset : offset+size], nil
-	} else {
-		if offset+size >= len(m.handle) {
-			return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
-		}
-		return m.handle[offset : offset+size], nil
+	if offset+size >= len(m.handle) {
+		return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
 	}
+	data := m.handle[offset : offset+size]
+	// make a copy of the data to avoid data being changed after remap
+	copied := make([]byte, size)
+	copy(copied, data)
+	return copied, nil
 }
 
 func (m *MmapFile) Offset() int {
-	return len(m.handle) + len(m.writeBuffer)
+	if m.handle == nil {
+		return 0
+	}
+	return len(m.handle)
 }
 
 func (m *MmapFile) Write(p []byte) (n int, err error) {
-	m.writeLock.Lock()
-	defer m.writeLock.Unlock()
-
-	m.writeBuffer = append(m.writeBuffer, p...)
-	return len(p), nil
+	return m.writer.Write(p)
 }
 
 func (m *MmapFile) SaveAndRemap() error {
+	if err := m.flush(); err != nil {
+		return err
+	}
+
 	m.flushLock.Lock()
 	defer m.flushLock.Unlock()
-	m.writeLock.Lock()
-	defer m.writeLock.Unlock()
-
-	if len(m.writeBuffer) == 0 {
-		return nil
-	}
 
 	// unmap existing mapping
-	if err := m.handle.Unmap(); err != nil {
-		return err
-	}
-
-	// extend file
-	if _, err := m.file.Seek(0, io.SeekEnd); err != nil {
-		return err
-	}
-
-	if _, err := m.file.Write(m.writeBuffer); err != nil {
-		return err
-	}
-
-	// sync file to disk
-	if err := m.file.Sync(); err != nil {
-		return err
+	if m.handle != nil {
+		if err := m.handle.Unmap(); err != nil {
+			return err
+		}
+		m.handle = nil
 	}
 
 	// remap file
@@ -102,13 +99,37 @@ func (m *MmapFile) SaveAndRemap() error {
 	}
 
 	m.handle = handle
-	m.writeBuffer = nil
+	return nil
+}
+
+func (m *MmapFile) flush() error {
+	// flush writer buffer
+	if err := m.writer.Flush(); err != nil {
+		return err
+	}
+
+	// sync file to disk
+	if err := m.file.Sync(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (m *MmapFile) Close() error {
-	//TODO implement me
-	panic("implement me")
+	err := m.flush()
+	if err != nil {
+		_ = m.file.Close()
+		return err
+	}
+
+	if m.handle != nil {
+		if err := m.handle.Unmap(); err != nil {
+			_ = m.file.Close()
+			return err
+		}
+	}
+
+	return m.file.Close()
 }
 
 var _ io.Writer = &MmapFile{}

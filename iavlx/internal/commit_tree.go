@@ -6,70 +6,88 @@ import (
 )
 
 type CommitTree struct {
-	root         *NodePointer
-	zeroCopy     bool
-	version      uint64
-	writeMutex   sync.Mutex
-	wal          *WAL
-	walWriteChan chan<- walWriteBatch
-	walDone      <-chan error
+	root          *NodePointer
+	zeroCopy      bool
+	version       uint64
+	writeMutex    sync.Mutex
+	wal           *WAL
+	walWriteChan  chan<- walWriteBatch
+	walDone       <-chan error
+	rollingDiff   *RollingDiff
+	diffWriteChan chan<- *diffWriteBatch
+	diffDone      <-chan error
 }
 
-func NewCommitTree(wal *WAL, zeroCopy bool) *CommitTree {
-	walWriteChan := make(chan walWriteBatch, 16)
+type diffWriteBatch struct {
+	version         uint64
+	root            *NodePointer
+	lastBranchIndex uint32
+}
+
+func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
+	wal, err := OpenWAL(dir, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open WAL: %w", err)
+	}
+
+	rollingDiff, err := NewRollingDiff(wal, dir, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open rolling diff: %w", err)
+	}
+
+	walWriteChan := make(chan walWriteBatch, 1024)
 	walDone := make(chan error, 1)
+	diffWriteChan := make(chan *diffWriteBatch, 64)
+	diffDone := make(chan error, 1)
+
 	go func() {
+		defer close(walDone)
+		defer close(diffWriteChan)
 		for batch := range walWriteChan {
-			if batch.KVUpdateBatch != nil {
-				err := wal.WriteUpdates(batch.KVUpdateBatch)
+			if batch.updates != nil {
+				err := wal.WriteUpdates(batch.updates)
 				if err != nil {
 					walDone <- err
 					return
 				}
-			} else if batch.commitVersion != 0 {
+			} else if batch.commit != nil {
 				err := wal.CommitSync()
 				if err != nil {
 					walDone <- err
 					return
 				}
+				diffWriteChan <- batch.commit
 			}
 		}
-		walDone <- nil
+	}()
+
+	go func() {
+		defer close(diffDone)
+		for commit := range diffWriteChan {
+			err := rollingDiff.writeRoot(commit.root, 0)
+			if err != nil {
+				diffDone <- err
+				return
+			}
+		}
 	}()
 
 	return &CommitTree{
-		root:         nil,
-		zeroCopy:     zeroCopy,
-		version:      0,
-		wal:          wal,
-		walWriteChan: walWriteChan,
-		walDone:      walDone,
-	}
+		root:          nil,
+		zeroCopy:      zeroCopy,
+		version:       0,
+		wal:           wal,
+		walWriteChan:  walWriteChan,
+		walDone:       walDone,
+		rollingDiff:   rollingDiff,
+		diffWriteChan: diffWriteChan,
+		diffDone:      diffDone,
+	}, nil
 }
 
 type walWriteBatch struct {
-	*KVUpdateBatch
-	commitVersion uint64
-}
-
-func (c *CommitTree) ApplyBatch(tree *Tree) error {
-	if tree.origRoot != c.root {
-		// TODO apply the updates on top of the current root
-		//root := wrapNewNode(c.root)
-		//for _, update := range batchTree.store.leafNodes.updates {
-		//	if update != nil {
-		//		var err error
-		//		if update.deleted {
-		//			_, root, _, err = removeRecursive(c.store, root, update.key)
-		//		}
-		//	}
-		//}
-		return fmt.Errorf("batch tree original root does not match current root")
-	}
-	c.root = tree.root
-	// TODO process WAL batch
-
-	return nil
+	updates *KVUpdateBatch
+	commit  *diffWriteBatch
 }
 
 func (c *CommitTree) stagedVersion() uint64 {
@@ -81,6 +99,18 @@ func (c *CommitTree) Branch() *Tree {
 }
 
 func (c *CommitTree) Apply(tree *Tree) error {
+	// check errors
+	select {
+	case err := <-c.walDone:
+		if err != nil {
+			return fmt.Errorf("WAL error: %w", err)
+		}
+	case err := <-c.diffDone:
+		if err != nil {
+			return fmt.Errorf("diff error: %w", err)
+		}
+	default:
+	}
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
@@ -92,7 +122,7 @@ func (c *CommitTree) Apply(tree *Tree) error {
 	// TODO prevent further writes to the branch tree
 	// process WAL batch
 	c.walWriteChan <- walWriteBatch{
-		KVUpdateBatch: tree.updateBatch,
+		updates: tree.updateBatch,
 	}
 	return nil
 }
@@ -116,9 +146,17 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	} else {
 		// compute hash and assign node IDs
 		var err error
-		hash, err = ComputeHashAndAssignIDs(c.root, &NodeIDAssigner{version: c.stagedVersion()})
+		idAssigner := &NodeIDAssigner{version: c.stagedVersion()}
+		hash, err = ComputeHashAndAssignIDs(c.root, idAssigner)
 		if err != nil {
 			return nil, err
+		}
+		c.walWriteChan <- walWriteBatch{
+			commit: &diffWriteBatch{
+				version:         c.stagedVersion(),
+				root:            c.root,
+				lastBranchIndex: idAssigner.branchNodeIdx,
+			},
 		}
 	}
 	c.version++
@@ -128,5 +166,9 @@ func (c *CommitTree) Commit() ([]byte, error) {
 
 func (c *CommitTree) Close() error {
 	close(c.walWriteChan)
-	return <-c.walDone
+	err := <-c.walDone
+	if err != nil {
+		return fmt.Errorf("WAL error: %w", err)
+	}
+	return <-c.diffDone
 }
