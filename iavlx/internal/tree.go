@@ -1,10 +1,16 @@
 package internal
 
+import corestore "cosmossdk.io/core/store"
+
 type Tree struct {
 	origRoot    *NodePointer
 	root        *NodePointer
 	updateBatch *KVUpdateBatch
 	zeroCopy    bool
+}
+
+func NewTree(root *NodePointer, updateBatch *KVUpdateBatch, zeroCopy bool) *Tree {
+	return &Tree{origRoot: root, root: root, updateBatch: updateBatch, zeroCopy: zeroCopy}
 }
 
 func (tree *Tree) Get(key []byte) ([]byte, error) {
@@ -33,7 +39,7 @@ func (tree *Tree) Set(key, value []byte) error {
 		key:     key,
 		value:   value,
 	}
-	newRoot, _, err := setRecursive(tree.root, key, value, NewNodePointer(leafNode), MutationContext{Version: tree.updateBatch.StagedVersion})
+	newRoot, _, err := setRecursive(tree.root, leafNode, MutationContext{Version: tree.updateBatch.StagedVersion})
 	if err != nil {
 		return err
 	}
@@ -55,4 +61,8 @@ func (tree *Tree) Remove(key []byte) error {
 		DeleteKey: key,
 	})
 	return nil
+}
+
+func (tree *Tree) Iterator(start, end []byte, ascending bool) (corestore.Iterator, error) {
+	return NewIterator(start, end, ascending, tree.root, tree.zeroCopy), nil
 }

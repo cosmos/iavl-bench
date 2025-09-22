@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"os"
+	"path/filepath"
 
 	"github.com/edsrzf/mmap-go"
 )
@@ -18,12 +19,27 @@ type WAL struct {
 	version    uint64
 }
 
-func NewWAL(path string, startVersion uint64) (*WAL, error) {
-	//file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
-	//if err != nil {
-	//	return nil, err
-	//}
-	panic("not implemented")
+func OpenWAL(dir string, startVersion uint64) (*WAL, error) {
+	walFilename := filepath.Join(dir, "wal.log")
+	file, err := os.OpenFile(walFilename, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	writer := bufio.NewWriter(file)
+
+	commitFilename := filepath.Join(dir, "wal.commit")
+	commitFile, err := os.OpenFile(commitFilename, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	return &WAL{
+		file:       file,
+		commitFile: commitFile,
+		writer:     writer,
+		curOffset:  0,
+		version:    startVersion,
+	}, nil
 }
 
 type WALEntryType byte
@@ -34,7 +50,7 @@ const (
 	WALEntryTypeCommit
 )
 
-func (w *WAL) WriteUpdates(updates KVUpdateBatch) error {
+func (w *WAL) WriteUpdates(updates *KVUpdateBatch) error {
 	var varintBytes [binary.MaxVarintLen64]byte
 	for _, update := range updates.Updates {
 		if setNode := update.SetNode; setNode != nil {
@@ -55,7 +71,7 @@ func (w *WAL) WriteUpdates(updates KVUpdateBatch) error {
 			w.curOffset += n
 
 			// save the offset of the key for when leaf nodes are written to the leaves file
-			setNode._walOffset = w.curOffset
+			setNode._walOffset = uint64(w.curOffset)
 
 			n, err = w.writer.Write(key)
 			if err != nil {
@@ -106,6 +122,7 @@ func (w *WAL) WriteUpdates(updates KVUpdateBatch) error {
 }
 
 func (w *WAL) CommitNoSync() error {
+	// write commit entry to WAL
 	n, err := w.writer.Write([]byte{byte(WALEntryTypeCommit)})
 	if err != nil {
 		return err
@@ -124,7 +141,14 @@ func (w *WAL) CommitNoSync() error {
 	// write version to commit file
 	var bz [8]byte
 	binary.LittleEndian.PutUint64(bz[:], w.version)
-	_, err = w.commitFile.WriteAt(bz[:], 0)
+	_, err = w.commitFile.Write(bz[:])
+	if err != nil {
+		return err
+	}
+
+	// write offset to commit file
+	binary.LittleEndian.PutUint64(bz[:], uint64(w.curOffset))
+	_, err = w.commitFile.Write(bz[:])
 	if err != nil {
 		return err
 	}

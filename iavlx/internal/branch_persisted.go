@@ -5,29 +5,29 @@ import (
 	"fmt"
 )
 
-type PersistedBranch struct {
+type BranchPersisted struct {
 	layout     BranchLayout
 	store      NodeStore
 	selfOffset int64
 }
 
-func (p PersistedBranch) Height() uint8 {
+func (p BranchPersisted) Height() uint8 {
 	return p.layout.Height()
 }
 
-func (p PersistedBranch) IsLeaf() bool {
+func (p BranchPersisted) IsLeaf() bool {
 	return false
 }
 
-func (p PersistedBranch) Size() int64 {
+func (p BranchPersisted) Size() int64 {
 	return int64(p.layout.Size())
 }
 
-func (p PersistedBranch) Version() uint64 {
+func (p BranchPersisted) Version() uint64 {
 	return p.layout.NodeID().Version()
 }
 
-func (p PersistedBranch) Key() ([]byte, error) {
+func (p BranchPersisted) Key() ([]byte, error) {
 	keyRef := p.layout.KeyRef()
 	if keyRef.IsNodeID() {
 		return nil, fmt.Errorf("resolving node ID key refs not implemented")
@@ -40,19 +40,19 @@ func (p PersistedBranch) Key() ([]byte, error) {
 	return p.store.Read(walRef.Offset(), n)
 }
 
-func (p PersistedBranch) Value() ([]byte, error) {
+func (p BranchPersisted) Value() ([]byte, error) {
 	return nil, nil // non-leaf nodes do not have values
 }
 
-func (p PersistedBranch) Left() *NodePointer {
+func (p BranchPersisted) Left() *NodePointer {
 	return p.resolveNodePointer(p.layout.Left())
 }
 
-func (p PersistedBranch) Right() *NodePointer {
+func (p BranchPersisted) Right() *NodePointer {
 	return p.resolveNodePointer(p.layout.Right())
 }
 
-func (p PersistedBranch) resolveNodePointer(ref NodeRef) *NodePointer {
+func (p BranchPersisted) resolveNodePointer(ref NodeRef) *NodePointer {
 	np := &NodePointer{
 		store: p.store,
 	}
@@ -65,15 +65,15 @@ func (p PersistedBranch) resolveNodePointer(ref NodeRef) *NodePointer {
 	return np
 }
 
-func (p PersistedBranch) Hash() ([]byte, error) {
+func (p BranchPersisted) Hash() ([]byte, error) {
 	return p.layout.Hash(), nil
 }
 
-func (p PersistedBranch) SafeHash() ([]byte, error) {
+func (p BranchPersisted) SafeHash() ([]byte, error) {
 	return p.layout.Hash(), nil
 }
 
-func (p PersistedBranch) MutateBranch(ctx MutationContext) (*MemNode, error) {
+func (p BranchPersisted) MutateBranch(ctx MutationContext) (*MemNode, error) {
 	key, err := p.Key()
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (p PersistedBranch) MutateBranch(ctx MutationContext) (*MemNode, error) {
 	return memNode, nil
 }
 
-func (p PersistedBranch) Get(key []byte) (value []byte, index int64, err error) {
+func (p BranchPersisted) Get(key []byte) (value []byte, index int64, err error) {
 	nodeKey, err := p.Key()
 	if err != nil {
 		return nil, 0, err
@@ -119,4 +119,4 @@ func (p PersistedBranch) Get(key []byte) (value []byte, index int64, err error) 
 	return value, index, nil
 }
 
-var _ Node = PersistedBranch{}
+var _ Node = BranchPersisted{}

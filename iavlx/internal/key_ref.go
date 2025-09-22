@@ -54,6 +54,6 @@ func (ref KeyRef) toKeyRef() KeyRef {
 	return ref
 }
 
-func (p *NodePointer) toKeyRef() KeyRef {
-	return p._keyRef.toKeyRef()
+func (node *MemNode) toKeyRef() KeyRef {
+	return node._keyRef.toKeyRef()
 }

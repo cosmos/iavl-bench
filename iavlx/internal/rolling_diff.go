@@ -46,6 +46,7 @@ func (rd *RollingDiff) writeRoot(root *NodePointer) error {
 		// TODO advance the version even if root is nil
 		return nil
 	}
+
 	// post-order traversal
 	stack1 := []*NodePointer{root}
 	var stack2 []*NodePointer
@@ -79,7 +80,8 @@ func (rd *RollingDiff) writeRoot(root *NodePointer) error {
 			nodePtr.fileIdx = fileIdx
 			// TODO reference key offset in the WAL here (or we can move writing that to *NodePointer too?)
 		} else {
-			id, fileIdx, err := rd.writeBranch(node)
+			// TODO subtree size
+			id, fileIdx, err := rd.writeBranch(node, 0)
 			if err != nil {
 				return err
 			}
@@ -115,7 +117,7 @@ func (rd *RollingDiff) Get(ref NodeRef) (Node, error) {
 	panic("implement me")
 }
 
-func (rd *RollingDiff) writeBranch(node *MemNode) (id NodeID, fileOffset int64, err error) {
+func (rd *RollingDiff) writeBranch(node *MemNode, subtreeSize uint32) (id NodeID, fileOffset int64, err error) {
 	id = NewNodeID(true, rd.stagedVersion, rd.branchVersionIdx)
 	rd.branchVersionIdx++
 	fileIdx := rd.branchFileIdx
@@ -123,7 +125,7 @@ func (rd *RollingDiff) writeBranch(node *MemNode) (id NodeID, fileOffset int64, 
 	rightRef := rd.createNodeRef(fileIdx, node.right)
 	var buf [SizeBranch]byte
 	keyRef := node._keyRef.toKeyRef()
-	err = encodeBranchNode(node, buf, id, leftRef, rightRef, keyRef)
+	err = encodeBranchNode(node, buf, id, leftRef, rightRef, keyRef, subtreeSize)
 	if err != nil {
 		return 0, 0, err
 	}

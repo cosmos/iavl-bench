@@ -13,11 +13,15 @@ type MemNode struct {
 	hash    []byte
 
 	// when creating branch nodes
+	// when we store a node to disk we may clear its mem pointer to save memory
+	// branch nodes need some way to get the key for the node in the WAL (or wherever it's stored).
+	// on leaf nodes this should be set with a reference to the key in the KV storage when leaf nodes are serialized
 	_keyRef    keyRefLink // used for linking new nodes to the position of the key in the kv storage
 	_walOffset uint64     // used for tracking the write-ahead-log position of the key for leaf nodes
 }
 
 func (node *MemNode) Hash() ([]byte, error) {
+	// TODO we might want to assign node indexes here if we want a checkpoint first design
 	hash := node.hash
 	if hash != nil {
 		return hash, nil

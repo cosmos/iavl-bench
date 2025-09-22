@@ -10,9 +10,9 @@ type MutationContext struct {
 // it always do modification and return new `MemNode`, even if the value is the same.
 // also returns if it's an update or insertion, if update, the tree height and balance is not changed.
 // TODO maybe we can just use *MemNode for leafNode and use its key, value directly?
-func setRecursive(nodePtr *NodePointer, key, value []byte, leafNode *NodePointer, ctx MutationContext) (*NodePointer, bool, error) {
+func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx MutationContext) (*NodePointer, bool, error) {
 	if nodePtr == nil {
-		return leafNode, true, nil
+		return NewNodePointer(leafNode), true, nil
 	}
 
 	node, err := nodePtr.Resolve()
@@ -25,9 +25,10 @@ func setRecursive(nodePtr *NodePointer, key, value []byte, leafNode *NodePointer
 		return nil, false, err
 	}
 	if node.IsLeaf() {
-		cmp := bytes.Compare(key, nodeKey)
+		leafNodePtr := NewNodePointer(leafNode)
+		cmp := bytes.Compare(leafNode.key, nodeKey)
 		if cmp == 0 {
-			return leafNode, true, nil
+			return leafNodePtr, true, nil
 		}
 		n := &MemNode{
 			height:  1,
@@ -38,11 +39,11 @@ func setRecursive(nodePtr *NodePointer, key, value []byte, leafNode *NodePointer
 		}
 		switch cmp {
 		case -1:
-			n.left = leafNode
+			n.left = leafNodePtr
 			n.right = nodePtr
 		case 1:
 			n.left = nodePtr
-			n.right = leafNode
+			n.right = leafNodePtr
 		default:
 			panic("unreachable")
 		}
@@ -54,8 +55,8 @@ func setRecursive(nodePtr *NodePointer, key, value []byte, leafNode *NodePointer
 			updated     bool
 			err         error
 		)
-		if bytes.Compare(key, nodeKey) == -1 {
-			newChildPtr, updated, err = setRecursive(node.Left(), key, value, leafNode, ctx)
+		if bytes.Compare(leafNode.key, nodeKey) == -1 {
+			newChildPtr, updated, err = setRecursive(node.Left(), leafNode, ctx)
 			if err != nil {
 				return nil, false, err
 			}
@@ -65,7 +66,7 @@ func setRecursive(nodePtr *NodePointer, key, value []byte, leafNode *NodePointer
 			}
 			newNode.left = newChildPtr
 		} else {
-			newChildPtr, updated, err = setRecursive(node.Right(), key, value, leafNode, ctx)
+			newChildPtr, updated, err = setRecursive(node.Right(), leafNode, ctx)
 			if err != nil {
 				return nil, false, err
 			}

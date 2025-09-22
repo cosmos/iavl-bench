@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"io"
+	"sync"
 )
 
 // Writes the node's hash to the given `io.Writer`. This function recursively calls
@@ -84,15 +86,26 @@ func writeHashBytes(node Node, w io.Writer) error {
 	return nil
 }
 
+var (
+	hashPool = &sync.Pool{
+		New: func() any {
+			return sha256.New()
+		},
+	}
+	emptyHash = sha256.New().Sum(nil)
+)
+
 // HashNode computes the hash of the node.
 func HashNode(node Node) ([]byte, error) {
 	if node == nil {
 		return nil, nil
 	}
-	h := sha256.New()
+	h := hashPool.Get().(hash.Hash)
 	if err := writeHashBytes(node, h); err != nil {
 		return nil, err
 	}
+	h.Reset()
+	hashPool.Put(h)
 	return h.Sum(nil), nil
 }
 
