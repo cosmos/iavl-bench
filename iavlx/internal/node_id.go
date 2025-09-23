@@ -1,5 +1,7 @@
 package internal
 
+import "fmt"
+
 // bit 63 indicates whether this is a node ID (0) or relative pointer (1)
 // a valid NodeID should always have bit 63 as 0
 // bit 62 indicates whether this is a leaf (1) or branch (0)
@@ -35,6 +37,10 @@ func (id NodeID) Version() uint64 {
 
 func (id NodeID) Index() uint32 {
 	return uint32(id & 0x7FFFFF)
+}
+
+func (id NodeID) String() string {
+	return fmt.Sprintf("NodeID{leaf:%t, version:%d, index:%d}", id.IsLeaf(), id.Version(), id.Index())
 }
 
 // bit 63 indicates whether this is a node ID (0) or relative pointer (1)

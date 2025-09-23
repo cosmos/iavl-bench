@@ -1,10 +1,14 @@
 package internal
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"sync/atomic"
+)
 
 type RollingDiff struct {
 	*WAL
 	stagedVersion       uint64
+	savedVersion        atomic.Uint64
 	leafFileIdx         int64 // the offset within the leaf file in number of nodes
 	branchFileIdx       int64 // the offset within the branch file in number of nodes
 	leafVersionStartIdx int64 // the offset within the leaf file in number of nodes for the start of this version
@@ -66,8 +70,16 @@ func (rd *RollingDiff) writeRoot(root *NodePointer, lastBranchIdx uint32) error 
 		return nil
 	}
 
-	// TODO write root node index to commit file
-	return rd.writeNode(root, lastBranchIdx)
+	err := rd.writeNode(root, lastBranchIdx)
+	if err != nil {
+		return err
+	}
+
+	// TODO write root node index and other data to commit file
+	rd.savedVersion.Store(rd.stagedVersion)
+	rd.stagedVersion++
+	rd.leafVersionStartIdx = rd.leafFileIdx
+	return nil
 }
 
 func (rd *RollingDiff) writeNode(np *NodePointer, span uint32) error {

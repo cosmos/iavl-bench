@@ -6,6 +6,7 @@ import (
 )
 
 type CommitTree struct {
+	latest        *NodePointer
 	root          *NodePointer
 	zeroCopy      bool
 	version       uint64
@@ -19,9 +20,10 @@ type CommitTree struct {
 }
 
 type diffWriteBatch struct {
-	version         uint64
-	root            *NodePointer
-	lastBranchIndex uint32
+	version            uint64
+	root               *NodePointer
+	branchNodesCreated uint32
+	leafNodesCreated   uint32
 }
 
 func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
@@ -146,19 +148,25 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	} else {
 		// compute hash and assign node IDs
 		var err error
-		idAssigner := &NodeIDAssigner{version: c.stagedVersion()}
-		hash, err = ComputeHashAndAssignIDs(c.root, idAssigner)
+		commitCtx := &commitContext{
+			version: c.stagedVersion(),
+			//evictVersion: c.rollingDiff.savedVersion.Load(),
+		}
+		hash, err = commitTraverse(commitCtx, c.root)
 		if err != nil {
 			return nil, err
 		}
 		c.walWriteChan <- walWriteBatch{
 			commit: &diffWriteBatch{
-				version:         c.stagedVersion(),
-				root:            c.root,
-				lastBranchIndex: idAssigner.branchNodeIdx,
+				version:            c.stagedVersion(),
+				root:               c.root,
+				branchNodesCreated: commitCtx.branchNodeIdx,
+				leafNodesCreated:   commitCtx.leafNodeIdx,
 			},
 		}
 	}
+	// cache the committed tree as the latest version
+	c.latest = c.root
 	c.version++
 
 	return hash, nil
@@ -171,4 +179,58 @@ func (c *CommitTree) Close() error {
 		return fmt.Errorf("WAL error: %w", err)
 	}
 	return <-c.diffDone
+}
+
+type commitContext struct {
+	version       uint64
+	branchNodeIdx uint32
+	leafNodeIdx   uint32
+	evictVersion  uint64
+}
+
+func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error) {
+	memNode := np.mem.Load()
+	if memNode == nil {
+		node, err := np.Resolve()
+		if err != nil {
+			return nil, err
+		}
+		return node.Hash(), nil
+	}
+
+	if memNode.version == ctx.version {
+		var leftHash, rightHash []byte
+		if memNode.IsLeaf() {
+			ctx.leafNodeIdx++
+			np.id = NewNodeID(true, ctx.version, ctx.leafNodeIdx)
+		} else {
+			ctx.branchNodeIdx++
+			np.id = NewNodeID(false, ctx.version, ctx.branchNodeIdx)
+
+			// pre-order traversal
+			leftHash, err = commitTraverse(ctx, memNode.left)
+			if err != nil {
+				return nil, err
+			}
+			rightHash, err = commitTraverse(ctx, memNode.right)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if memNode.hash != nil {
+			// not sure when we would encounter this but if the hash is already computed, just return it
+			return memNode.hash, nil
+		}
+
+		return computeAndSetHash(memNode, leftHash, rightHash)
+	} else {
+		// hash already computed
+		hash = memNode.hash
+		if memNode.version <= ctx.evictVersion {
+			// evict from memory
+			np.mem.Store(nil)
+		}
+		return hash, nil
+	}
 }
