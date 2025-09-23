@@ -2,3 +2,6 @@
 go.work
 go.work.sum
 bench/run-*/
+.ipynb_checkpoints
+analysis/.ipynb_checkpoints
+analysis/__pycache__/
