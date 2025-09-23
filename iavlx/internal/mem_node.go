@@ -1,6 +1,9 @@
 package internal
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
 
 type MemNode struct {
 	height  uint8
@@ -100,6 +103,10 @@ func (node *MemNode) Get(key []byte) (value []byte, index int64, err error) {
 
 func (node *MemNode) IsLeaf() bool {
 	return node.height == 0
+}
+
+func (node *MemNode) String() string {
+	return fmt.Sprintf("MemNode{key:%x, version:%d, height:%d, size:%d, value:%x}", node.key, node.version, node.height, node.size, node.value)
 }
 
 var _ Node = &MemNode{}

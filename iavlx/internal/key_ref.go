@@ -1,5 +1,7 @@
 package internal
 
+import "fmt"
+
 // bit 63 indicates whether this is a node ID (0) or WAL offset + len (1)
 type KeyRef uint64
 
@@ -15,8 +17,16 @@ func (ref KeyRef) AsNodeID() NodeID {
 	return NodeID(ref)
 }
 
-func (ref KeyRef) WALRef() WALRef {
+func (ref KeyRef) AsWALRef() WALRef {
 	return WALRef(ref)
+}
+
+func (ref KeyRef) String() string {
+	if ref.IsNodeID() {
+		return fmt.Sprintf("KeyRef(NodeID(%s))", ref.AsNodeID())
+	} else {
+		return fmt.Sprintf("KeyRef(WALRef(%s))", ref.AsWALRef())
+	}
 }
 
 // bit 63 indicates whether this is a node ID (0) or WAL offset + len (1)
@@ -44,6 +54,11 @@ func (ref WALRef) Length() (len uint32, overflow bool) {
 
 func (ref WALRef) Offset() uint64 {
 	return uint64(ref & 0xFFFFFFFFFF) // 40 bits for offset
+}
+
+func (ref WALRef) String() string {
+	length, overflow := ref.Length()
+	return fmt.Sprintf("WALRef(offset=%d, length=%d, overflow=%v)", ref.Offset(), length, overflow)
 }
 
 type keyRefLink interface {

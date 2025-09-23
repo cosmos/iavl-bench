@@ -1,6 +1,9 @@
 package internal
 
+import "fmt"
+
 type Node interface {
+	fmt.Stringer
 	Height() uint8
 	IsLeaf() bool
 	Size() int64

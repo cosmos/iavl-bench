@@ -134,9 +134,11 @@ func (rd *RollingDiff) writeBranch(np *NodePointer, node *MemNode, subtreeSpan u
 	if err != nil {
 		return err
 	}
+
 	rd.branchFileIdx++
 	np.fileIdx = rd.branchFileIdx
 	np.store = rd
+
 	return nil
 }
 
@@ -165,7 +167,7 @@ func (rd *RollingDiff) createNodeRef(parentId NodeID, np *NodePointer) NodeRef {
 			return NodeRef(NewNodeRelativePointer(true, np.fileIdx))
 		} else {
 			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
-			return NodeRef(NewNodeRelativePointer(false, int64(parentId.Index()-np.id.Index())))
+			return NodeRef(NewNodeRelativePointer(false, np.fileIdx-(rd.branchFileIdx+1)))
 		}
 	} else {
 		return NodeRef(np.id)
@@ -179,7 +181,7 @@ func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, er
 
 	fileIdx--
 	offset := fileIdx * SizeLeaf
-	bz, err := rd.leafData.Slice(int(offset), SizeLeaf)
+	bz, err := rd.leafData.SliceExact(int(offset), SizeLeaf)
 	if err != nil {
 		return LeafLayout{}, err
 	}
@@ -189,7 +191,7 @@ func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, er
 func (rd *RollingDiff) resolveBranchLayout(fileIdx int64) (BranchLayout, error) {
 	fileIdx--
 	offset := fileIdx * SizeBranch
-	bz, err := rd.branchData.Slice(int(offset), SizeBranch)
+	bz, err := rd.branchData.SliceExact(int(offset), SizeBranch)
 	if err != nil {
 		return BranchLayout{}, err
 	}
@@ -214,7 +216,7 @@ func (rd *RollingDiff) resolveNodeId(curBranchIdx int64, relPtr NodeRelativePoin
 }
 
 func (rd *RollingDiff) ResolveBranch(nodeId NodeID, fileIdx int64) (BranchData, error) {
-	if fileIdx <= 0 {
+	if fileIdx == 0 {
 		return BranchData{}, fmt.Errorf("node ID resolution not supported yet")
 	}
 

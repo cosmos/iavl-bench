@@ -13,6 +13,40 @@ func VerifyTree(tree *CommitTree) error {
 	return verifyNode(tree.latest)
 }
 
+type DebugError struct {
+	Graph string
+	Err   error
+}
+
+func (d *DebugError) Error() string {
+	return fmt.Sprintf("%v\nDOT graph:\n%s", d.Err, d.Graph)
+}
+
+func (d *DebugError) Unwrap() error {
+	return d.Err
+}
+
+var _ error = &DebugError{}
+
+//	func verifyNodeDebug(np *NodePointer) error {
+//		err := verifyNode(np)
+//		if err != nil {
+//			var dbgErr *DebugError
+//			if errors.As(err, &dbgErr) {
+//				return err
+//			} else {
+//				buf := &bytes.Buffer{}
+//				err2 := RenderDotGraph(buf, np)
+//				if err2 == nil {
+//					err = &DebugError{
+//						Graph: buf.String(),
+//						Err:   err,
+//					}
+//				}
+//			}
+//		}
+//		return err
+//	}
 func verifyNode(np *NodePointer) error {
 	node, err := np.Resolve()
 	if err != nil {
@@ -67,6 +101,29 @@ func verifyNode(np *NodePointer) error {
 		right, err := rightPtr.Resolve()
 		if err != nil {
 			return fmt.Errorf("resolve right child of node %s: %w", np.id, err)
+		}
+
+		key, err := node.Key()
+		if err != nil {
+			return fmt.Errorf("get key of node %s: %w", np.id, err)
+		}
+
+		leftKey, err := left.Key()
+		if err != nil {
+			return fmt.Errorf("get key of left child of node %s: %w", np.id, err)
+		}
+
+		rightKey, err := right.Key()
+		if err != nil {
+			return fmt.Errorf("get key of right child of node %s: %w", np.id, err)
+		}
+
+		if bytes.Compare(leftKey, key) >= 0 {
+			return fmt.Errorf("branch node %s with id %s has key %x, but left child %s, has key %x", node, np.id, key, left, leftKey)
+		}
+
+		if bytes.Compare(rightKey, key) < 0 {
+			return fmt.Errorf("branch node %s with id %s has key %x, but right child %s, has key %x", node, np.id, key, right, rightKey)
 		}
 
 		if left.Size()+right.Size() != node.Size() {

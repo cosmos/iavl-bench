@@ -164,11 +164,11 @@ type KVData interface {
 }
 
 func (w *WAL) Read(offset uint64, size uint32) ([]byte, error) {
-	return w.walData.Slice(int(offset), int(size))
+	return w.walData.SliceExact(int(offset), int(size))
 }
 
 func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err error) {
-	bz, err = w.walData.Slice(int(offset), binary.MaxVarintLen64)
+	_, bz, err = w.walData.SliceVar(int(offset), binary.MaxVarintLen64)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,7 +176,7 @@ func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err erro
 	if n <= 0 {
 		return nil, 0, err
 	}
-	bz, err = w.walData.Slice(int(offset)+n, int(length))
+	bz, err = w.walData.SliceExact(int(offset)+n, int(length))
 	if err != nil {
 		return nil, 0, err
 	}

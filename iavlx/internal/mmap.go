@@ -11,10 +11,12 @@ import (
 )
 
 type MmapFile struct {
-	flushLock sync.RWMutex
-	file      *os.File
-	writer    *bufio.Writer
-	handle    mmap.MMap
+	flushLock    sync.RWMutex
+	file         *os.File
+	writer       *bufio.Writer
+	handle       mmap.MMap
+	bytesWritten int
+	bytesFlushed int
 }
 
 func NewMmapFile(path string) (*MmapFile, error) {
@@ -51,7 +53,22 @@ func NewMmapFile(path string) (*MmapFile, error) {
 	return res, nil
 }
 
-func (m *MmapFile) Slice(offset, size int) ([]byte, error) {
+func (m *MmapFile) SliceVar(offset, maxSize int) (int, []byte, error) {
+	m.flushLock.RLock()
+	defer m.flushLock.RUnlock()
+
+	if offset >= len(m.handle) {
+		maxSize = len(m.handle) - offset
+		return 0, nil, fmt.Errorf("trying to read beyond mapped data: %d >= %d", offset, len(m.handle))
+	}
+	data := m.handle[offset : offset+maxSize]
+	// make a copy of the data to avoid data being changed after remap
+	copied := make([]byte, maxSize)
+	copy(copied, data)
+	return maxSize, copied, nil
+}
+
+func (m *MmapFile) SliceExact(offset, size int) ([]byte, error) {
 	m.flushLock.RLock()
 	defer m.flushLock.RUnlock()
 
@@ -65,7 +82,7 @@ func (m *MmapFile) Slice(offset, size int) ([]byte, error) {
 	//}
 	//return buf, nil
 
-	if offset+size >= len(m.handle) {
+	if offset+size > len(m.handle) {
 		return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
 	}
 	data := m.handle[offset : offset+size]
@@ -83,6 +100,7 @@ func (m *MmapFile) Offset() int {
 }
 
 func (m *MmapFile) Write(p []byte) (n int, err error) {
+	m.bytesWritten += len(p)
 	return m.writer.Write(p)
 }
 
@@ -114,6 +132,8 @@ func (m *MmapFile) SaveAndRemap() error {
 		}
 		m.handle = handle
 	}
+
+	m.bytesFlushed = m.bytesWritten
 
 	return nil
 }

@@ -62,7 +62,7 @@ func (branch BranchLayout) Height() uint8 {
 
 func (branch BranchLayout) SubtreeSize() uint32 {
 	size := branch.data[OffsetBranchSubtreeSize : OffsetBranchSubtreeSize+SizeBranchSubtreeSize]
-	return uint32LE3(size)
+	return uint32(binary.LittleEndian.Uint16(size))
 }
 
 func (branch BranchLayout) Size() uint64 {

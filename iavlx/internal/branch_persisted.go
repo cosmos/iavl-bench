@@ -41,7 +41,7 @@ func (p BranchPersisted) Key() ([]byte, error) {
 	if keyRef.IsNodeID() {
 		return nil, fmt.Errorf("resolving node ID key refs not implemented")
 	}
-	walRef := keyRef.WALRef()
+	walRef := keyRef.AsWALRef()
 	n, overflow := walRef.Length()
 	if overflow {
 		return nil, fmt.Errorf("overflow key support not implemented")
@@ -66,7 +66,12 @@ func (p BranchPersisted) resolveNodePointer(ref NodeRef, cachedId NodeID) *NodeP
 		store: p.store,
 	}
 	if ref.IsRelativePointer() {
-		np.fileIdx = p.selfOffset + ref.AsRelativePointer().Offset()
+		offset := ref.AsRelativePointer().Offset()
+		if ref.IsLeaf() {
+			np.fileIdx = offset
+		} else {
+			np.fileIdx = p.selfOffset + offset
+		}
 		np.id = cachedId
 	} else {
 		np.id = ref.AsNodeID()
@@ -122,6 +127,10 @@ func (p BranchPersisted) Get(key []byte) (value []byte, index int64, err error) 
 
 	index += p.Size() - rightNode.Size()
 	return value, index, nil
+}
+
+func (p BranchPersisted) String() string {
+	return fmt.Sprintf("BranchPersisted{id: %s, version:%d, height:%d, size:%d, left:%s, leftRef: %s, right:%s, rightRef: %s, keyRef: %s, subtreeSpan: %d}", p.layout.NodeID(), p.Version(), p.Height(), p.Size(), p.Left().id, p.layout.Left(), p.Right().id, p.layout.Right(), p.layout.KeyRef(), p.layout.SubtreeSize())
 }
 
 var _ Node = BranchPersisted{}

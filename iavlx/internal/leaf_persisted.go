@@ -1,6 +1,9 @@
 package internal
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
 
 type LeafPersisted struct {
 	layout LeafLayout
@@ -70,6 +73,10 @@ func (node LeafPersisted) Get(key []byte) ([]byte, int64, error) {
 
 func (node LeafPersisted) IsLeaf() bool {
 	return true
+}
+
+func (node LeafPersisted) String() string {
+	return fmt.Sprintf("LeafPersisted{id: %s, version:%d, keyOffset:%d, keyLength:%d}", node.layout.NodeID(), node.Version(), node.layout.KeyOffset(), node.layout.KeyLength())
 }
 
 var _ Node = LeafPersisted{}

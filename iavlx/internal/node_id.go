@@ -63,7 +63,15 @@ func (ref NodeRef) AsNodeID() NodeID {
 }
 
 func (ref NodeRef) AsRelativePointer() NodeRelativePointer {
-	return NodeRelativePointer(ref)
+	return NodeRelativePointer(ref &^ (1 << 63))
+}
+
+func (ref NodeRef) String() string {
+	if ref.IsNodeID() {
+		return fmt.Sprintf("NodeRef(%s)", ref.AsNodeID())
+	} else {
+		return fmt.Sprintf("NodeRef(%s)", ref.AsRelativePointer())
+	}
 }
 
 // bit 63 indicates whether this is a node ID (0) or relative pointer (1)
@@ -74,7 +82,7 @@ type NodeRelativePointer uint64
 
 func NewNodeRelativePointer(isLeaf bool, offset int64) NodeRelativePointer {
 	// check offset fits in 61 bits signed
-	if offset < -0x200000000000000 || offset >= 0x200000000000000 {
+	if offset < -0x1FFFFFFFFFFFFFFF || offset > 0x1FFFFFFFFFFFFFFF {
 		panic("offset too large for NodeRelativePointer")
 	}
 	var ptr uint64
@@ -82,11 +90,13 @@ func NewNodeRelativePointer(isLeaf bool, offset int64) NodeRelativePointer {
 	if isLeaf {
 		ptr |= 1 << 62
 	}
+	// Store absolute value of offset in bits 60-0
+	// Use bit 61 as sign bit (1 = negative)
 	if offset < 0 {
-		offset = -offset
-		ptr |= (uint64(offset) &^ (1 << 61)) | (1 << 61) // set bit 61 to indicate negative
+		ptr |= 1 << 61                              // set sign bit
+		ptr |= uint64(-offset) & 0x1FFFFFFFFFFFFFFF // store absolute value in lower 61 bits
 	} else {
-		ptr |= uint64(offset) &^ (3 << 62) // clear bits 63 and 62
+		ptr |= uint64(offset) & 0x1FFFFFFFFFFFFFFF // store value in lower 61 bits
 	}
 	return NodeRelativePointer(ptr)
 }
@@ -104,4 +114,8 @@ func (ptr NodeRelativePointer) Offset() int64 {
 		offset *= -1
 	}
 	return offset
+}
+
+func (ptr NodeRelativePointer) String() string {
+	return fmt.Sprintf("NodeRelativePointer{leaf:%t, offset:%d}", ptr.IsLeaf(), ptr.Offset())
 }
