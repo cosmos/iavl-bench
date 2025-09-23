@@ -55,6 +55,16 @@ func (m *MmapFile) Slice(offset, size int) ([]byte, error) {
 	m.flushLock.RLock()
 	defer m.flushLock.RUnlock()
 
+	//var buf = make([]byte, size)
+	//n, err := m.file.ReadAt(buf, int64(offset))
+	//if err != nil {
+	//	return nil, fmt.Errorf("failed to read file at offset %d size %d: %w", offset, size, err)
+	//}
+	//if n != size {
+	//	return nil, fmt.Errorf("short read file at offset %d size %d: read %d bytes", offset, size, n)
+	//}
+	//return buf, nil
+
 	if offset+size >= len(m.handle) {
 		return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
 	}
@@ -87,30 +97,36 @@ func (m *MmapFile) SaveAndRemap() error {
 	// unmap existing mapping
 	if m.handle != nil {
 		if err := m.handle.Unmap(); err != nil {
-			return err
+			return fmt.Errorf("failed to unmap existing mapping: %w", err)
 		}
 		m.handle = nil
 	}
 
 	// remap file
-	handle, err := mmap.Map(m.file, mmap.RDONLY, 0)
+	fi, err := m.file.Stat()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	if fi.Size() > 0 {
+		handle, err := mmap.Map(m.file, mmap.RDONLY, 0)
+		if err != nil {
+			return fmt.Errorf("failed to remap file: %w", err)
+		}
+		m.handle = handle
 	}
 
-	m.handle = handle
 	return nil
 }
 
 func (m *MmapFile) flush() error {
 	// flush writer buffer
 	if err := m.writer.Flush(); err != nil {
-		return err
+		return fmt.Errorf("failed to flush writer: %w", err)
 	}
 
 	// sync file to disk
 	if err := m.file.Sync(); err != nil {
-		return err
+		return fmt.Errorf("failed to sync file: %w", err)
 	}
 	return nil
 }

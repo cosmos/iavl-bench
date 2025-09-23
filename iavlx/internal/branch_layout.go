@@ -14,7 +14,7 @@ const (
 	OffsetBranchHeight      = OffsetBranchKeyRef + SizeKeyRef
 	SizeBranchHeight        = 1
 	OffsetBranchSubtreeSize = OffsetBranchHeight + SizeBranchHeight
-	SizeBranchSubtreeSize   = 3
+	SizeBranchSubtreeSize   = 2
 	OffsetBranchSize        = OffsetBranchSubtreeSize + SizeBranchSubtreeSize
 	SizeBranchSize          = 5
 	BranchSizeMax           = 0xFFFFFFFFFF // 5 bytes
@@ -74,7 +74,7 @@ func (branch BranchLayout) Hash() []byte {
 	return branch.data[OffsetBranchHash : OffsetBranchHash+32]
 }
 
-func encodeBranchNode(node *MemNode, buf [SizeBranch]byte, nodeId NodeID, left, right NodeRef, keyRef KeyRef, subtreeSize uint32) error {
+func encodeBranchNode(node *MemNode, buf *[SizeBranch]byte, nodeId NodeID, left, right NodeRef, keyRef KeyRef, subtreeSize uint32) error {
 	// write node ID (8 bytes)
 	binary.LittleEndian.PutUint64(buf[OffsetBranchNodeID:OffsetBranchNodeID+SizeNodeID], uint64(nodeId))
 
@@ -88,16 +88,14 @@ func encodeBranchNode(node *MemNode, buf [SizeBranch]byte, nodeId NodeID, left, 
 	// write height (1 byte)
 	buf[OffsetBranchHeight] = node.height
 
-	// write subtree size (3 bytes, little-endian)
-	if subtreeSize >= 0xFFFFFF {
+	// write subtree size (2 bytes, little-endian)
+	if subtreeSize >= 0xFFFF {
 		// write max value to indicate overflow
 		buf[OffsetBranchSubtreeSize+0] = 0xFF
 		buf[OffsetBranchSubtreeSize+1] = 0xFF
-		buf[OffsetBranchSubtreeSize+2] = 0xFF
 	} else {
 		buf[OffsetBranchSubtreeSize+0] = byte(subtreeSize)
 		buf[OffsetBranchSubtreeSize+1] = byte(subtreeSize >> 8)
-		buf[OffsetBranchSubtreeSize+2] = byte(subtreeSize >> 16)
 	}
 
 	// write size (5 bytes, little-endian)

@@ -66,7 +66,7 @@ func uint64LE5(b []byte) uint64 {
 	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 | uint64(b[4])<<32
 }
 
-func encodeLeafNode(node *MemNode, buf [SizeLeaf]byte, nodeId NodeID) error {
+func encodeLeafNode(node *MemNode, buf *[SizeLeaf]byte, nodeId NodeID) error {
 	binary.LittleEndian.PutUint64(buf[OffsetLeafNodeID:OffsetLeafNodeID+SizeNodeID], uint64(nodeId))
 	keyLen := len(node.key)
 	if keyLen > KeyLenMax {

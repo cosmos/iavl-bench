@@ -168,5 +168,17 @@ func (w *WAL) Read(offset uint64, size uint32) ([]byte, error) {
 }
 
 func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err error) {
-	panic("TODO")
+	bz, err = w.walData.Slice(int(offset), binary.MaxVarintLen64)
+	if err != nil {
+		return nil, 0, err
+	}
+	length, n := binary.Uvarint(bz)
+	if n <= 0 {
+		return nil, 0, err
+	}
+	bz, err = w.walData.Slice(int(offset)+n, int(length))
+	if err != nil {
+		return nil, 0, err
+	}
+	return bz, n + int(length), nil
 }

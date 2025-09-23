@@ -66,7 +66,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 	go func() {
 		defer close(diffDone)
 		for commit := range diffWriteChan {
-			err := rollingDiff.writeRoot(commit.root, 0)
+			err := rollingDiff.writeRoot(commit.version, commit.root, 0)
 			if err != nil {
 				diffDone <- err
 				return
@@ -143,27 +143,27 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	}
 
 	var hash []byte
+	commitCtx := &commitContext{
+		version:      c.stagedVersion(),
+		evictVersion: c.rollingDiff.savedVersion.Load(),
+	}
 	if c.root == nil {
 		hash = emptyHash
 	} else {
 		// compute hash and assign node IDs
 		var err error
-		commitCtx := &commitContext{
-			version: c.stagedVersion(),
-			//evictVersion: c.rollingDiff.savedVersion.Load(),
-		}
 		hash, err = commitTraverse(commitCtx, c.root)
 		if err != nil {
 			return nil, err
 		}
-		c.walWriteChan <- walWriteBatch{
-			commit: &diffWriteBatch{
-				version:            c.stagedVersion(),
-				root:               c.root,
-				branchNodesCreated: commitCtx.branchNodeIdx,
-				leafNodesCreated:   commitCtx.leafNodeIdx,
-			},
-		}
+	}
+	c.walWriteChan <- walWriteBatch{
+		commit: &diffWriteBatch{
+			version:            c.stagedVersion(),
+			root:               c.root,
+			branchNodesCreated: commitCtx.branchNodeIdx,
+			leafNodesCreated:   commitCtx.leafNodeIdx,
+		},
 	}
 	// cache the committed tree as the latest version
 	c.latest = c.root

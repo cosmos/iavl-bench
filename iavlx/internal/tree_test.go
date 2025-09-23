@@ -239,7 +239,7 @@ func (s *SimMachine) Commit(t *rapid.T) {
 	require.NoError(t, err, "failed to save version in V1 tree")
 	hash2, err := s.treeV2.Commit()
 	require.NoError(t, err, "failed to save version in V2 tree")
-	s.debugDump(t)
+	//s.debugDump(t)
 	require.NoError(t, VerifyTree(s.treeV2))
 	if !bytes.Equal(hash1, hash2) {
 		t.Logf("WARNING: hash mismatch between V1 and V2 trees: %X vs %X", hash1, hash2)

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync/atomic"
 )
@@ -64,18 +65,26 @@ func NewRollingDiff(wal *WAL, dir string, startVersion uint64) (*RollingDiff, er
 //			return rd.writeBranch(node)
 //		}
 //	}
-func (rd *RollingDiff) writeRoot(root *NodePointer, lastBranchIdx uint32) error {
-	if root == nil {
-		// TODO advance the version even if root is nil
-		return nil
+func (rd *RollingDiff) writeRoot(version uint64, root *NodePointer, lastBranchIdx uint32) error {
+	if version != rd.stagedVersion {
+		return fmt.Errorf("version mismatch: expected %d, got %d", rd.stagedVersion, version)
 	}
+	if root != nil {
+		err := rd.writeNode(root, lastBranchIdx)
+		if err != nil {
+			return err
+		}
 
-	err := rd.writeNode(root, lastBranchIdx)
-	if err != nil {
-		return err
+		err = rd.leafData.SaveAndRemap()
+		if err != nil {
+			return fmt.Errorf("failed to save leaf data: %w", err)
+		}
+		err = rd.branchData.SaveAndRemap()
+		if err != nil {
+			return fmt.Errorf("failed to save branch data: %w", err)
+		}
 	}
-
-	// TODO write root node index and other data to commit file
+	// TODO save version to commit log
 	rd.savedVersion.Store(rd.stagedVersion)
 	rd.stagedVersion++
 	rd.leafVersionStartIdx = rd.leafFileIdx
@@ -91,30 +100,18 @@ func (rd *RollingDiff) writeNode(np *NodePointer, span uint32) error {
 		return nil // not part of this version
 	}
 	if memNode.IsLeaf() {
-		return rd.writeLeaf(np.id, memNode)
+		return rd.writeLeaf(np, memNode)
 	} else {
 		// TODO subtree size (can be figured out by the ID of the sibling if any)
-		return rd.writeBranch(np.id, memNode, span)
+		return rd.writeBranch(np, memNode, span)
 	}
 }
 
-func (rd *RollingDiff) writeBranch(nodeId NodeID, node *MemNode, subtreeSpan uint32) error {
-	leftRef := rd.createNodeRef(nodeId, node.left)
-	rightRef := rd.createNodeRef(nodeId, node.right)
-	var buf [SizeBranch]byte
-	keyRef := node._keyRef.toKeyRef()
-	err := encodeBranchNode(node, buf, nodeId, leftRef, rightRef, keyRef, subtreeSpan)
-	if err != nil {
-		return err
-	}
-	_, err = rd.branchData.Write(buf[:])
-	if err != nil {
-		return err
-	}
-	rd.branchFileIdx++
-	// recursively write children
+func (rd *RollingDiff) writeBranch(np *NodePointer, node *MemNode, subtreeSpan uint32) error {
+	nodeId := np.id
+	// recursively write children in post-order traversal
 	leftSpan := node.right.id.Index() - nodeId.Index() - 1
-	err = rd.writeNode(node.left, leftSpan)
+	err := rd.writeNode(node.left, leftSpan)
 	if err != nil {
 		return err
 	}
@@ -123,12 +120,30 @@ func (rd *RollingDiff) writeBranch(nodeId NodeID, node *MemNode, subtreeSpan uin
 	if err != nil {
 		return err
 	}
+
+	// now write parent
+	leftRef := rd.createNodeRef(nodeId, node.left)
+	rightRef := rd.createNodeRef(nodeId, node.right)
+	var buf [SizeBranch]byte
+	keyRef := node._keyRef.toKeyRef()
+	err = encodeBranchNode(node, &buf, nodeId, leftRef, rightRef, keyRef, subtreeSpan)
+	if err != nil {
+		return err
+	}
+	_, err = rd.branchData.Write(buf[:])
+	if err != nil {
+		return err
+	}
+	rd.branchFileIdx++
+	np.fileIdx = rd.branchFileIdx
+	np.store = rd
 	return nil
 }
 
-func (rd *RollingDiff) writeLeaf(nodeId NodeID, node *MemNode) error {
+func (rd *RollingDiff) writeLeaf(np *NodePointer, node *MemNode) error {
+	nodeId := np.id
 	var buf [SizeLeaf]byte
-	err := encodeLeafNode(node, buf, nodeId)
+	err := encodeLeafNode(node, &buf, nodeId)
 	if err != nil {
 		return err
 	}
@@ -138,6 +153,8 @@ func (rd *RollingDiff) writeLeaf(nodeId NodeID, node *MemNode) error {
 	}
 
 	rd.leafFileIdx++
+	np.fileIdx = rd.leafFileIdx
+	np.store = rd
 	return nil
 }
 
@@ -145,10 +162,10 @@ func (rd *RollingDiff) createNodeRef(parentId NodeID, np *NodePointer) NodeRef {
 	if np.store == rd {
 		if np.id.IsLeaf() {
 			// for leaf nodes the relative offset is the leaf ID index plus the starting index for this version
-			return NodeRef(NewNodeRelativePointer(true, int64(np.id.Index())+rd.leafVersionStartIdx))
+			return NodeRef(NewNodeRelativePointer(true, np.fileIdx))
 		} else {
 			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
-			return NodeRef(NewNodeRelativePointer(false, int64(np.id.Index()-parentId.Index())))
+			return NodeRef(NewNodeRelativePointer(false, int64(parentId.Index()-np.id.Index())))
 		}
 	} else {
 		return NodeRef(np.id)
@@ -156,6 +173,11 @@ func (rd *RollingDiff) createNodeRef(parentId NodeID, np *NodePointer) NodeRef {
 }
 
 func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, error) {
+	if fileIdx <= 0 {
+		return LeafLayout{}, fmt.Errorf("node ID resolution not supported yet")
+	}
+
+	fileIdx--
 	offset := fileIdx * SizeLeaf
 	bz, err := rd.leafData.Slice(int(offset), SizeLeaf)
 	if err != nil {
@@ -164,17 +186,60 @@ func (rd *RollingDiff) ResolveLeaf(nodeId NodeID, fileIdx int64) (LeafLayout, er
 	return LeafLayout{data: (*[SizeLeaf]byte)(bz)}, nil
 }
 
+func (rd *RollingDiff) resolveBranchLayout(fileIdx int64) (BranchLayout, error) {
+	fileIdx--
+	offset := fileIdx * SizeBranch
+	bz, err := rd.branchData.Slice(int(offset), SizeBranch)
+	if err != nil {
+		return BranchLayout{}, err
+	}
+	return BranchLayout{data: (*[SizeBranch]byte)(bz)}, nil
+}
+
+func (rd *RollingDiff) resolveNodeId(curBranchIdx int64, relPtr NodeRelativePointer) (NodeID, error) {
+	if relPtr.IsLeaf() {
+		leafLayout, err := rd.ResolveLeaf(0, relPtr.Offset())
+		if err != nil {
+			return 0, err
+		}
+		return leafLayout.NodeID(), err
+	} else {
+		offset := curBranchIdx + relPtr.Offset()
+		branchLayout, err := rd.resolveBranchLayout(offset)
+		if err != nil {
+			return 0, err
+		}
+		return branchLayout.NodeID(), nil
+	}
+}
+
 func (rd *RollingDiff) ResolveBranch(nodeId NodeID, fileIdx int64) (BranchData, error) {
-	offset := fileIdx * SizeLeaf
-	bz, err := rd.leafData.Slice(int(offset), SizeLeaf)
+	if fileIdx <= 0 {
+		return BranchData{}, fmt.Errorf("node ID resolution not supported yet")
+	}
+
+	branchLayout, err := rd.resolveBranchLayout(fileIdx)
 	if err != nil {
 		return BranchData{}, err
 	}
-	branchLayout := BranchLayout{data: (*[SizeBranch]byte)(bz)}
-	// TODO resolve left and right ID if they are relative pointers
+	var leftId, rightId NodeID
+	if left := branchLayout.Left(); left.IsRelativePointer() {
+		leftId, err = rd.resolveNodeId(fileIdx, left.AsRelativePointer())
+		if err != nil {
+			return BranchData{}, err
+		}
+	}
+	if right := branchLayout.Right(); right.IsRelativePointer() {
+		rightId, err = rd.resolveNodeId(fileIdx, right.AsRelativePointer())
+		if err != nil {
+			return BranchData{}, err
+		}
+	}
 	return BranchData{
 		selfOffset: fileIdx,
 		layout:     branchLayout,
+		leftId:     leftId,
+		rightId:    rightId,
 	}, nil
 }
 
