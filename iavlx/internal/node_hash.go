@@ -4,9 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"hash"
 	"io"
-	"sync"
 )
 
 func computeAndSetHash(node *MemNode, leftHash, rightHash []byte) ([]byte, error) {
@@ -20,22 +18,23 @@ func computeAndSetHash(node *MemNode, leftHash, rightHash []byte) ([]byte, error
 }
 
 func computeHash(node Node, leftHash, rightHash []byte) ([]byte, error) {
-	hasher := hashPool.Get().(hash.Hash)
+	//hasher := hashPool.Get().(hash.Hash)
+	hasher := sha256.New()
 	if err := writeHashBytes(node, leftHash, rightHash, hasher); err != nil {
 		return nil, err
 	}
-	hasher.Reset()
-	hashPool.Put(hasher)
+	//hasher.Reset()
+	//hashPool.Put(hasher)
 	h := hasher.Sum(nil)
 	return h, nil
 }
 
 var (
-	hashPool = &sync.Pool{
-		New: func() any {
-			return sha256.New()
-		},
-	}
+	//hashPool = &sync.Pool{
+	//	New: func() any {
+	//		return sha256.New()
+	//	},
+	//}
 	emptyHash = sha256.New().Sum(nil)
 )
 
