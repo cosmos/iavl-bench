@@ -4,8 +4,7 @@ import "fmt"
 
 type NodeStore interface {
 	KVData
-	ResolveLeaf(nodeId NodeID, fileIdx uint64) (LeafLayout, error)
-	ResolveBranch(nodeId NodeID, fileIdx uint64) (BranchData, error)
+	ResolveNode(nodeId NodeID, fileIdx uint64) (Node, error)
 }
 
 type BasicNodeStore struct {
@@ -14,6 +13,25 @@ type BasicNodeStore struct {
 	branchData  BranchesFile
 	leafIndex   NodeIndex
 	branchIndex NodeIndex
+}
+
+func (b *BasicNodeStore) ResolveNode(nodeId NodeID, fileIdx uint64) (Node, error) {
+	if nodeId.IsLeaf() {
+		leafLayout, err := b.ResolveLeaf(nodeId, fileIdx)
+		if err != nil {
+			return nil, err
+		}
+		return LeafPersisted{leafLayout, b}, nil
+	} else {
+		branchData, err := b.ResolveBranch(nodeId, fileIdx)
+		if err != nil {
+			return nil, err
+		}
+		return BranchPersisted{
+			store:      b,
+			BranchData: branchData,
+		}, nil
+	}
 }
 
 type NodeIndex interface {

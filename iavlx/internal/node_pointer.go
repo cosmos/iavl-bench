@@ -23,25 +23,7 @@ func (p *NodePointer) Resolve() (Node, error) {
 	if mem != nil {
 		return mem, nil
 	}
-	if p.id.IsLeaf() {
-		layout, err := p.store.ResolveLeaf(p.id, p.fileIdx)
-		if err != nil {
-			return nil, err
-		}
-		return LeafPersisted{
-			kvData: p.store,
-			layout: layout,
-		}, nil
-	} else {
-		data, err := p.store.ResolveBranch(p.id, p.fileIdx)
-		if err != nil {
-			return nil, err
-		}
-		return BranchPersisted{
-			store:      p.store,
-			BranchData: data,
-		}, nil
-	}
+	return p.store.ResolveNode(p.id, p.fileIdx)
 }
 
 func (p *NodePointer) String() string {
