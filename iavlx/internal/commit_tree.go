@@ -144,15 +144,16 @@ func (c *CommitTree) Commit() ([]byte, error) {
 
 	var hash []byte
 	commitCtx := &commitContext{
-		version:      c.stagedVersion(),
-		evictVersion: c.rollingDiff.savedVersion.Load(),
+		version:       c.stagedVersion(),
+		evictVersion:  c.rollingDiff.savedVersion.Load(),
+		evictionDepth: 10, // TODO make this configurable
 	}
 	if c.root == nil {
 		hash = emptyHash
 	} else {
 		// compute hash and assign node IDs
 		var err error
-		hash, err = commitTraverse(commitCtx, c.root)
+		hash, err = commitTraverse(commitCtx, c.root, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -186,9 +187,10 @@ type commitContext struct {
 	branchNodeIdx uint32
 	leafNodeIdx   uint32
 	evictVersion  uint64
+	evictionDepth uint8
 }
 
-func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error) {
+func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []byte, err error) {
 	memNode := np.mem.Load()
 	if memNode == nil {
 		node, err := np.Resolve()
@@ -205,11 +207,11 @@ func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error
 			np.id = NewNodeID(true, ctx.version, ctx.leafNodeIdx)
 		} else {
 			// post-order traversal
-			leftHash, err = commitTraverse(ctx, memNode.left)
+			leftHash, err = commitTraverse(ctx, memNode.left, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			rightHash, err = commitTraverse(ctx, memNode.right)
+			rightHash, err = commitTraverse(ctx, memNode.right, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -229,8 +231,20 @@ func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error
 		// hash already computed
 		hash = memNode.hash
 		if memNode.version <= ctx.evictVersion {
-			// evict from memory
-			np.mem.Store(nil)
+			if depth >= ctx.evictionDepth {
+				// evict from memory
+				np.mem.Store(nil)
+			} else if !memNode.IsLeaf() {
+				// traverse to deeper nodes
+				_, err = commitTraverse(ctx, memNode.left, depth+1)
+				if err != nil {
+					return nil, err
+				}
+				_, err = commitTraverse(ctx, memNode.right, depth+1)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 		return hash, nil
 	}
