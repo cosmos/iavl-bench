@@ -105,6 +105,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 			if evictVersion > lastEvictVersion {
 				latest := tree.latest
 				if latest != nil {
+					// TODO check tree height
 					evictTraverse(latest, 0, evictDepth, evictVersion)
 				}
 			} else {
@@ -179,9 +180,7 @@ func (c *CommitTree) Commit() ([]byte, error) {
 
 	var hash []byte
 	commitCtx := &commitContext{
-		version:       c.stagedVersion(),
-		evictVersion:  c.rollingDiff.savedVersion.Load(),
-		evictionDepth: 10, // TODO make this configurable
+		version: c.stagedVersion(),
 	}
 	if c.root == nil {
 		hash = emptyHash
@@ -221,8 +220,6 @@ type commitContext struct {
 	version       uint64
 	branchNodeIdx uint32
 	leafNodeIdx   uint32
-	evictVersion  uint64
-	evictionDepth uint8
 }
 
 func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []byte, err error) {
