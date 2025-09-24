@@ -89,7 +89,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 		diffWriteChan: diffWriteChan,
 		diffDone:      diffDone,
 		evictorDone:   evictorDone,
-		evictionDepth: 10,
+		evictionDepth: 12,
 	}
 
 	go func() {
@@ -235,54 +235,36 @@ func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []by
 		return node.Hash(), nil
 	}
 
-	if memNode.version == ctx.version {
-		var leftHash, rightHash []byte
-		if memNode.IsLeaf() {
-			ctx.leafNodeIdx++
-			np.id = NewNodeID(true, ctx.version, ctx.leafNodeIdx)
-		} else {
-			// post-order traversal
-			leftHash, err = commitTraverse(ctx, memNode.left, depth+1)
-			if err != nil {
-				return nil, err
-			}
-			rightHash, err = commitTraverse(ctx, memNode.right, depth+1)
-			if err != nil {
-				return nil, err
-			}
-
-			ctx.branchNodeIdx++
-			np.id = NewNodeID(false, ctx.version, ctx.branchNodeIdx)
-
-		}
-
-		if memNode.hash != nil {
-			// not sure when we would encounter this but if the hash is already computed, just return it
-			return memNode.hash, nil
-		}
-
-		return computeAndSetHash(memNode, leftHash, rightHash)
-	} else {
-		// hash already computed
-		hash = memNode.hash
-		if memNode.version <= ctx.evictVersion {
-			if depth >= ctx.evictionDepth {
-				// evict from memory
-				np.mem.Store(nil)
-			} else if !memNode.IsLeaf() {
-				// traverse to deeper nodes
-				_, err = commitTraverse(ctx, memNode.left, depth+1)
-				if err != nil {
-					return nil, err
-				}
-				_, err = commitTraverse(ctx, memNode.right, depth+1)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		return hash, nil
+	if memNode.version != ctx.version {
+		return memNode.hash, nil
 	}
+
+	var leftHash, rightHash []byte
+	if memNode.IsLeaf() {
+		ctx.leafNodeIdx++
+		np.id = NewNodeID(true, ctx.version, ctx.leafNodeIdx)
+	} else {
+		// post-order traversal
+		leftHash, err = commitTraverse(ctx, memNode.left, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		rightHash, err = commitTraverse(ctx, memNode.right, depth+1)
+		if err != nil {
+			return nil, err
+		}
+
+		ctx.branchNodeIdx++
+		np.id = NewNodeID(false, ctx.version, ctx.branchNodeIdx)
+
+	}
+
+	if memNode.hash != nil {
+		// not sure when we would encounter this but if the hash is already computed, just return it
+		return memNode.hash, nil
+	}
+
+	return computeAndSetHash(memNode, leftHash, rightHash)
 }
 
 func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uint64) {
