@@ -15,7 +15,7 @@ type CommitTree struct {
 	wal           *WAL
 	walWriteChan  chan<- walWriteBatch
 	walDone       <-chan error
-	rollingDiff   *RollingDiff
+	rollingStore  RollingStore
 	diffWriteChan chan<- *diffWriteBatch
 	diffDone      <-chan error
 	evictorDone   chan<- struct{}
@@ -29,15 +29,33 @@ type diffWriteBatch struct {
 	leafNodesCreated   uint32
 }
 
+// NewCommitTree creates a CommitTree with the original RollingDiff
 func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
+	return newCommitTree(dir, zeroCopy, false)
+}
+
+// NewCommitTreeInline creates a CommitTree with RollingDiffInline
+func NewCommitTreeInline(dir string, zeroCopy bool) (*CommitTree, error) {
+	return newCommitTree(dir, zeroCopy, true)
+}
+
+func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, error) {
 	wal, err := OpenWAL(dir, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL: %w", err)
 	}
 
-	rollingDiff, err := NewRollingDiff(wal, dir, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open rolling diff: %w", err)
+	var rollingStore RollingStore
+	if useInline {
+		rollingStore, err = NewRollingDiffInline(dir, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open rolling diff inline: %w", err)
+		}
+	} else {
+		rollingStore, err = NewRollingDiff(wal, dir, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open rolling diff: %w", err)
+		}
 	}
 
 	walWriteChan := make(chan walWriteBatch, 262_144)
@@ -69,7 +87,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 	go func() {
 		defer close(diffDone)
 		for commit := range diffWriteChan {
-			err := rollingDiff.writeRoot(commit.version, commit.root, 0)
+			err := rollingStore.writeRoot(commit.version, commit.root, 0)
 			if err != nil {
 				diffDone <- err
 				return
@@ -85,7 +103,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 		wal:           wal,
 		walWriteChan:  walWriteChan,
 		walDone:       walDone,
-		rollingDiff:   rollingDiff,
+		rollingStore:  rollingStore,
 		diffWriteChan: diffWriteChan,
 		diffDone:      diffDone,
 		evictorDone:   evictorDone,
@@ -101,7 +119,7 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 				return
 			default:
 			}
-			evictVersion := tree.rollingDiff.savedVersion.Load()
+			evictVersion := tree.rollingStore.SavedVersion()
 			if evictVersion > lastEvictVersion {
 				latest := tree.latest
 				if latest != nil {

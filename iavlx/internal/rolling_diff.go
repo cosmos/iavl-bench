@@ -46,6 +46,8 @@ func NewRollingDiff(wal *WAL, dir string, startVersion uint64) (*RollingDiff, er
 
 	return rd, nil
 }
+
+// WriteRoot writes the root node and commits the version
 func (rd *RollingDiff) writeRoot(version uint64, root *NodePointer, lastBranchIdx uint32) error {
 	if version != rd.stagedVersion {
 		return fmt.Errorf("version mismatch: expected %d, got %d", rd.stagedVersion, version)
