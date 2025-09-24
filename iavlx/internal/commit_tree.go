@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 type CommitTree struct {
@@ -17,6 +18,8 @@ type CommitTree struct {
 	rollingDiff   *RollingDiff
 	diffWriteChan chan<- *diffWriteBatch
 	diffDone      <-chan error
+	evictorDone   chan<- struct{}
+	evictionDepth uint8
 }
 
 type diffWriteBatch struct {
@@ -74,7 +77,8 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 		}
 	}()
 
-	return &CommitTree{
+	evictorDone := make(chan struct{})
+	tree := &CommitTree{
 		root:          nil,
 		zeroCopy:      zeroCopy,
 		version:       0,
@@ -84,7 +88,38 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 		rollingDiff:   rollingDiff,
 		diffWriteChan: diffWriteChan,
 		diffDone:      diffDone,
-	}, nil
+		evictorDone:   evictorDone,
+		evictionDepth: 10,
+	}
+
+	go func() {
+		evictDepth := tree.evictionDepth
+		lastEvictVersion := uint64(0)
+		for {
+			select {
+			case <-evictorDone:
+				return
+			default:
+			}
+			evictVersion := tree.rollingDiff.savedVersion.Load()
+			if evictVersion > lastEvictVersion {
+				latest := tree.latest
+				if latest != nil {
+					evictTraverse(latest, 0, evictDepth, evictVersion)
+				}
+			} else {
+				select {
+				case <-evictorDone:
+					return
+				// wait a bit before next eviction if no new version to evict
+				case <-time.After(time.Second):
+				}
+			}
+			lastEvictVersion = evictVersion
+		}
+	}()
+
+	return tree, nil
 }
 
 type walWriteBatch struct {
@@ -248,4 +283,28 @@ func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []by
 		}
 		return hash, nil
 	}
+}
+
+func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uint64) {
+	memNode := np.mem.Load()
+	if memNode == nil {
+		return
+	}
+
+	if memNode.version > evictVersion {
+		return
+	}
+
+	if depth >= evictionDepth {
+		// evict from memory
+		np.mem.Store(nil)
+		return
+	}
+
+	if memNode.IsLeaf() {
+		return
+	}
+
+	evictTraverse(memNode.left, depth+1, evictionDepth, evictVersion)
+	evictTraverse(memNode.right, depth+1, evictionDepth, evictVersion)
 }
