@@ -37,15 +37,10 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx MutationContext) 
 		}
 		switch cmp {
 		case -1:
-			var _keyRef keyRefLink = nodePtr.id
-			if n, ok := node.(*MemNode); ok {
-				// an optimization for when we have an in-memory node
-				_keyRef = n
-			}
 			n.left = leafNodePtr
 			n.right = nodePtr
 			n.key = nodeKey
-			n._keyRef = _keyRef
+			n._keyRef = node
 		case 1:
 			n.left = nodePtr
 			n.right = leafNodePtr
@@ -143,13 +138,9 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx MutationContext) (val
 		}
 
 		if newLeft == nil {
-			var keyRef keyRefLink = nodePtr.id
-			if mem := nodePtr.mem.Load(); mem != nil {
-				keyRef = mem
-			}
 			return value, node.Right(), &newKeyWrapper{
 				key:    nodeKey,
-				keyRef: keyRef,
+				keyRef: nodePtr,
 			}, nil
 		}
 

@@ -16,8 +16,8 @@ type BranchData struct {
 	leftId, rightId NodeID // cached for convenience if not present in the layout
 }
 
-func (p BranchPersisted) Hash() []byte {
-	return p.layout.Hash()
+func (node BranchPersisted) Hash() []byte {
+	return node.layout.Hash()
 }
 
 func (p BranchPersisted) Height() uint8 {

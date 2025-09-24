@@ -69,14 +69,30 @@ func (ref KeyRef) toKeyRef() KeyRef {
 	return ref
 }
 
-func (node *MemNode) toKeyRef() KeyRef {
-	return node._keyRef.toKeyRef()
-}
-
 func (ref WALRef) toKeyRef() KeyRef {
 	return KeyRef(ref)
 }
 
 func (id NodeID) toKeyRef() KeyRef {
 	return KeyRef(id)
+}
+
+func (node *MemNode) toKeyRef() KeyRef {
+	return node._keyRef.toKeyRef()
+}
+
+func (node BranchPersisted) toKeyRef() KeyRef {
+	return node.layout.KeyRef()
+}
+
+func (node LeafPersisted) toKeyRef() KeyRef {
+	return NewWALRef(node.layout.KeyLength(), node.layout.KeyOffset()).toKeyRef()
+}
+
+func (np *NodePointer) toKeyRef() KeyRef {
+	node, err := np.Resolve()
+	if err != nil {
+		panic(fmt.Sprintf("error resolving node pointer %s to get key ref: %v", np, err))
+	}
+	return node.toKeyRef()
 }

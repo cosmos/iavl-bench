@@ -16,4 +16,5 @@ type Node interface {
 	SafeHash() []byte
 	MutateBranch(MutationContext) (*MemNode, error)
 	Get(key []byte) (value []byte, index int64, err error)
+	keyRefLink
 }

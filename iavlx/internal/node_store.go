@@ -10,8 +10,14 @@ type NodeStore interface {
 
 type BasicNodeStore struct {
 	KVData
-	leafData   LeavesFile
-	branchData BranchesFile
+	leafData    LeavesFile
+	branchData  BranchesFile
+	leafIndex   NodeIndex
+	branchIndex NodeIndex
+}
+
+type NodeIndex interface {
+	Locate(id NodeID) (uint64, error)
 }
 
 func (b *BasicNodeStore) ResolveLeaf(nodeId NodeID, fileIdx uint64) (LeafLayout, error) {
