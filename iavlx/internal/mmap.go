@@ -58,8 +58,10 @@ func (m *MmapFile) SliceVar(offset, maxSize int) (int, []byte, error) {
 	defer m.flushLock.RUnlock()
 
 	if offset >= len(m.handle) {
-		maxSize = len(m.handle) - offset
 		return 0, nil, fmt.Errorf("trying to read beyond mapped data: %d >= %d", offset, len(m.handle))
+	}
+	if offset+maxSize > len(m.handle) {
+		maxSize = len(m.handle) - offset
 	}
 	data := m.handle[offset : offset+maxSize]
 	// make a copy of the data to avoid data being changed after remap
@@ -170,3 +172,41 @@ func (m *MmapFile) Close() error {
 
 var _ io.Writer = &MmapFile{}
 var _ io.Closer = &MmapFile{}
+
+type LeavesFile struct {
+	*MmapFile
+}
+
+func (leaves LeavesFile) Leaf(i uint64) (LeafLayout, error) {
+	leaves.flushLock.RLock()
+	defer leaves.flushLock.RUnlock()
+
+	offset := int(i) * SizeLeaf
+	if offset+SizeLeaf > len(leaves.handle) {
+		return LeafLayout{}, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, SizeLeaf, len(leaves.handle))
+	}
+	return LeafLayout{data: ([SizeLeaf]byte)(leaves.handle[offset : offset+SizeLeaf])}, nil
+}
+
+func (leaves LeavesFile) Count() uint64 {
+	return uint64(len(leaves.handle)) / SizeLeaf
+}
+
+type BranchesFile struct {
+	*MmapFile
+}
+
+func (branches BranchesFile) Branch(i uint64) (BranchLayout, error) {
+	branches.flushLock.RLock()
+	defer branches.flushLock.RUnlock()
+
+	offset := int(i) * SizeBranch
+	if offset+SizeBranch > len(branches.handle) {
+		return BranchLayout{}, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, SizeBranch, len(branches.handle))
+	}
+	return BranchLayout{data: ([SizeBranch]byte)(branches.handle[offset : offset+SizeBranch])}, nil
+}
+
+func (branches BranchesFile) Count() uint64 {
+	return uint64(len(branches.handle)) / SizeBranch
+}

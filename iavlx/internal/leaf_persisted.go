@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"fmt"
 )
 
 type LeafPersisted struct {
@@ -76,7 +75,7 @@ func (node LeafPersisted) IsLeaf() bool {
 }
 
 func (node LeafPersisted) String() string {
-	return fmt.Sprintf("LeafPersisted{id: %s, version:%d, keyOffset:%d, keyLength:%d}", node.layout.NodeID(), node.Version(), node.layout.KeyOffset(), node.layout.KeyLength())
+	return node.layout.String()
 }
 
 var _ Node = LeafPersisted{}

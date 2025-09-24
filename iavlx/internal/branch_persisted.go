@@ -12,7 +12,7 @@ type BranchPersisted struct {
 
 type BranchData struct {
 	layout          BranchLayout
-	selfOffset      int64
+	selfOffset      uint64
 	leftId, rightId NodeID // cached for convenience if not present in the layout
 }
 
@@ -39,7 +39,12 @@ func (p BranchPersisted) Version() uint64 {
 func (p BranchPersisted) Key() ([]byte, error) {
 	keyRef := p.layout.KeyRef()
 	if keyRef.IsNodeID() {
-		return nil, fmt.Errorf("resolving node ID key refs not implemented")
+		nodeId := keyRef.AsNodeID()
+		leafNode, err := p.store.ResolveLeaf(nodeId, 0)
+		if err != nil {
+			return nil, fmt.Errorf("error resolve leaf %s containing key for %s: %w", nodeId, p.layout.NodeID(), err)
+		}
+		return p.store.Read(leafNode.KeyOffset(), leafNode.KeyLength())
 	}
 	walRef := keyRef.AsWALRef()
 	n, overflow := walRef.Length()
@@ -68,9 +73,9 @@ func (p BranchPersisted) resolveNodePointer(ref NodeRef, cachedId NodeID) *NodeP
 	if ref.IsRelativePointer() {
 		offset := ref.AsRelativePointer().Offset()
 		if ref.IsLeaf() {
-			np.fileIdx = offset
+			np.fileIdx = uint64(offset)
 		} else {
-			np.fileIdx = p.selfOffset + offset
+			np.fileIdx = uint64(int64(p.selfOffset) + offset)
 		}
 		np.id = cachedId
 	} else {
@@ -130,7 +135,8 @@ func (p BranchPersisted) Get(key []byte) (value []byte, index int64, err error) 
 }
 
 func (p BranchPersisted) String() string {
-	return fmt.Sprintf("BranchPersisted{id: %s, version:%d, height:%d, size:%d, left:%s, leftRef: %s, right:%s, rightRef: %s, keyRef: %s, subtreeSpan: %d}", p.layout.NodeID(), p.Version(), p.Height(), p.Size(), p.Left().id, p.layout.Left(), p.Right().id, p.layout.Right(), p.layout.KeyRef(), p.layout.SubtreeSize())
+	return fmt.Sprintf("BranchPersisted{layout:%s, selfOffset:%d, leftId:%s, rightId:%s}",
+		p.layout.String(), p.selfOffset, p.leftId, p.rightId)
 }
 
 var _ Node = BranchPersisted{}

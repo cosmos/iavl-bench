@@ -1,10 +1,13 @@
 package internal
 
-import "sync/atomic"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 type NodePointer struct {
 	mem     atomic.Pointer[MemNode]
-	fileIdx int64
+	fileIdx uint64
 	store   NodeStore
 	id      NodeID
 }
@@ -39,4 +42,8 @@ func (p *NodePointer) Resolve() (Node, error) {
 			BranchData: data,
 		}, nil
 	}
+}
+
+func (p *NodePointer) String() string {
+	return fmt.Sprintf("NodePointer{id: %s, fileIdx: %d}", p.id.String(), p.fileIdx)
 }

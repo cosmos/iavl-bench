@@ -37,10 +37,15 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx MutationContext) 
 		}
 		switch cmp {
 		case -1:
+			var _keyRef keyRefLink = nodePtr.id
+			if n, ok := node.(*MemNode); ok {
+				// an optimization for when we have an in-memory node
+				_keyRef = n
+			}
 			n.left = leafNodePtr
 			n.right = nodePtr
 			n.key = nodeKey
-			n._keyRef = nodePtr.id // TODO we can optimize this and check if node is a MemNode
+			n._keyRef = _keyRef
 		case 1:
 			n.left = nodePtr
 			n.right = leafNodePtr
@@ -95,11 +100,16 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx MutationContext) 
 	}
 }
 
+type newKeyWrapper struct {
+	key    []byte
+	keyRef keyRefLink
+}
+
 // removeRecursive returns:
 // - (nil, origNode, nil) -> nothing changed in subtree
 // - (value, nil, newKey) -> leaf node is removed
 // - (value, new node, newKey) -> subtree changed
-func removeRecursive(nodePtr *NodePointer, key []byte, ctx MutationContext) (value []byte, newNodePtr *NodePointer, newKey []byte, err error) {
+func removeRecursive(nodePtr *NodePointer, key []byte, ctx MutationContext) (value []byte, newNodePtr *NodePointer, newKey *newKeyWrapper, err error) {
 	if nodePtr == nil {
 		return nil, nil, nil, nil
 	}
@@ -133,7 +143,14 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx MutationContext) (val
 		}
 
 		if newLeft == nil {
-			return value, node.Right(), nodeKey, nil
+			var keyRef keyRefLink = nodePtr.id
+			if mem := nodePtr.mem.Load(); mem != nil {
+				keyRef = mem
+			}
+			return value, node.Right(), &newKeyWrapper{
+				key:    nodeKey,
+				keyRef: keyRef,
+			}, nil
 		}
 
 		newNode, err := node.MutateBranch(ctx)
@@ -173,7 +190,8 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx MutationContext) (val
 
 	newNode.right = newRight
 	if newKey != nil {
-		newNode.key = newKey
+		newNode.key = newKey.key
+		newNode._keyRef = newKey.keyRef
 	}
 
 	err = newNode.updateHeightSize()

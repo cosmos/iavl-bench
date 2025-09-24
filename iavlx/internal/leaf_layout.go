@@ -21,21 +21,8 @@ const (
 	SizeLeaf            = SizeLeafWithoutHash + SizeHash
 )
 
-type Leaves struct {
-	data []byte
-}
-
-func NewLeaves(data []byte) Leaves {
-	return Leaves{data}
-}
-
-func (leaves Leaves) Leaf(i uint64) LeafLayout {
-	offset := int(i) * SizeLeaf
-	return LeafLayout{data: (*[SizeLeaf]byte)(leaves.data[offset : offset+SizeLeaf])}
-}
-
 type LeafLayout struct {
-	data *[SizeLeaf]byte
+	data [SizeLeaf]byte
 }
 
 func (leaf LeafLayout) NodeID() NodeID {
@@ -54,6 +41,10 @@ func (leaf LeafLayout) KeyOffset() uint64 {
 
 func (leaf LeafLayout) Hash() []byte {
 	return leaf.data[OffsetLeafHash : OffsetLeafHash+32]
+}
+
+func (leaf LeafLayout) String() string {
+	return fmt.Sprintf("Leaf{NodeID:%s, KeyLen:%d, KeyOffset:%d, Hash:%x}", leaf.NodeID(), leaf.KeyLength(), leaf.KeyOffset(), leaf.Hash())
 }
 
 func uint32LE3(b []byte) uint32 {

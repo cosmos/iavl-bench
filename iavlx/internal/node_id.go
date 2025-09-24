@@ -107,11 +107,11 @@ func (ptr NodeRelativePointer) IsLeaf() bool {
 }
 
 func (ptr NodeRelativePointer) Offset() int64 {
-	// get lower 61 bits and interpret as signed int64
-	offset := int64(ptr &^ (3 << 62))
+	// Extract the absolute value from lower 61 bits
+	offset := int64(ptr & 0x1FFFFFFFFFFFFFFF)
 	// if bit 61 is set, it's negative
 	if ptr&(1<<61) != 0 {
-		offset *= -1
+		offset = -offset
 	}
 	return offset
 }

@@ -23,21 +23,8 @@ const (
 	SizeBranch              = SizeBranchWithoutHash + SizeHash
 )
 
-type Branches struct {
-	data []byte
-}
-
-func NewBranches(data []byte) Branches {
-	return Branches{data}
-}
-
-func (nodes Branches) Branch(i uint64) BranchLayout {
-	offset := int(i) * SizeBranch
-	return BranchLayout{data: (*[SizeBranch]byte)(nodes.data[offset : offset+SizeBranch])}
-}
-
 type BranchLayout struct {
-	data *[SizeBranch]byte
+	data [SizeBranch]byte
 }
 
 func (branch BranchLayout) NodeID() NodeID {
@@ -72,6 +59,11 @@ func (branch BranchLayout) Size() uint64 {
 
 func (branch BranchLayout) Hash() []byte {
 	return branch.data[OffsetBranchHash : OffsetBranchHash+32]
+}
+
+func (branch BranchLayout) String() string {
+	return fmt.Sprintf("Branch{NodeID:%s, Left:%s, Right:%s, KeyRef:%s, Height:%d, SubtreeSize:%d, Size:%d, Hash:%x}",
+		branch.NodeID(), branch.Left(), branch.Right(), branch.KeyRef(), branch.Height(), branch.SubtreeSize(), branch.Size(), branch.Hash())
 }
 
 func encodeBranchNode(node *MemNode, buf *[SizeBranch]byte, nodeId NodeID, left, right NodeRef, keyRef KeyRef, subtreeSize uint32) error {

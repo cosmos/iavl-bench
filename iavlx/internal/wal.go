@@ -2,6 +2,8 @@ package internal
 
 import (
 	"encoding/binary"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -180,5 +182,96 @@ func (w *WAL) ReadVarintBytes(offset uint64) (bz []byte, newOffset int, err erro
 	if err != nil {
 		return nil, 0, err
 	}
-	return bz, n + int(length), nil
+	return bz, int(offset) + n + int(length), nil
+}
+
+func (w *WAL) DebugDump(writer io.Writer) error {
+	it := &WALIterator{wal: w, offset: 0}
+	for {
+		update, offset, err := it.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(writer, "%d: %s\n", offset, update.String())
+	}
+}
+
+type WALIterator struct {
+	wal    *WAL
+	offset int
+}
+
+func (it *WALIterator) Next() (update Update, entryOffset int, err error) {
+	if it.offset >= len(it.wal.walData.handle) {
+		err = io.EOF
+		return
+	}
+	bz, err := it.wal.walData.SliceExact(it.offset, 1)
+	if err == io.EOF {
+		return
+	} else if err != nil {
+		return
+	}
+
+	entryOffset = it.offset
+	entryType := WALEntryType(bz[0])
+	it.offset += 1
+	switch entryType {
+	case WALEntryTypeSet:
+		var key, value []byte
+		var n int
+		key, n, err = it.wal.ReadVarintBytes(uint64(it.offset))
+		if err != nil {
+			return
+		}
+		it.offset = n
+		value, n, err = it.wal.ReadVarintBytes(uint64(it.offset))
+		if err != nil {
+			return
+		}
+		it.offset = n
+		return Update{Key: key, Value: value}, entryOffset, nil
+	case WALEntryTypeDelete:
+		var key []byte
+		var n int
+		key, n, err = it.wal.ReadVarintBytes(uint64(it.offset))
+		if err != nil {
+			return
+		}
+		it.offset = n
+		return Update{Key: key, Delete: true}, entryOffset, nil
+	case WALEntryTypeCommit:
+		var versionBz []byte
+		_, versionBz, err = it.wal.walData.SliceVar(it.offset, binary.MaxVarintLen64)
+		if err != nil {
+			return
+		}
+		version, n := binary.Uvarint(versionBz)
+		if n <= 0 {
+			return Update{}, 0, fmt.Errorf("corrupted wal commit entry at offset %d", entryOffset)
+		}
+		it.offset += n
+		return Update{Commit: version}, entryOffset, nil
+	default:
+		return Update{}, 0, fmt.Errorf("corrupted wal entry at offset %d: unknown entry type %d", entryOffset, entryType)
+	}
+}
+
+type Update struct {
+	Key, Value []byte
+	Delete     bool
+	Commit     uint64
+}
+
+func (u Update) String() string {
+	if u.Delete {
+		return fmt.Sprintf("DEL %X (%d)", u.Key, len(u.Key))
+	} else if u.Commit != 0 {
+		return fmt.Sprintf("COMMIT %d", u.Commit)
+	} else {
+		return fmt.Sprintf("SET %X=%X (%d, %d)", u.Key, u.Value, len(u.Key), len(u.Value))
+	}
 }

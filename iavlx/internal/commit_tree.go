@@ -204,10 +204,7 @@ func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error
 			ctx.leafNodeIdx++
 			np.id = NewNodeID(true, ctx.version, ctx.leafNodeIdx)
 		} else {
-			ctx.branchNodeIdx++
-			np.id = NewNodeID(false, ctx.version, ctx.branchNodeIdx)
-
-			// pre-order traversal
+			// post-order traversal
 			leftHash, err = commitTraverse(ctx, memNode.left)
 			if err != nil {
 				return nil, err
@@ -216,6 +213,10 @@ func commitTraverse(ctx *commitContext, np *NodePointer) (hash []byte, err error
 			if err != nil {
 				return nil, err
 			}
+
+			ctx.branchNodeIdx++
+			np.id = NewNodeID(false, ctx.version, ctx.branchNodeIdx)
+
 		}
 
 		if memNode.hash != nil {
