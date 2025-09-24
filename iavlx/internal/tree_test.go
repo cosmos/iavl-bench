@@ -241,21 +241,21 @@ func (s *SimMachine) Commit(t *rapid.T) {
 	require.NoError(t, err, "failed to save version in V2 tree")
 	//s.debugDump(t)
 	err = VerifyTree(s.treeV2)
-	if err != nil {
-		branches := s.treeV2.rollingDiff.branchData
-		n := branches.Count()
-		buf := &bytes.Buffer{}
-		for i := uint64(0); i < n; i++ {
-			branch, err := branches.Branch(i)
-			require.NoError(t, err, "failed to read branch")
-			buf.WriteString(fmt.Sprintf("%d: %s\n", i+1, branch))
-		}
-		require.NoError(t, os.WriteFile("branches_dump.txt", buf.Bytes(), 0o644))
-
-		buf = &bytes.Buffer{}
-		require.NoError(t, s.treeV2.wal.DebugDump(buf))
-		require.NoError(t, os.WriteFile("wal_dump.txt", buf.Bytes(), 0o644))
-	}
+	//if err != nil {
+	//	branches := s.treeV2.rollingDiff.branchData
+	//	n := branches.Count()
+	//	buf := &bytes.Buffer{}
+	//	for i := uint64(0); i < n; i++ {
+	//		branch, err := branches.Branch(i)
+	//		require.NoError(t, err, "failed to read branch")
+	//		buf.WriteString(fmt.Sprintf("%d: %s\n", i+1, branch))
+	//	}
+	//	require.NoError(t, os.WriteFile("branches_dump.txt", buf.Bytes(), 0o644))
+	//
+	//	buf = &bytes.Buffer{}
+	//	require.NoError(t, s.treeV2.wal.DebugDump(buf))
+	//	require.NoError(t, os.WriteFile("wal_dump.txt", buf.Bytes(), 0o644))
+	//}
 	require.NoError(t, err, "failed to verify V2 tree")
 	if !bytes.Equal(hash1, hash2) {
 		t.Logf("WARNING: hash mismatch between V1 and V2 trees: %X vs %X", hash1, hash2)

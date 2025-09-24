@@ -37,9 +37,9 @@ func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
 		return nil, fmt.Errorf("failed to open rolling diff: %w", err)
 	}
 
-	walWriteChan := make(chan walWriteBatch, 1024)
+	walWriteChan := make(chan walWriteBatch, 262_144)
 	walDone := make(chan error, 1)
-	diffWriteChan := make(chan *diffWriteBatch, 64)
+	diffWriteChan := make(chan *diffWriteBatch, 1024)
 	diffDone := make(chan error, 1)
 
 	go func() {
