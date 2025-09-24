@@ -260,7 +260,7 @@ func (s *SimMachine) Commit(t *rapid.T) {
 	if !bytes.Equal(hash1, hash2) {
 		t.Logf("WARNING: hash mismatch between V1 and V2 trees: %X vs %X", hash1, hash2)
 	}
-	//TODO require.Equal(t, hash1, hash2, "hash mismatch between V1 and V2 trees")
+	require.Equal(t, hash1, hash2, "hash mismatch between V1 and V2 trees")
 	//require.Equal(t, v1, v2, "version mismatch between V1 and V2 trees")
 }
 
