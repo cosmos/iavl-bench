@@ -40,11 +40,15 @@ func (p BranchPersisted) Key() ([]byte, error) {
 	keyRef := p.layout.KeyRef()
 	if keyRef.IsNodeID() {
 		nodeId := keyRef.AsNodeID()
-		leafNode, err := p.store.ResolveLeaf(nodeId, 0)
+		leafNode, err := p.store.ResolveNode(nodeId, 0)
 		if err != nil {
 			return nil, fmt.Errorf("error resolve leaf %s containing key for %s: %w", nodeId, p.layout.NodeID(), err)
 		}
-		return p.store.Read(leafNode.KeyOffset(), leafNode.KeyLength())
+		leafPersisted, ok := leafNode.(LeafPersisted)
+		if !ok {
+			return nil, fmt.Errorf("expected leaf node %s to be LeafPersisted, got %T", nodeId, leafNode)
+		}
+		return p.store.Read(leafPersisted.layout.KeyOffset(), leafPersisted.layout.KeyLength())
 	}
 	walRef := keyRef.AsWALRef()
 	n, overflow := walRef.Length()

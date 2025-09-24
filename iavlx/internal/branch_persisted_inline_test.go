@@ -19,11 +19,7 @@ func (m *mockNodeStore) ReadVarintBytes(offset uint64) ([]byte, int, error) {
 	return nil, 0, nil
 }
 
-func (m *mockNodeStore) ResolveLeaf(nodeId NodeID, fileIdx uint64) (LeafLayout, error) {
-	panic("not implemented for test")
-}
-
-func (m *mockNodeStore) ResolveBranch(nodeId NodeID, fileIdx uint64) (BranchData, error) {
+func (m *mockNodeStore) ResolveNode(nodeId NodeID, fileIdx uint64) (Node, error) {
 	panic("not implemented for test")
 }
 
