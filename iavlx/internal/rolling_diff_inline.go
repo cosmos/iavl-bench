@@ -63,20 +63,25 @@ func (rd *RollingDiffInline) writeRoot(version uint64, root *NodePointer, lastBr
 	return nil
 }
 
-// writeNode writes a node and returns the number of bytes written
+// writeNode writes a node and returns the number of bytes written and the node's offset
 func (rd *RollingDiffInline) writeNode(np *NodePointer) (bytesWritten uint64, err error) {
 	memNode := np.mem.Load()
-	if memNode == nil {
-		return 0, nil // Already persisted
-	}
-	if memNode.version != rd.stagedVersion {
-		return 0, nil // Not part of this version
+	if memNode == nil || memNode.version != rd.stagedVersion {
+		return 0, nil
 	}
 
 	if memNode.IsLeaf() {
-		return rd.writeLeaf(np, memNode)
+		bytes, err := rd.writeLeaf(np, memNode)
+		if err != nil {
+			return 0, err
+		}
+		return bytes, nil // fileIdx was set by writeLeaf
 	} else {
-		return rd.writeBranch(np, memNode)
+		bytes, err := rd.writeBranch(np, memNode)
+		if err != nil {
+			return 0, err
+		}
+		return bytes, nil // fileIdx was set by writeBranch
 	}
 }
 
@@ -103,31 +108,42 @@ func (rd *RollingDiffInline) writeBranch(np *NodePointer, node *MemNode) (uint64
 	nodeId := np.id
 
 	// Track where children are written
-	var leftOffset, rightOffset uint64
+	var leftOffset, rightOffset int64
 	var leftID, rightID NodeID
 
+	left := node.left
+	right := node.right
+
 	// Write left child first (post-order traversal)
-	leftOffset = uint64(rd.nodesFile.Offset())
-	leftBytes, err := rd.writeNode(node.left)
+	leftBytes, err := rd.writeNode(left)
 	if err != nil {
 		return 0, err
 	}
 	leftID = node.left.id
 
 	// Write right child
-	rightOffset = uint64(rd.nodesFile.Offset())
-	rightBytes, err := rd.writeNode(node.right)
+	rightBytes, err := rd.writeNode(right)
 	if err != nil {
 		return 0, err
 	}
 	rightID = node.right.id
 
-	// Now write the branch node itself
-	branchStartOffset := uint64(rd.nodesFile.Offset())
+	branchStartOffset := int64(rd.nodesFile.Offset())
+
+	// Calculate relative offsets from branch node position
+	// If child has an offset, use it; otherwise 0 means resolve by ID
+	if left.fileIdx > 0 {
+		leftOffset = branchStartOffset - (int64(left.fileIdx) - 1)
+	}
+
+	if right.fileIdx > 0 {
+		rightOffset = branchStartOffset - (int64(right.fileIdx) - 1)
+	}
 
 	// Calculate size (number of nodes in subtree - same as original)
 	// This is based on NodeID indexes, not bytes
 	size := uint64(node.size)
+	// Span only includes newly written bytes (not existing nodes)
 	span := leftBytes + rightBytes
 
 	err = encodeBranchNodeInline(rd.nodesFile, node, nodeId, leftOffset, rightOffset,
@@ -137,7 +153,7 @@ func (rd *RollingDiffInline) writeBranch(np *NodePointer, node *MemNode) (uint64
 	}
 
 	// Update tracking
-	np.fileIdx = branchStartOffset + 1 // fileIdx is 1-based
+	np.fileIdx = uint64(branchStartOffset + 1) // fileIdx is 1-based
 	np.store = rd
 
 	return span, nil

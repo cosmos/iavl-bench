@@ -48,8 +48,10 @@ func (node BranchPersistedInline) Left() *NodePointer {
 	}
 
 	// If offset is non-zero, use it for direct file access
-	if leftOffset > 0 {
-		np.fileIdx = node.selfOffset + leftOffset
+	// Offsets are negative (children come before parent in file)
+	if leftOffset != 0 {
+		// selfOffset is already 1-based, add the negative offset to get child position
+		np.fileIdx = uint64(int64(node.selfOffset-1)+leftOffset) + 1
 	}
 	// Otherwise will resolve by ID
 
@@ -66,8 +68,10 @@ func (node BranchPersistedInline) Right() *NodePointer {
 	}
 
 	// If offset is non-zero, use it for direct file access
-	if rightOffset > 0 {
-		np.fileIdx = node.selfOffset + rightOffset
+	// Offsets are negative (children come before parent in file)
+	if rightOffset != 0 {
+		// selfOffset is already 1-based, add the negative offset to get child position
+		np.fileIdx = uint64(int64(node.selfOffset-1)+rightOffset) + 1
 	}
 	// Otherwise will resolve by ID
 

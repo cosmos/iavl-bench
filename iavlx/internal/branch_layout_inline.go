@@ -29,12 +29,26 @@ func (branch BranchLayoutInline) NodeID() NodeID {
 	return NodeID(binary.LittleEndian.Uint64(branch.header[OffsetBranchInlineID : OffsetBranchInlineID+SizeNodeID]))
 }
 
-func (branch BranchLayoutInline) LeftOffset() uint64 {
-	return uint64LE5(branch.header[OffsetBranchInlineLeftOffset : OffsetBranchInlineLeftOffset+5])
+// int64LE5 reads a 5-byte little-endian signed integer (sign-extended)
+func int64LE5(b []byte) int64 {
+	val := uint64(b[0]) |
+		uint64(b[1])<<8 |
+		uint64(b[2])<<16 |
+		uint64(b[3])<<24 |
+		uint64(b[4])<<32
+	// Sign extend from 40-bit to 64-bit
+	if val&0x8000000000 != 0 { // If bit 39 is set
+		val |= 0xFFFFFF0000000000 // Sign extend
+	}
+	return int64(val)
 }
 
-func (branch BranchLayoutInline) RightOffset() uint64 {
-	return uint64LE5(branch.header[OffsetBranchInlineRightOffset : OffsetBranchInlineRightOffset+5])
+func (branch BranchLayoutInline) LeftOffset() int64 {
+	return int64LE5(branch.header[OffsetBranchInlineLeftOffset : OffsetBranchInlineLeftOffset+5])
+}
+
+func (branch BranchLayoutInline) RightOffset() int64 {
+	return int64LE5(branch.header[OffsetBranchInlineRightOffset : OffsetBranchInlineRightOffset+5])
 }
 
 func (branch BranchLayoutInline) LeftID() NodeID {
@@ -82,18 +96,19 @@ func (branch BranchLayoutInline) String() string {
 
 // encodeBranchNodeInline encodes a MemNode into inline format with key data
 func encodeBranchNodeInline(w io.Writer, node *MemNode, nodeId NodeID,
-	leftOffset, rightOffset uint64, leftID, rightID NodeID, size, span uint64) error {
+	leftOffset, rightOffset int64, leftID, rightID NodeID, size, span uint64) error {
 
 	keyLen := uint32(len(node.key))
 	if keyLen > KeyLenMax {
 		return fmt.Errorf("key length %d exceeds maximum of %d", keyLen, KeyLenMax)
 	}
 
-	if leftOffset > 0xFFFFFFFFFF {
-		return fmt.Errorf("left offset %d exceeds maximum 5-byte value", leftOffset)
+	// Check that offsets fit in 40-bit signed integers
+	if leftOffset < -0x8000000000 || leftOffset > 0x7FFFFFFFFF {
+		return fmt.Errorf("left offset %d exceeds 40-bit signed range", leftOffset)
 	}
-	if rightOffset > 0xFFFFFFFFFF {
-		return fmt.Errorf("right offset %d exceeds maximum 5-byte value", rightOffset)
+	if rightOffset < -0x8000000000 || rightOffset > 0x7FFFFFFFFF {
+		return fmt.Errorf("right offset %d exceeds 40-bit signed range", rightOffset)
 	}
 	if size > 0xFFFFFFFFFF {
 		return fmt.Errorf("size %d exceeds maximum 5-byte value", size)
@@ -108,19 +123,21 @@ func encodeBranchNodeInline(w io.Writer, node *MemNode, nodeId NodeID,
 	// Write NodeID (8 bytes)
 	binary.LittleEndian.PutUint64(header[OffsetBranchInlineID:], uint64(nodeId))
 
-	// Write LeftOffset (5 bytes)
-	header[OffsetBranchInlineLeftOffset] = byte(leftOffset)
-	header[OffsetBranchInlineLeftOffset+1] = byte(leftOffset >> 8)
-	header[OffsetBranchInlineLeftOffset+2] = byte(leftOffset >> 16)
-	header[OffsetBranchInlineLeftOffset+3] = byte(leftOffset >> 24)
-	header[OffsetBranchInlineLeftOffset+4] = byte(leftOffset >> 32)
+	// Write LeftOffset (5 bytes, signed)
+	leftOffsetU := uint64(leftOffset) & 0xFFFFFFFFFF // Mask to 40 bits
+	header[OffsetBranchInlineLeftOffset] = byte(leftOffsetU)
+	header[OffsetBranchInlineLeftOffset+1] = byte(leftOffsetU >> 8)
+	header[OffsetBranchInlineLeftOffset+2] = byte(leftOffsetU >> 16)
+	header[OffsetBranchInlineLeftOffset+3] = byte(leftOffsetU >> 24)
+	header[OffsetBranchInlineLeftOffset+4] = byte(leftOffsetU >> 32)
 
-	// Write RightOffset (5 bytes)
-	header[OffsetBranchInlineRightOffset] = byte(rightOffset)
-	header[OffsetBranchInlineRightOffset+1] = byte(rightOffset >> 8)
-	header[OffsetBranchInlineRightOffset+2] = byte(rightOffset >> 16)
-	header[OffsetBranchInlineRightOffset+3] = byte(rightOffset >> 24)
-	header[OffsetBranchInlineRightOffset+4] = byte(rightOffset >> 32)
+	// Write RightOffset (5 bytes, signed)
+	rightOffsetU := uint64(rightOffset) & 0xFFFFFFFFFF // Mask to 40 bits
+	header[OffsetBranchInlineRightOffset] = byte(rightOffsetU)
+	header[OffsetBranchInlineRightOffset+1] = byte(rightOffsetU >> 8)
+	header[OffsetBranchInlineRightOffset+2] = byte(rightOffsetU >> 16)
+	header[OffsetBranchInlineRightOffset+3] = byte(rightOffsetU >> 24)
+	header[OffsetBranchInlineRightOffset+4] = byte(rightOffsetU >> 32)
 
 	// Write LeftID (8 bytes)
 	binary.LittleEndian.PutUint64(header[OffsetBranchInlineLeftID:], uint64(leftID))
