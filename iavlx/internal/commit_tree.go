@@ -107,7 +107,7 @@ func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, erro
 		diffWriteChan: diffWriteChan,
 		diffDone:      diffDone,
 		evictorDone:   evictorDone,
-		evictionDepth: 12,
+		evictionDepth: 0,
 	}
 
 	go func() {

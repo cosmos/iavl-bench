@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"fmt"
 	"path/filepath"
 	"sync/atomic"
@@ -12,10 +11,8 @@ import (
 // Spans and offsets are measured in bytes (not node counts)
 type RollingDiffInline struct {
 	*NodeStoreInline
-	nodesData          *MmapFile // Direct reference to the nodes file
 	stagedVersion      uint64
 	savedVersion       atomic.Uint64
-	currentOffset      uint64 // Current byte offset in nodes file
 	versionStartOffset uint64 // Byte offset at start of current version
 }
 
@@ -29,17 +26,10 @@ func NewRollingDiffInline(dir string, startVersion uint64) (*RollingDiffInline, 
 
 	nodeStore := NewNodeStoreInline(nodesData)
 
-	// Get current file size as starting offset
-	nodesData.flushLock.RLock()
-	currentSize := uint64(len(nodesData.handle))
-	nodesData.flushLock.RUnlock()
-
 	rd := &RollingDiffInline{
 		NodeStoreInline:    nodeStore,
-		nodesData:          nodesData,
 		stagedVersion:      startVersion + 1,
-		currentOffset:      currentSize,
-		versionStartOffset: currentSize,
+		versionStartOffset: uint64(nodeStore.nodesFile.Offset()),
 	}
 
 	return rd, nil
@@ -59,7 +49,7 @@ func (rd *RollingDiffInline) writeRoot(version uint64, root *NodePointer, lastBr
 		}
 
 		// Save and remap the nodes file
-		err = rd.nodesData.SaveAndRemap()
+		err = rd.nodesFile.SaveAndRemap()
 		if err != nil {
 			return fmt.Errorf("failed to save nodes data: %w", err)
 		}
@@ -68,7 +58,7 @@ func (rd *RollingDiffInline) writeRoot(version uint64, root *NodePointer, lastBr
 	// Update version tracking
 	rd.savedVersion.Store(rd.stagedVersion)
 	rd.stagedVersion++
-	rd.versionStartOffset = rd.currentOffset
+	rd.versionStartOffset = uint64(rd.nodesFile.Offset())
 
 	return nil
 }
@@ -93,27 +83,18 @@ func (rd *RollingDiffInline) writeNode(np *NodePointer) (bytesWritten uint64, er
 // writeLeaf writes a leaf node and returns bytes written
 func (rd *RollingDiffInline) writeLeaf(np *NodePointer, node *MemNode) (uint64, error) {
 	nodeId := np.id
-	startOffset := rd.currentOffset
+	startOffset := uint64(rd.nodesFile.Offset())
 
-	// Create a buffer to write to
-	var buf bytes.Buffer
-	err := encodeLeafNodeInline(&buf, node, nodeId)
+	err := encodeLeafNodeInline(rd.nodesFile, node, nodeId)
 	if err != nil {
 		return 0, err
 	}
-
-	// Write to the nodes file
-	n, err := rd.nodesData.Write(buf.Bytes())
-	if err != nil {
-		return 0, err
-	}
-	bytesWritten := uint64(n)
 
 	// Update tracking
-	rd.currentOffset += bytesWritten
 	np.fileIdx = startOffset + 1 // fileIdx is 1-based (0 means unresolved)
 	np.store = rd
 
+	bytesWritten := uint64(rd.nodesFile.Offset()) - startOffset
 	return bytesWritten, nil
 }
 
@@ -126,67 +107,36 @@ func (rd *RollingDiffInline) writeBranch(np *NodePointer, node *MemNode) (uint64
 	var leftID, rightID NodeID
 
 	// Write left child first (post-order traversal)
-	leftStartOffset := rd.currentOffset
+	leftOffset = uint64(rd.nodesFile.Offset())
 	leftBytes, err := rd.writeNode(node.left)
 	if err != nil {
 		return 0, err
 	}
-	if leftBytes > 0 {
-		leftOffset = leftStartOffset // Absolute byte offset where left child starts
-	}
 	leftID = node.left.id
 
 	// Write right child
-	rightStartOffset := rd.currentOffset
+	rightOffset = uint64(rd.nodesFile.Offset())
 	rightBytes, err := rd.writeNode(node.right)
 	if err != nil {
 		return 0, err
 	}
-	if rightBytes > 0 {
-		rightOffset = rightStartOffset // Absolute byte offset where right child starts
-	}
 	rightID = node.right.id
 
 	// Now write the branch node itself
-	branchStartOffset := rd.currentOffset
+	branchStartOffset := uint64(rd.nodesFile.Offset())
 
 	// Calculate size (number of nodes in subtree - same as original)
 	// This is based on NodeID indexes, not bytes
 	size := uint64(node.size)
+	span := leftBytes + rightBytes
 
-	// Calculate span in BYTES (total bytes of this subtree)
-	// This will be: left subtree bytes + right subtree bytes + this branch node bytes
-	// We'll calculate the branch node size first
-	var buf bytes.Buffer
-	tempSpan := uint64(0) // Temporary value, will update after we know branch size
-
-	err = encodeBranchNodeInline(&buf, node, nodeId, leftOffset, rightOffset,
-		leftID, rightID, size, tempSpan)
-	if err != nil {
-		return 0, err
-	}
-	branchBytes := uint64(buf.Len())
-
-	// Now calculate actual span
-	span := leftBytes + rightBytes + branchBytes
-
-	// Re-encode with correct span
-	buf.Reset()
-	err = encodeBranchNodeInline(&buf, node, nodeId, leftOffset, rightOffset,
+	err = encodeBranchNodeInline(rd.nodesFile, node, nodeId, leftOffset, rightOffset,
 		leftID, rightID, size, span)
 	if err != nil {
 		return 0, err
 	}
 
-	// Write to file
-	n, err := rd.nodesData.Write(buf.Bytes())
-	if err != nil {
-		return 0, err
-	}
-	bytesWritten := uint64(n)
-
 	// Update tracking
-	rd.currentOffset += bytesWritten
 	np.fileIdx = branchStartOffset + 1 // fileIdx is 1-based
 	np.store = rd
 

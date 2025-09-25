@@ -51,7 +51,7 @@ func TestBranchPersistedInlineNode(t *testing.T) {
 	store := &mockNodeStore{nodes: make(map[NodeID]Node)}
 	node := BranchPersistedInline{
 		store:      store,
-		layout:     BranchLayoutInline{data: buf.Bytes()},
+		layout:     BranchLayoutInline{header: buf.Bytes()},
 		selfOffset: 1000,
 	}
 
@@ -157,7 +157,7 @@ func TestBranchPersistedInlineZeroOffsets(t *testing.T) {
 	store := &mockNodeStore{nodes: make(map[NodeID]Node)}
 	node := BranchPersistedInline{
 		store:      store,
-		layout:     BranchLayoutInline{data: buf.Bytes()},
+		layout:     BranchLayoutInline{header: buf.Bytes()},
 		selfOffset: 1000,
 	}
 
@@ -208,7 +208,7 @@ func TestBranchPersistedInlineMutateBranch(t *testing.T) {
 	store := &mockNodeStore{nodes: make(map[NodeID]Node)}
 	node := BranchPersistedInline{
 		store:      store,
-		layout:     BranchLayoutInline{data: buf.Bytes()},
+		layout:     BranchLayoutInline{header: buf.Bytes()},
 		selfOffset: 5000,
 	}
 
@@ -256,7 +256,7 @@ func TestBranchPersistedInlineString(t *testing.T) {
 	store := &mockNodeStore{nodes: make(map[NodeID]Node)}
 	node := BranchPersistedInline{
 		store:      store,
-		layout:     BranchLayoutInline{data: buf.Bytes()},
+		layout:     BranchLayoutInline{header: buf.Bytes()},
 		selfOffset: 2000,
 	}
 

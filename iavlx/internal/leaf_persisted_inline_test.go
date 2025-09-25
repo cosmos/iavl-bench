@@ -28,7 +28,7 @@ func TestLeafPersistedInlineNode(t *testing.T) {
 
 	// Create LeafPersistedInline
 	node := LeafPersistedInline{
-		LeafLayoutInline: LeafLayoutInline{data: buf.Bytes()},
+		LeafLayoutInline: LeafLayoutInline{header: buf.Bytes()},
 	}
 
 	// Test Height
@@ -111,7 +111,7 @@ func TestLeafPersistedInlineGet(t *testing.T) {
 	}
 
 	node := LeafPersistedInline{
-		LeafLayoutInline: LeafLayoutInline{data: buf.Bytes()},
+		LeafLayoutInline: LeafLayoutInline{header: buf.Bytes()},
 	}
 
 	tests := []struct {
@@ -187,7 +187,7 @@ func TestLeafPersistedInlineMutateBranch(t *testing.T) {
 	}
 
 	node := LeafPersistedInline{
-		LeafLayoutInline: LeafLayoutInline{data: buf.Bytes()},
+		LeafLayoutInline: LeafLayoutInline{header: buf.Bytes()},
 	}
 
 	// MutateBranch should panic for leaves
@@ -220,7 +220,7 @@ func TestLeafPersistedInlineString(t *testing.T) {
 	}
 
 	node := LeafPersistedInline{
-		LeafLayoutInline: LeafLayoutInline{data: buf.Bytes()},
+		LeafLayoutInline: LeafLayoutInline{header: buf.Bytes()},
 	}
 
 	str := node.String()

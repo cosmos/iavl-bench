@@ -44,13 +44,13 @@ func TestRollingDiffInlineWriteLeaf(t *testing.T) {
 	}
 
 	// Flush to make data visible for reading
-	err = rd.nodesData.SaveAndRemap()
+	err = rd.nodesFile.SaveAndRemap()
 	if err != nil {
 		t.Fatalf("Failed to save and remap: %v", err)
 	}
 
 	// Verify bytes written
-	expectedSize := SizeLeafInlineFixed + uint64(len(key)) + uint64(len(value))
+	expectedSize := SizeLeafInlineHeader + uint64(len(key)) + uint64(len(value))
 	if bytesWritten != expectedSize {
 		t.Errorf("Bytes written = %d, want %d", bytesWritten, expectedSize)
 	}
@@ -145,7 +145,7 @@ func TestRollingDiffInlineWriteBranch(t *testing.T) {
 	}
 
 	// Flush to make data visible for reading
-	err = rd.nodesData.SaveAndRemap()
+	err = rd.nodesFile.SaveAndRemap()
 	if err != nil {
 		t.Fatalf("Failed to save and remap: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestRollingDiffInlineByteOffsets(t *testing.T) {
 		}
 		np.mem.Store(memNode)
 
-		expectedOffsets = append(expectedOffsets, rd.currentOffset+1) // +1 for 1-based
+		expectedOffsets = append(expectedOffsets, uint64(rd.nodesFile.Offset()+1)) // +1 for 1-based
 
 		bytesWritten, err := rd.writeLeaf(np, memNode)
 		if err != nil {
@@ -334,7 +334,7 @@ func TestRollingDiffInlineByteOffsets(t *testing.T) {
 	}
 
 	// Flush to make data visible for reading
-	err = rd.nodesData.SaveAndRemap()
+	err = rd.nodesFile.SaveAndRemap()
 	if err != nil {
 		t.Fatalf("Failed to save and remap: %v", err)
 	}

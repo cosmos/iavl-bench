@@ -29,16 +29,16 @@ func TestLeafLayoutInline(t *testing.T) {
 	}
 
 	// Create LeafLayoutInline from encoded data
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 
 	// Test NodeID
 	if got := leaf.NodeID(); got != nodeID {
 		t.Errorf("NodeID() = %v, want %v", got, nodeID)
 	}
 
-	// Test KeyLen
+	// Test KeyLength
 	if got := leaf.KeyLen(); got != uint32(len(key)) {
-		t.Errorf("KeyLen() = %v, want %v", got, len(key))
+		t.Errorf("KeyLength() = %v, want %v", got, len(key))
 	}
 
 	// Test ValueLen
@@ -88,11 +88,11 @@ func TestLeafLayoutInlineAlignment(t *testing.T) {
 		t.Errorf("Padding byte at offset 11 should be 0, got %v", data[11])
 	}
 
-	// Verify that KeyLen can be read as a 4-byte aligned integer
+	// Verify that KeyLength can be read as a 4-byte aligned integer
 	keyLenBytes := data[8:12]
 	keyLen := binary.LittleEndian.Uint32(keyLenBytes)
 	if keyLen != 3 {
-		t.Errorf("KeyLen read as aligned uint32 = %v, want 3", keyLen)
+		t.Errorf("KeyLength read as aligned uint32 = %v, want 3", keyLen)
 	}
 
 	// Verify ValueLen is at a 4-byte aligned offset (12)
@@ -126,9 +126,9 @@ func TestLeafLayoutInlineMaxKeyLen(t *testing.T) {
 		t.Fatalf("Failed to encode max key: %v", err)
 	}
 
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 	if got := leaf.KeyLen(); got != KeyLenMax {
-		t.Errorf("KeyLen() = %v, want %v", got, KeyLenMax)
+		t.Errorf("KeyLength() = %v, want %v", got, KeyLenMax)
 	}
 }
 
@@ -171,10 +171,10 @@ func TestLeafLayoutInlineEmptyKeyValue(t *testing.T) {
 		t.Fatalf("Failed to encode empty key/value: %v", err)
 	}
 
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 
 	if got := leaf.KeyLen(); got != 0 {
-		t.Errorf("KeyLen() = %v, want 0", got)
+		t.Errorf("KeyLength() = %v, want 0", got)
 	}
 
 	if got := leaf.ValueLen(); got != 0 {
@@ -208,7 +208,7 @@ func TestLeafLayoutInlineString(t *testing.T) {
 		t.Fatalf("Failed to encode: %v", err)
 	}
 
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 	str := leaf.String()
 
 	// Check that string representation contains expected values
@@ -216,8 +216,8 @@ func TestLeafLayoutInlineString(t *testing.T) {
 		t.Error("String() returned empty string")
 	}
 
-	// Should contain NodeID, KeyLen, ValueLen, and Hash
-	expected := "LeafInline{NodeID:100, KeyLen:5, ValueLen:7, Hash:"
+	// Should contain NodeID, KeyLength, ValueLen, and Hash
+	expected := "LeafInline{NodeID:100, KeyLength:5, ValueLen:7, Hash:"
 	if len(str) < len(expected) {
 		t.Errorf("String() output too short: %q", str)
 	}
@@ -245,7 +245,7 @@ func TestLeafLayoutInlineLargeValue(t *testing.T) {
 		t.Fatalf("Failed to encode large value: %v", err)
 	}
 
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 
 	// Verify all fields
 	if got := leaf.NodeID(); got != nodeID {
@@ -253,7 +253,7 @@ func TestLeafLayoutInlineLargeValue(t *testing.T) {
 	}
 
 	if got := leaf.KeyLen(); got != uint32(len(key)) {
-		t.Errorf("KeyLen() = %v, want %v", got, len(key))
+		t.Errorf("KeyLength() = %v, want %v", got, len(key))
 	}
 
 	if got := leaf.ValueLen(); got != uint32(len(value)) {
@@ -311,7 +311,7 @@ func BenchmarkLeafLayoutInlineRead(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	leaf := LeafLayoutInline{data: buf.Bytes()}
+	leaf := LeafLayoutInline{header: buf.Bytes()}
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {

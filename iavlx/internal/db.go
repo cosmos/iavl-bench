@@ -38,7 +38,7 @@ func LoadDB(opts DBOptions) (*DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tree dir %s: %w", dir, err)
 		}
-		trees[i], err = NewCommitTree(dir, opts.ZeroCopy)
+		trees[i], err = NewCommitTreeInline(dir, opts.ZeroCopy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load tree %s: %w", name, err)
 		}

@@ -44,7 +44,7 @@ func (leaf LeafLayout) Hash() []byte {
 }
 
 func (leaf LeafLayout) String() string {
-	return fmt.Sprintf("Leaf{NodeID:%s, KeyLen:%d, KeyOffset:%d, Hash:%x}", leaf.NodeID(), leaf.KeyLength(), leaf.KeyOffset(), leaf.Hash())
+	return fmt.Sprintf("Leaf{NodeID:%s, KeyLength:%d, KeyOffset:%d, Hash:%x}", leaf.NodeID(), leaf.KeyLength(), leaf.KeyOffset(), leaf.Hash())
 }
 
 func uint32LE3(b []byte) uint32 {

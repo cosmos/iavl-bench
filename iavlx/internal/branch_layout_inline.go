@@ -17,67 +17,67 @@ const (
 	OffsetBranchInlineSpan         = OffsetBranchInlineSize + 5             // 43
 	OffsetBranchInlineHash         = OffsetBranchInlineSpan + 5             // 48
 	OffsetBranchInlineData         = OffsetBranchInlineHash + SizeHash      // 80
-	SizeBranchInlineFixed          = OffsetBranchInlineData                 // 80 bytes fixed header
+	SizeBranchInlineHeader         = OffsetBranchInlineData                 // 80 bytes fixed header
 )
 
 type BranchLayoutInline struct {
-	data []byte
+	header []byte
+	key    []byte
 }
 
 func (branch BranchLayoutInline) NodeID() NodeID {
-	return NodeID(binary.LittleEndian.Uint64(branch.data[OffsetBranchInlineID : OffsetBranchInlineID+SizeNodeID]))
+	return NodeID(binary.LittleEndian.Uint64(branch.header[OffsetBranchInlineID : OffsetBranchInlineID+SizeNodeID]))
 }
 
 func (branch BranchLayoutInline) LeftOffset() uint64 {
-	return uint64LE5(branch.data[OffsetBranchInlineLeftOffset : OffsetBranchInlineLeftOffset+5])
+	return uint64LE5(branch.header[OffsetBranchInlineLeftOffset : OffsetBranchInlineLeftOffset+5])
 }
 
 func (branch BranchLayoutInline) RightOffset() uint64 {
-	return uint64LE5(branch.data[OffsetBranchInlineRightOffset : OffsetBranchInlineRightOffset+5])
+	return uint64LE5(branch.header[OffsetBranchInlineRightOffset : OffsetBranchInlineRightOffset+5])
 }
 
 func (branch BranchLayoutInline) LeftID() NodeID {
-	return NodeID(binary.LittleEndian.Uint64(branch.data[OffsetBranchInlineLeftID : OffsetBranchInlineLeftID+SizeNodeID]))
+	return NodeID(binary.LittleEndian.Uint64(branch.header[OffsetBranchInlineLeftID : OffsetBranchInlineLeftID+SizeNodeID]))
 }
 
 func (branch BranchLayoutInline) RightID() NodeID {
-	return NodeID(binary.LittleEndian.Uint64(branch.data[OffsetBranchInlineRightID : OffsetBranchInlineRightID+SizeNodeID]))
+	return NodeID(binary.LittleEndian.Uint64(branch.header[OffsetBranchInlineRightID : OffsetBranchInlineRightID+SizeNodeID]))
 }
 
-// KeyLen returns the key length (low 3 bytes of the packed field)
-func (branch BranchLayoutInline) KeyLen() uint32 {
-	packed := binary.LittleEndian.Uint32(branch.data[OffsetBranchInlineKeyLenHeight : OffsetBranchInlineKeyLenHeight+4])
+// KeyLength returns the key length (low 3 bytes of the packed field)
+func (branch BranchLayoutInline) KeyLength() uint32 {
+	packed := binary.LittleEndian.Uint32(branch.header[OffsetBranchInlineKeyLenHeight : OffsetBranchInlineKeyLenHeight+4])
 	return packed & 0xFFFFFF // Low 3 bytes
+}
+
+// KeyLength returns the key length (low 3 bytes of the packed field)
+func (branch BranchLayoutInline) Key() []byte {
+	return branch.key
 }
 
 // Height returns the height (high byte of the packed field)
 func (branch BranchLayoutInline) Height() uint8 {
-	return branch.data[OffsetBranchInlineKeyLenHeight+3] // 4th byte is height
+	return branch.header[OffsetBranchInlineKeyLenHeight+3] // 4th byte is height
 }
 
 func (branch BranchLayoutInline) Size() uint64 {
-	return uint64LE5(branch.data[OffsetBranchInlineSize : OffsetBranchInlineSize+5])
+	return uint64LE5(branch.header[OffsetBranchInlineSize : OffsetBranchInlineSize+5])
 }
 
 func (branch BranchLayoutInline) Span() uint64 {
-	return uint64LE5(branch.data[OffsetBranchInlineSpan : OffsetBranchInlineSpan+5])
+	return uint64LE5(branch.header[OffsetBranchInlineSpan : OffsetBranchInlineSpan+5])
 }
 
 func (branch BranchLayoutInline) Hash() []byte {
-	return branch.data[OffsetBranchInlineHash : OffsetBranchInlineHash+SizeHash]
-}
-
-// Key returns the inline key data
-func (branch BranchLayoutInline) Key() []byte {
-	keyLen := branch.KeyLen()
-	return branch.data[OffsetBranchInlineData : OffsetBranchInlineData+keyLen]
+	return branch.header[OffsetBranchInlineHash : OffsetBranchInlineHash+SizeHash]
 }
 
 func (branch BranchLayoutInline) String() string {
-	return fmt.Sprintf("BranchInline{NodeID:%s, LeftOff:%d, RightOff:%d, LeftID:%s, RightID:%s, KeyLen:%d, Height:%d, Size:%d, Span:%d, Hash:%x}",
+	return fmt.Sprintf("BranchInline{NodeID:%s, LeftOff:%d, RightOff:%d, LeftID:%s, RightID:%s, KeyLength:%d, Height:%d, Size:%d, Span:%d, Hash:%x}",
 		branch.NodeID(), branch.LeftOffset(), branch.RightOffset(),
 		branch.LeftID(), branch.RightID(),
-		branch.KeyLen(), branch.Height(), branch.Size(), branch.Span(), branch.Hash())
+		branch.KeyLength(), branch.Height(), branch.Size(), branch.Span(), branch.Hash())
 }
 
 // encodeBranchNodeInline encodes a MemNode into inline format with key data
@@ -103,7 +103,7 @@ func encodeBranchNodeInline(w io.Writer, node *MemNode, nodeId NodeID,
 	}
 
 	// Use a fixed buffer for the header
-	var header [SizeBranchInlineFixed]byte
+	var header [SizeBranchInlineHeader]byte
 
 	// Write NodeID (8 bytes)
 	binary.LittleEndian.PutUint64(header[OffsetBranchInlineID:], uint64(nodeId))
@@ -128,7 +128,7 @@ func encodeBranchNodeInline(w io.Writer, node *MemNode, nodeId NodeID,
 	// Write RightID (8 bytes)
 	binary.LittleEndian.PutUint64(header[OffsetBranchInlineRightID:], uint64(rightID))
 
-	// Write packed KeyLen+Height (4 bytes: 3 bytes key length, 1 byte height)
+	// Write packed KeyLength+Height (4 bytes: 3 bytes key length, 1 byte height)
 	packed := keyLen | (uint32(node.height) << 24)
 	binary.LittleEndian.PutUint32(header[OffsetBranchInlineKeyLenHeight:], packed)
 

@@ -35,7 +35,7 @@ func TestBranchLayoutInline(t *testing.T) {
 	}
 
 	// Create BranchLayoutInline from encoded data
-	branch := BranchLayoutInline{data: buf.Bytes()}
+	branch := BranchLayoutInline{header: buf.Bytes()}
 
 	// Test NodeID
 	if got := branch.NodeID(); got != nodeID {
@@ -62,9 +62,9 @@ func TestBranchLayoutInline(t *testing.T) {
 		t.Errorf("RightID() = %v, want %v", got, rightID)
 	}
 
-	// Test KeyLen
-	if got := branch.KeyLen(); got != uint32(len(key)) {
-		t.Errorf("KeyLen() = %v, want %v", got, len(key))
+	// Test KeyLength
+	if got := branch.KeyLength(); got != uint32(len(key)) {
+		t.Errorf("KeyLength() = %v, want %v", got, len(key))
 	}
 
 	// Test Height
@@ -94,7 +94,7 @@ func TestBranchLayoutInline(t *testing.T) {
 }
 
 func TestBranchLayoutInlinePackedFields(t *testing.T) {
-	// Test the packed KeyLen+Height field
+	// Test the packed KeyLength+Height field
 	nodeID := NodeID(1)
 	key := []byte("abc") // 3 byte key
 	height := uint8(42)
@@ -131,9 +131,9 @@ func TestBranchLayoutInlinePackedFields(t *testing.T) {
 	}
 
 	// Test via the methods
-	branch := BranchLayoutInline{data: buf.Bytes()}
-	if got := branch.KeyLen(); got != 3 {
-		t.Errorf("KeyLen() = %v, want 3", got)
+	branch := BranchLayoutInline{header: buf.Bytes()}
+	if got := branch.KeyLength(); got != 3 {
+		t.Errorf("KeyLength() = %v, want 3", got)
 	}
 	if got := branch.Height(); got != 42 {
 		t.Errorf("Height() = %v, want 42", got)
@@ -159,7 +159,7 @@ func TestBranchLayoutInlineLargeOffsets(t *testing.T) {
 		t.Fatalf("Failed to encode max offsets: %v", err)
 	}
 
-	branch := BranchLayoutInline{data: buf.Bytes()}
+	branch := BranchLayoutInline{header: buf.Bytes()}
 
 	if got := branch.LeftOffset(); got != maxOffset {
 		t.Errorf("LeftOffset() = %v, want %v", got, maxOffset)
@@ -238,9 +238,9 @@ func TestBranchLayoutInlineMaxKeyLen(t *testing.T) {
 		t.Fatalf("Failed to encode max key: %v", err)
 	}
 
-	branch := BranchLayoutInline{data: buf.Bytes()}
-	if got := branch.KeyLen(); got != KeyLenMax {
-		t.Errorf("KeyLen() = %v, want %v", got, KeyLenMax)
+	branch := BranchLayoutInline{header: buf.Bytes()}
+	if got := branch.KeyLength(); got != KeyLenMax {
+		t.Errorf("KeyLength() = %v, want %v", got, KeyLenMax)
 	}
 }
 
@@ -282,10 +282,10 @@ func TestBranchLayoutInlineEmptyKey(t *testing.T) {
 		t.Fatalf("Failed to encode empty key: %v", err)
 	}
 
-	branch := BranchLayoutInline{data: buf.Bytes()}
+	branch := BranchLayoutInline{header: buf.Bytes()}
 
-	if got := branch.KeyLen(); got != 0 {
-		t.Errorf("KeyLen() = %v, want 0", got)
+	if got := branch.KeyLength(); got != 0 {
+		t.Errorf("KeyLength() = %v, want 0", got)
 	}
 
 	if got := branch.Key(); len(got) != 0 {
@@ -316,7 +316,7 @@ func TestBranchLayoutInlineString(t *testing.T) {
 		t.Fatalf("Failed to encode: %v", err)
 	}
 
-	branch := BranchLayoutInline{data: buf.Bytes()}
+	branch := BranchLayoutInline{header: buf.Bytes()}
 	str := branch.String()
 
 	// Check that string representation contains expected values
@@ -359,8 +359,8 @@ func TestBranchLayoutInlineOffsets(t *testing.T) {
 	}
 
 	// Verify total size
-	if SizeBranchInlineFixed != 80 {
-		t.Errorf("SizeBranchInlineFixed = %v, want 80", SizeBranchInlineFixed)
+	if SizeBranchInlineHeader != 80 {
+		t.Errorf("SizeBranchInlineHeader = %v, want 80", SizeBranchInlineHeader)
 	}
 }
 
@@ -406,7 +406,7 @@ func BenchmarkBranchLayoutInlineRead(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	branch := BranchLayoutInline{data: buf.Bytes()}
+	branch := BranchLayoutInline{header: buf.Bytes()}
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -415,7 +415,7 @@ func BenchmarkBranchLayoutInlineRead(b *testing.B) {
 		_ = branch.RightOffset()
 		_ = branch.LeftID()
 		_ = branch.RightID()
-		_ = branch.KeyLen()
+		_ = branch.KeyLength()
 		_ = branch.Height()
 		_ = branch.Size()
 		_ = branch.Span()

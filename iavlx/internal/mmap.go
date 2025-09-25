@@ -16,7 +16,6 @@ type MmapFile struct {
 	writer       *bufio.Writer
 	handle       mmap.MMap
 	bytesWritten int
-	bytesFlushed int
 }
 
 func NewMmapFile(path string) (*MmapFile, error) {
@@ -98,7 +97,7 @@ func (m *MmapFile) Offset() int {
 	if m.handle == nil {
 		return 0
 	}
-	return len(m.handle)
+	return len(m.handle) + m.bytesWritten
 }
 
 func (m *MmapFile) Write(p []byte) (n int, err error) {
@@ -135,8 +134,6 @@ func (m *MmapFile) SaveAndRemap() error {
 		m.handle = handle
 	}
 
-	m.bytesFlushed = m.bytesWritten
-
 	return nil
 }
 
@@ -145,6 +142,8 @@ func (m *MmapFile) flush() error {
 	if err := m.writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush writer: %w", err)
 	}
+
+	m.bytesWritten = 0
 
 	// sync file to disk
 	if err := m.file.Sync(); err != nil {
