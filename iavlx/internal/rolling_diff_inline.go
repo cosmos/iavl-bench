@@ -35,6 +35,9 @@ func NewRollingDiffInline(dir string, startVersion uint64, logger *slog.Logger) 
 		logger:             logger,
 	}
 
+	// Initialize savedVersion to the starting version
+	rd.savedVersion.Store(startVersion)
+
 	return rd, nil
 }
 

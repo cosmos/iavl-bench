@@ -38,7 +38,9 @@ func LoadDB(path string, treeNames []string, opts *Options, logger *slog.Logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tree dir %s: %w", dir, err)
 		}
-		trees[i], err = NewCommitTree(dir, *opts, logger)
+		// Create a logger with tree name context
+		treeLogger := logger.With("tree", name)
+		trees[i], err = NewCommitTree(dir, *opts, treeLogger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load tree %s: %w", name, err)
 		}

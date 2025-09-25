@@ -44,6 +44,9 @@ func NewRollingDiff(wal *WAL, dir string, startVersion uint64) (*RollingDiff, er
 		leafVersionStartIdx: nodeStore.leafData.Count(),
 	}
 
+	// Initialize savedVersion to the starting version
+	rd.savedVersion.Store(startVersion)
+
 	return rd, nil
 }
 

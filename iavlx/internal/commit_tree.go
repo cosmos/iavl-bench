@@ -288,16 +288,16 @@ func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uin
 		return
 	}
 
+	// Evict nodes at or below the eviction depth
 	if depth >= evictionDepth {
-		// evict from memory
 		np.mem.Store(nil)
-		return
 	}
 
 	if memNode.IsLeaf() {
 		return
 	}
 
+	// Continue traversing to find nodes to evict
 	evictTraverse(memNode.left, depth+1, evictionDepth, evictVersion)
 	evictTraverse(memNode.right, depth+1, evictionDepth, evictVersion)
 }
