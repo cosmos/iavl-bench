@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sync/atomic"
 )
@@ -14,10 +15,11 @@ type RollingDiffInline struct {
 	stagedVersion      uint64
 	savedVersion       atomic.Uint64
 	versionStartOffset uint64 // Byte offset at start of current version
+	logger             *slog.Logger
 }
 
 // NewRollingDiffInline creates a new inline rolling diff
-func NewRollingDiffInline(dir string, startVersion uint64) (*RollingDiffInline, error) {
+func NewRollingDiffInline(dir string, startVersion uint64, logger *slog.Logger) (*RollingDiffInline, error) {
 	nodesFile := filepath.Join(dir, "nodes_inline.dat")
 	nodesData, err := NewMmapFile(nodesFile)
 	if err != nil {
@@ -30,6 +32,7 @@ func NewRollingDiffInline(dir string, startVersion uint64) (*RollingDiffInline, 
 		NodeStoreInline:    nodeStore,
 		stagedVersion:      startVersion + 1,
 		versionStartOffset: uint64(nodeStore.nodesFile.Offset()),
+		logger:             logger,
 	}
 
 	return rd, nil
@@ -40,6 +43,8 @@ func (rd *RollingDiffInline) writeRoot(version uint64, root *NodePointer, lastBr
 	if version != rd.stagedVersion {
 		return fmt.Errorf("version mismatch: expected %d, got %d", rd.stagedVersion, version)
 	}
+
+	rd.logger.Info("Rolling diff commit start", slog.Uint64("version", version))
 
 	if root != nil {
 		// Write the entire tree
@@ -56,9 +61,12 @@ func (rd *RollingDiffInline) writeRoot(version uint64, root *NodePointer, lastBr
 	}
 
 	// Update version tracking
+
 	rd.savedVersion.Store(rd.stagedVersion)
 	rd.stagedVersion++
 	rd.versionStartOffset = uint64(rd.nodesFile.Offset())
+
+	rd.logger.Info("Rolling diff commit finish", slog.Uint64("version", version))
 
 	return nil
 }

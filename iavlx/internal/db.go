@@ -18,27 +18,27 @@ type DB struct {
 	hashPool    pond.ResultPool[[]byte]
 }
 
-type DBOptions struct {
-	Path      string
-	TreeNames []string
-	ZeroCopy  bool
+type Options struct {
+	ZeroCopy   bool  `json:"zero_copy"`
+	Inline     bool  `json:"inline"`
+	EvictDepth uint8 `json:"evict_depth"` // 255 means no eviction
 }
 
-func LoadDB(opts DBOptions) (*DB, error) {
-	n := len(opts.TreeNames)
+func LoadDB(path string, treeNames []string, opts *Options, logger *slog.Logger) (*DB, error) {
+	n := len(treeNames)
 	trees := make([]*CommitTree, n)
 	treesByName := make(map[string]int, n)
-	for i, name := range opts.TreeNames {
+	for i, name := range treeNames {
 		if _, exists := treesByName[name]; exists {
 			return nil, fmt.Errorf("duplicate tree name: %s", name)
 		}
 		treesByName[name] = i
-		dir := filepath.Join(opts.Path, name)
+		dir := filepath.Join(path, name)
 		err := os.MkdirAll(dir, 0o755)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tree dir %s: %w", dir, err)
 		}
-		trees[i], err = NewCommitTree(dir, opts.ZeroCopy)
+		trees[i], err = NewCommitTree(dir, *opts, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load tree %s: %w", name, err)
 		}
@@ -46,7 +46,7 @@ func LoadDB(opts DBOptions) (*DB, error) {
 
 	db := &DB{
 		trees:       trees,
-		treeNames:   opts.TreeNames,
+		treeNames:   treeNames,
 		treesByName: treesByName,
 		hashPool:    pond.NewResultPool[[]byte](n),
 	}

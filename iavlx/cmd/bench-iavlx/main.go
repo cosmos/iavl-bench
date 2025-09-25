@@ -48,11 +48,9 @@ var _ bench.Tree = &dbWrapper{}
 
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
+		OptionsType: &internal.Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			db, err := internal.LoadDB(internal.DBOptions{
-				Path:      params.TreeDir,
-				TreeNames: params.StoreNames,
-			})
+			db, err := internal.LoadDB(params.TreeDir, params.StoreNames, params.TreeOptions.(*internal.Options), params.Logger)
 			if err != nil {
 				return nil, err
 			}

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -20,6 +21,7 @@ type CommitTree struct {
 	diffDone      <-chan error
 	evictorDone   chan<- struct{}
 	evictionDepth uint8
+	logger        *slog.Logger
 }
 
 type diffWriteBatch struct {
@@ -29,17 +31,9 @@ type diffWriteBatch struct {
 	leafNodesCreated   uint32
 }
 
-// NewCommitTree creates a CommitTree with the original RollingDiff
-func NewCommitTree(dir string, zeroCopy bool) (*CommitTree, error) {
-	return newCommitTree(dir, zeroCopy, false)
-}
-
-// NewCommitTreeInline creates a CommitTree with RollingDiffInline
-func NewCommitTreeInline(dir string, zeroCopy bool) (*CommitTree, error) {
-	return newCommitTree(dir, zeroCopy, true)
-}
-
-func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, error) {
+func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, error) {
+	useInline := opts.Inline
+	zeroCopy := opts.ZeroCopy
 	wal, err := OpenWAL(dir, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL: %w", err)
@@ -47,7 +41,7 @@ func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, erro
 
 	var rollingStore RollingStore
 	if useInline {
-		rollingStore, err = NewRollingDiffInline(dir, 0)
+		rollingStore, err = NewRollingDiffInline(dir, 0, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open rolling diff inline: %w", err)
 		}
@@ -107,7 +101,8 @@ func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, erro
 		diffWriteChan: diffWriteChan,
 		diffDone:      diffDone,
 		evictorDone:   evictorDone,
-		evictionDepth: 0,
+		evictionDepth: opts.EvictDepth,
+		logger:        logger,
 	}
 
 	go func() {
@@ -124,6 +119,7 @@ func newCommitTree(dir string, zeroCopy bool, useInline bool) (*CommitTree, erro
 				latest := tree.latest
 				if latest != nil {
 					// TODO check tree height
+					logger.Info("Starting eviction traversal", "evict_version", evictVersion, "evict_depth", evictDepth, "latest_version", tree.version)
 					evictTraverse(latest, 0, evictDepth, evictVersion)
 				}
 			} else {
