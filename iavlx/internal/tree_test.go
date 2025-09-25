@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestBasicTest(t *testing.T) {
 	dir, err := os.MkdirTemp("", "iavlx")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
-	commitTree, err := NewCommitTree(dir, false)
+	commitTree, err := NewCommitTree(dir, Options{}, slog.Default())
 	require.NoError(t, err)
 	tree := commitTree.Branch()
 	require.NoError(t, tree.Set([]byte{0}, []byte{1}))
@@ -97,7 +98,7 @@ func testIAVLXSims(t *rapid.T) {
 	tempDir, err := os.MkdirTemp("", "iavlx")
 	require.NoError(t, err, "failed to create temp directory")
 	defer os.RemoveAll(tempDir)
-	treeV2, err := NewCommitTreeInline(tempDir, false)
+	treeV2, err := NewCommitTree(tempDir, Options{}, slog.Default())
 	require.NoError(t, err, "failed to create iavlx tree")
 	simMachine := &SimMachine{
 		treeV1:       treeV1,
