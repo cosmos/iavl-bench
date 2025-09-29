@@ -9,7 +9,7 @@ import (
 
 type dbWrapper struct {
 	logger *slog.Logger
-	db     *internal.DB
+	db     *x2.DB
 }
 
 func (t *dbWrapper) Close() error {
@@ -48,9 +48,9 @@ var _ bench.Tree = &dbWrapper{}
 
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
-		OptionsType: &internal.Options{},
+		OptionsType: &x2.Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			db, err := internal.LoadDB(params.TreeDir, params.StoreNames, params.TreeOptions.(*internal.Options), params.Logger)
+			db, err := x2.LoadDB(params.TreeDir, params.StoreNames, params.TreeOptions.(*x2.Options), params.Logger)
 			if err != nil {
 				return nil, err
 			}

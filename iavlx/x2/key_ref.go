@@ -1,0 +1,98 @@
+package x2
+
+import "fmt"
+
+// bit 63 indicates whether this is a node ID (0) or WAL offset + len (1)
+type KeyRef uint64
+
+func (ref KeyRef) IsNodeID() bool {
+	return ref&(1<<63) == 0
+}
+
+func (ref KeyRef) IsWALRef() bool {
+	return ref&(1<<63) != 0
+}
+
+func (ref KeyRef) AsNodeID() NodeID {
+	return NodeID(ref)
+}
+
+func (ref KeyRef) AsWALRef() WALRef {
+	return WALRef(ref)
+}
+
+func (ref KeyRef) String() string {
+	if ref.IsNodeID() {
+		return fmt.Sprintf("KeyRef(NodeID(%s))", ref.AsNodeID())
+	} else {
+		return fmt.Sprintf("KeyRef(WALRef(%s))", ref.AsWALRef())
+	}
+}
+
+// bit 63 indicates whether this is a node ID (0) or WAL offset + len (1)
+// bits 62-40 (23 bits) are for length
+// bits 39-0 (40 bits) are for offset
+type WALRef uint64
+
+func NewWALRef(length uint32, offset uint64) WALRef {
+	if length >= 0x7FFFFF {
+		length = 0x7FFFFF // max length that can be stored
+	}
+	if offset >= 0x10000000000 {
+		panic("offset too large for WALRef")
+	}
+	return WALRef((1 << 63) | (uint64(length&0x7FFFFF) << 40) | (offset & 0xFFFFFFFFFF)) // 40 bits for offset
+}
+
+func (ref WALRef) Length() (len uint32, overflow bool) {
+	len = uint32((ref >> 40) & 0x7FFFFF)
+	if len == 0x7FFFFF {
+		overflow = true
+	}
+	return
+}
+
+func (ref WALRef) Offset() uint64 {
+	return uint64(ref & 0xFFFFFFFFFF) // 40 bits for offset
+}
+
+func (ref WALRef) String() string {
+	length, overflow := ref.Length()
+	return fmt.Sprintf("WALRef(offset=%d, length=%d, overflow=%v)", ref.Offset(), length, overflow)
+}
+
+type keyRefLink interface {
+	toKeyRef() KeyRef
+}
+
+func (ref KeyRef) toKeyRef() KeyRef {
+	return ref
+}
+
+func (ref WALRef) toKeyRef() KeyRef {
+	return KeyRef(ref)
+}
+
+func (id NodeID) toKeyRef() KeyRef {
+	return KeyRef(id)
+}
+
+func (node *MemNode) toKeyRef() KeyRef {
+	return node._keyRef.toKeyRef()
+}
+
+func (node BranchPersisted) toKeyRef() KeyRef {
+	return node.layout.KeyRef()
+}
+
+func (node LeafPersisted) toKeyRef() KeyRef {
+	return NewWALRef(node.layout.KeyLength(), node.layout.KeyOffset()).toKeyRef()
+}
+
+func (np *NodePointer) toKeyRef() KeyRef {
+	node, err := np.Resolve()
+	if err != nil {
+		panic(fmt.Sprintf("error resolving node pointer %s to get key ref: %v", np, err))
+	}
+	return node.toKeyRef()
+}
