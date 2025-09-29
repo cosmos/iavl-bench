@@ -11,6 +11,10 @@ type LeafPersisted struct {
 	layout  LeafLayout
 }
 
+func (node *LeafPersisted) ID() NodeID {
+	return node.layout.id
+}
+
 func (node *LeafPersisted) Height() uint8 {
 	//TODO implement me
 	panic("implement me")
@@ -24,8 +28,8 @@ func (node *LeafPersisted) Size() int64 {
 	return 1
 }
 
-func (node *LeafPersisted) Version() uint64 {
-	return node.layout.id.Version()
+func (node *LeafPersisted) Version() uint32 {
+	return uint32(node.layout.id.Version())
 }
 
 func (node *LeafPersisted) Key() ([]byte, error) {
@@ -54,29 +58,8 @@ func (node *LeafPersisted) SafeHash() []byte {
 	return node.layout.hash[:]
 }
 
-func (node *LeafPersisted) MutateBranch(ctx *MutationContext) (*MemNode, error) {
+func (node *LeafPersisted) MutateBranch(uint32) (*MemNode, error) {
 	return nil, fmt.Errorf("leaf nodes should not get mutated this way")
-}
-
-func (node *LeafPersisted) MarkOrphan(ctx *MutationContext) error {
-	if node.layout.orphanVersion != 0 {
-		return nil // already orphaned
-	}
-
-	// write the orphan version in memory
-	node.layout.orphanVersion = ctx.Version
-
-	// write the orphan version in the store
-	layoutPtr, err := node.store.ResolveLeaf(node.layout.id, node.selfIdx)
-	if err != nil {
-		return err
-	}
-	layoutPtr.orphanVersion = node.layout.orphanVersion
-
-	// add to the context
-	ctx.Orphans = append(ctx.Orphans, node.layout.id)
-
-	return nil
 }
 
 func (node *LeafPersisted) Get(key []byte) (value []byte, index int64, err error) {

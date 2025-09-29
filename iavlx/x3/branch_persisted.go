@@ -8,6 +8,10 @@ type BranchPersisted struct {
 	layout  BranchLayout
 }
 
+func (node *BranchPersisted) ID() NodeID {
+	return node.layout.id
+}
+
 func (node *BranchPersisted) Height() uint8 {
 	return node.layout.height
 }
@@ -20,8 +24,8 @@ func (node *BranchPersisted) Size() int64 {
 	return int64(node.layout.size)
 }
 
-func (node *BranchPersisted) Version() uint64 {
-	return node.layout.id.Version()
+func (node *BranchPersisted) Version() uint32 {
+	return uint32(node.layout.id.Version())
 }
 
 func (node *BranchPersisted) Key() ([]byte, error) {
@@ -67,12 +71,7 @@ func (node *BranchPersisted) SafeHash() []byte {
 	return node.layout.hash[:]
 }
 
-func (node *BranchPersisted) MutateBranch(ctx *MutationContext) (*MemNode, error) {
-	err := node.MarkOrphan(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (node *BranchPersisted) MutateBranch(version uint32) (*MemNode, error) {
 	key, err := node.Key()
 	if err != nil {
 		return nil, err
@@ -80,34 +79,12 @@ func (node *BranchPersisted) MutateBranch(ctx *MutationContext) (*MemNode, error
 	memNode := &MemNode{
 		height:  node.Height(),
 		size:    node.Size(),
-		version: ctx.Version,
+		version: version,
 		key:     key,
 		left:    node.Left(),
 		right:   node.Right(),
 	}
 	return memNode, err
-}
-
-func (node *BranchPersisted) MarkOrphan(ctx *MutationContext) error {
-	if node.layout.orphanVersion != 0 {
-		// already orphaned
-		return nil
-	}
-
-	// write the orphan version in memory
-	node.layout.orphanVersion = ctx.Version
-
-	// write the orphan version in the store
-	layoutPtr, err := node.store.ResolveBranch(node.layout.id, node.selfIdx)
-	if err != nil {
-		return err
-	}
-	layoutPtr.orphanVersion = node.layout.orphanVersion
-
-	// add to the context
-	ctx.Orphans = append(ctx.Orphans, node.layout.id)
-
-	return nil
 }
 
 func (node *BranchPersisted) Get(key []byte) (value []byte, index int64, err error) {

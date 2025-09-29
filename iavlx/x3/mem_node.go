@@ -18,6 +18,10 @@ type MemNode struct {
 	orphanVersion uint32 // version when this node was orphaned, 0 if not orphaned
 }
 
+func (node *MemNode) ID() NodeID {
+	return node.nodeId
+}
+
 func (node *MemNode) Height() uint8 {
 	return node.height
 }
@@ -26,8 +30,8 @@ func (node *MemNode) Size() int64 {
 	return node.size
 }
 
-func (node *MemNode) Version() uint64 {
-	return uint64(node.version)
+func (node *MemNode) Version() uint32 {
+	return node.version
 }
 
 func (node *MemNode) Key() ([]byte, error) {
@@ -55,23 +59,11 @@ func (node *MemNode) SafeHash() []byte {
 	return node.hash
 }
 
-func (node *MemNode) MutateBranch(context *MutationContext) (*MemNode, error) {
-	err := node.MarkOrphan(context)
-	if err != nil {
-		return nil, err
-	}
+func (node *MemNode) MutateBranch(version uint32) (*MemNode, error) {
 	n := *node
-	n.version = context.Version
+	n.version = version
 	n.hash = nil
 	return &n, nil
-}
-
-func (node *MemNode) MarkOrphan(context *MutationContext) error {
-	if node.nodeId != 0 && node.orphanVersion == 0 {
-		context.Orphans = append(context.Orphans, node.nodeId)
-		node.orphanVersion = context.Version
-	}
-	return nil
 }
 
 func (node *MemNode) Get(key []byte) (value []byte, index int64, err error) {

@@ -3,25 +3,19 @@ package x3
 import "fmt"
 
 type Node interface {
+	ID() NodeID
 	Height() uint8
 	IsLeaf() bool
 	Size() int64
-	Version() uint64
+	Version() uint32
 	Key() ([]byte, error)
 	Value() ([]byte, error)
 	Left() *NodePointer
 	Right() *NodePointer
 	Hash() []byte
 	SafeHash() []byte
-	// MutateBranch should always call MarkOrphan.
-	MutateBranch(*MutationContext) (*MemNode, error)
-	MarkOrphan(*MutationContext) error
+	MutateBranch(version uint32) (*MemNode, error)
 	Get(key []byte) (value []byte, index int64, err error)
 
 	fmt.Stringer
-}
-
-type MutationContext struct {
-	Version uint32
-	Orphans []NodeID
 }

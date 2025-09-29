@@ -23,11 +23,7 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx *MutationContext)
 		leafNodePtr := NewNodePointer(leafNode)
 		cmp := bytes.Compare(leafNode.key, nodeKey)
 		if cmp == 0 {
-			err = node.MarkOrphan(ctx)
-			if err != nil {
-				return nil, false, err
-			}
-
+			ctx.AddOrphan(nodePtr.id)
 			return leafNodePtr, true, nil
 		}
 		n := &MemNode{
@@ -62,7 +58,7 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx *MutationContext)
 			if err != nil {
 				return nil, false, err
 			}
-			newNode, err = node.MutateBranch(ctx)
+			newNode, err = ctx.MutateBranch(node)
 			if err != nil {
 				return nil, false, err
 			}
@@ -72,7 +68,7 @@ func setRecursive(nodePtr *NodePointer, leafNode *MemNode, ctx *MutationContext)
 			if err != nil {
 				return nil, false, err
 			}
-			newNode, err = node.MutateBranch(ctx)
+			newNode, err = ctx.MutateBranch(node)
 			if err != nil {
 				return nil, false, err
 			}
@@ -121,11 +117,7 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx *MutationContext) (va
 
 	if node.IsLeaf() {
 		if bytes.Equal(nodeKey, key) {
-			err = node.MarkOrphan(ctx)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-
+			ctx.AddOrphan(nodePtr.id)
 			value, err := node.Value()
 			return value, nil, nil, err
 		}
@@ -143,13 +135,14 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx *MutationContext) (va
 		}
 
 		if newLeft == nil {
+			ctx.AddOrphan(nodePtr.id)
 			return value, node.Right(), &newKeyWrapper{
 				key: nodeKey,
 				//keyRef: nodePtr,
 			}, nil
 		}
 
-		newNode, err := node.MutateBranch(ctx)
+		newNode, err := ctx.MutateBranch(node)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -176,10 +169,11 @@ func removeRecursive(nodePtr *NodePointer, key []byte, ctx *MutationContext) (va
 	}
 
 	if newRight == nil {
+		ctx.AddOrphan(nodePtr.id)
 		return value, node.Left(), nil, nil
 	}
 
-	newNode, err := node.MutateBranch(ctx)
+	newNode, err := ctx.MutateBranch(node)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -253,7 +247,7 @@ func (node *MemNode) reBalance(ctx *MutationContext) (*MemNode, error) {
 		}
 
 		// left right
-		newLeft, err := left.MutateBranch(ctx)
+		newLeft, err := ctx.MutateBranch(left)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +274,7 @@ func (node *MemNode) reBalance(ctx *MutationContext) (*MemNode, error) {
 		}
 
 		// right left
-		newRight, err := right.MutateBranch(ctx)
+		newRight, err := ctx.MutateBranch(right)
 		if err != nil {
 			return nil, err
 		}
@@ -314,7 +308,7 @@ func (node *MemNode) rotateRight(ctx *MutationContext) (*MemNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	newSelf, err := left.MutateBranch(ctx)
+	newSelf, err := ctx.MutateBranch(left)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +335,7 @@ func (node *MemNode) rotateLeft(ctx *MutationContext) (*MemNode, error) {
 		return nil, err
 	}
 
-	newSelf, err := right.MutateBranch(ctx)
+	newSelf, err := ctx.MutateBranch(right)
 	if err != nil {
 		return nil, err
 	}
