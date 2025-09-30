@@ -1,21 +1,17 @@
 package x3
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/edsrzf/mmap-go"
 )
 
 type MmapFile struct {
-	flushLock    sync.RWMutex
-	file         *os.File
-	writer       *bufio.Writer
-	handle       mmap.MMap
-	bytesWritten int
+	file   *os.File
+	handle mmap.MMap
 }
 
 func NewMmapFile(path string) (*MmapFile, error) {
@@ -24,22 +20,19 @@ func NewMmapFile(path string) (*MmapFile, error) {
 		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 
-	// check file size
+	// Check file size - cannot mmap empty files
 	fi, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
-
-	writer := bufio.NewWriter(file)
-
-	res := &MmapFile{
-		file:   file,
-		writer: writer,
+	if fi.Size() == 0 {
+		_ = file.Close()
+		return nil, fmt.Errorf("cannot mmap empty file: %s", path)
 	}
 
-	if fi.Size() == 0 {
-		return res, nil
+	res := &MmapFile{
+		file: file,
 	}
 
 	// maybe we can make read/write configurable? not sure if the OS optimizes read-only mapping
@@ -53,10 +46,7 @@ func NewMmapFile(path string) (*MmapFile, error) {
 	return res, nil
 }
 
-func (m *MmapFile) SliceVar(offset, maxSize int) (int, []byte, error) {
-	m.flushLock.RLock()
-	defer m.flushLock.RUnlock()
-
+func (m *MmapFile) UnsafeSliceVar(offset, maxSize int) (int, []byte, error) {
 	if offset >= len(m.handle) {
 		return 0, nil, fmt.Errorf("trying to read beyond mapped data: %d >= %d", offset, len(m.handle))
 	}
@@ -65,92 +55,25 @@ func (m *MmapFile) SliceVar(offset, maxSize int) (int, []byte, error) {
 	}
 	data := m.handle[offset : offset+maxSize]
 	// make a copy of the data to avoid data being changed after remap
-	copied := make([]byte, maxSize)
-	copy(copied, data)
-	return maxSize, copied, nil
+	return maxSize, data, nil
 }
 
-func (m *MmapFile) SliceExact(offset, size int) ([]byte, error) {
-	m.flushLock.RLock()
-	defer m.flushLock.RUnlock()
-
+func (m *MmapFile) UnsafeSliceExact(offset, size int) ([]byte, error) {
 	if offset+size > len(m.handle) {
 		return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
 	}
 	bz := m.handle[offset : offset+size]
-	copied := make([]byte, size)
-	copy(copied, bz)
-	return copied, nil
+	return bz, nil
 }
 
-func (m *MmapFile) Offset() int {
-	return m.bytesWritten
+func (m *MmapFile) Data() []byte {
+	return m.handle
 }
 
-func (m *MmapFile) Write(p []byte) (n int, err error) {
-	m.bytesWritten += len(p)
-	return m.writer.Write(p)
-}
-
-func (m *MmapFile) SaveAndRemap() error {
-	return m.SaveAndRemapWithCallback(nil)
-}
-
-func (m *MmapFile) SaveAndRemapWithCallback(callback func([]byte) error) error {
-	if err := m.flush(); err != nil {
-		return err
+func (m *MmapFile) Flush() error {
+	if err := m.handle.Flush(); err != nil {
+		return fmt.Errorf("failed to flush mmap: %w", err)
 	}
-
-	m.flushLock.Lock()
-	defer m.flushLock.Unlock()
-
-	// unmap existing mapping
-	if m.handle != nil {
-		if err := m.handle.Unmap(); err != nil {
-			return fmt.Errorf("failed to unmap existing mapping: %w", err)
-		}
-		m.handle = nil
-	}
-
-	// remap file
-	fi, err := m.file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat file: %w", err)
-	}
-	if fi.Size() > 0 {
-		handle, err := mmap.Map(m.file, mmap.RDONLY, 0)
-		if err != nil {
-			return fmt.Errorf("failed to remap file: %w", err)
-		}
-		m.handle = handle
-	}
-
-	m.bytesWritten = len(m.handle)
-
-	// Call callback while still holding the lock, allowing atomic updates
-	if callback != nil {
-		return callback(m.handle)
-	}
-
-	return nil
-}
-
-func (m *MmapFile) flush() error {
-	// flush writer buffer
-	if err := m.writer.Flush(); err != nil {
-		return fmt.Errorf("failed to flush writer: %w", err)
-	}
-
-	// flush the mmap if it exists
-	if m.handle != nil {
-		// TODO calling Unmap should also flush any changes, but just to be safe we do this before calling sync, maybe this isn't needed?
-		// TODO only do this when we have writes to the mmap?
-		if err := m.handle.Flush(); err != nil {
-			return fmt.Errorf("failed to flush mmap: %w", err)
-		}
-	}
-
-	// sync file to disk
 	if err := m.file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync file: %w", err)
 	}
@@ -158,21 +81,16 @@ func (m *MmapFile) flush() error {
 }
 
 func (m *MmapFile) Close() error {
-	err := m.flush()
-	if err != nil {
-		_ = m.file.Close()
-		return err
-	}
-
+	var unmapErr, closeErr error
 	if m.handle != nil {
-		if err := m.handle.Unmap(); err != nil {
-			_ = m.file.Close()
-			return err
-		}
+		unmapErr = m.handle.Unmap()
+		m.handle = nil
 	}
-
-	return m.file.Close()
+	if m.file != nil {
+		closeErr = m.file.Close()
+		m.file = nil
+	}
+	return errors.Join(unmapErr, closeErr)
 }
 
-var _ io.Writer = &MmapFile{}
 var _ io.Closer = &MmapFile{}

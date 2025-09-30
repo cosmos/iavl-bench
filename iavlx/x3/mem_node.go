@@ -6,16 +6,15 @@ import (
 )
 
 type MemNode struct {
-	height        uint8
-	size          int64
-	version       uint32
-	key           []byte
-	value         []byte
-	left          *NodePointer
-	right         *NodePointer
-	hash          []byte
-	nodeId        NodeID // ID of this node, 0 if not yet assigned
-	orphanVersion uint32 // version when this node was orphaned, 0 if not orphaned
+	height  uint8
+	size    int64
+	version uint32
+	key     []byte
+	value   []byte
+	left    *NodePointer
+	right   *NodePointer
+	hash    []byte
+	nodeId  NodeID // ID of this node, 0 if not yet assigned
 }
 
 func (node *MemNode) ID() NodeID {

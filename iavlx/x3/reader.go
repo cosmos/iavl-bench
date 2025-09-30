@@ -15,85 +15,50 @@ func init() {
 	}
 }
 
-type StructFile[T any] struct {
+type StructReader[T any] struct {
 	items []T
 	file  *MmapFile
 	size  int
-	align uintptr
 }
 
-func NewStructFile[T any](filename string) (*StructFile[T], error) {
+func NewStructReader[T any](filename string) (*StructReader[T], error) {
 	file, err := NewMmapFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
 	var zero T
-	df := &StructFile[T]{
-		file:  file,
-		size:  int(unsafe.Sizeof(zero)),
-		align: unsafe.Alignof(zero),
+	df := &StructReader[T]{
+		file: file,
+		size: int(unsafe.Sizeof(zero)),
 	}
 
-	err = df.updateData(df.file.handle)
-	if err != nil {
-		_ = df.file.Close()
-		return nil, err
-	}
-
-	return df, nil
-}
-
-func (df *StructFile[T]) SaveAndRemap() error {
-	return df.file.SaveAndRemapWithCallback(df.updateData)
-}
-
-func (df *StructFile[T]) updateData(buf []byte) error {
-	if len(buf) == 0 {
-		df.items = nil
-		return nil
-	}
-
-	// check alignment and size of the buffer
+	buf := file.Data()
 	p := unsafe.Pointer(unsafe.SliceData(buf))
-	if uintptr(p)%df.align != 0 {
-		return fmt.Errorf("input buffer is not aligned: %p", p)
+	align := unsafe.Alignof(zero)
+	if uintptr(p)%align != 0 {
+		return nil, fmt.Errorf("input buffer is not aligned: %p", p)
 	}
 
 	size := df.size
 	if len(buf)%size != 0 {
-		return fmt.Errorf("input buffer size is not a multiple of leaf size: %d %% %d != 0", len(buf), size)
+		return nil, fmt.Errorf("input buffer size is not a multiple of leaf size: %d %% %d != 0", len(buf), size)
 	}
 	data := unsafe.Slice((*T)(p), len(buf)/size)
 	df.items = data
-	return nil
+
+	return df, nil
 }
 
-func (df *StructFile[T]) Item(i uint32) T {
-	df.file.flushLock.RLock()
-	defer df.file.flushLock.RUnlock()
-
-	res := df.items[i]
-	return res
+func (df *StructReader[T]) UnsafeItem(i uint32) *T {
+	return &df.items[i]
 }
 
-func (df *StructFile[T]) OnDiskCount() uint32 {
-	df.file.flushLock.RLock()
-	defer df.file.flushLock.RUnlock()
-
-	return uint32(len(df.items))
+func (df *StructReader[T]) Count() int {
+	return len(df.items)
 }
 
-func (df *StructFile[T]) Append(layout *T) error {
-	_, err := df.file.Write(unsafe.Slice((*byte)(unsafe.Pointer(layout)), df.size))
-	return err
-}
-
-func (df *StructFile[T]) TotalCount() uint32 {
-	return uint32(df.file.Offset() / df.size)
-}
-
-func (df *StructFile[T]) Close() error {
+func (df *StructReader[T]) Close() error {
 	return df.file.Close()
 }
 
@@ -101,19 +66,19 @@ type NodeLayout interface {
 	ID() NodeID
 }
 
-type NodeFile[T NodeLayout] struct {
-	*StructFile[T]
+type NodeReader[T NodeLayout] struct {
+	*StructReader[T]
 }
 
-func NewNodeFile[T NodeLayout](filename string) (*NodeFile[T], error) {
-	sf, err := NewStructFile[T](filename)
+func NewNodeReader[T NodeLayout](filename string) (*NodeReader[T], error) {
+	sf, err := NewStructReader[T](filename)
 	if err != nil {
 		return nil, err
 	}
-	return &NodeFile[T]{StructFile: sf}, nil
+	return &NodeReader[T]{StructReader: sf}, nil
 }
 
-func (nf *NodeFile[T]) FindByID(id NodeID, info *NodeSetInfo) (*T, error) {
+func (nf *NodeReader[T]) FindByID(id NodeID, info *NodeSetInfo) (*T, error) {
 	// binary search with interpolation
 	lowOffset := info.StartOffset
 	targetIdx := id.Index()

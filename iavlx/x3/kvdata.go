@@ -11,31 +11,46 @@ type KVData interface {
 	ReadKV(offset uint32) (key, value []byte, err error)
 }
 
-type KVDataStore struct {
-	file *MmapFile
+type KVDataWriter struct {
+	*FileWriter
 }
 
-func NewKVDataStore(filename string) (*KVDataStore, error) {
+func NewKVDataWriter(filename string) (*KVDataWriter, error) {
+	file, err := NewFileWriter(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &KVDataWriter{
+		FileWriter: file,
+	}, nil
+
+}
+
+type KVDataReader struct {
+	*MmapFile
+}
+
+func NewKVDataReader(filename string) (*KVDataReader, error) {
 	file, err := NewMmapFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return &KVDataStore{
-		file: file,
+	return &KVDataReader{
+		MmapFile: file,
 	}, nil
 }
 
-func (kvs *KVDataStore) ReadK(offset uint32) (key []byte, err error) {
-	bz, err := kvs.file.SliceExact(int(offset), 4)
+func (kvs *KVDataReader) ReadK(offset uint32) (key []byte, err error) {
+	bz, err := kvs.UnsafeSliceExact(int(offset), 4)
 	if err != nil {
 		return nil, err
 	}
 	lenKey := binary.LittleEndian.Uint32(bz)
 
-	return kvs.file.SliceExact(int(offset)+4, int(lenKey))
+	return kvs.UnsafeSliceExact(int(offset)+4, int(lenKey))
 }
 
-func (kvs *KVDataStore) ReadKV(offset uint32) (key, value []byte, err error) {
+func (kvs *KVDataReader) ReadKV(offset uint32) (key, value []byte, err error) {
 	key, err = kvs.ReadK(offset)
 	if err != nil {
 		return nil, nil, err
@@ -48,26 +63,26 @@ func (kvs *KVDataStore) ReadKV(offset uint32) (key, value []byte, err error) {
 	return key, value, nil
 }
 
-var _ KVData = (*KVDataStore)(nil)
+var _ KVData = (*KVDataReader)(nil)
 
-func (kvs *KVDataStore) WriteK(key []byte) (offset uint32, err error) {
+func (kvs *KVDataWriter) WriteK(key []byte) (offset uint32, err error) {
 	lenKey := len(key)
 	if lenKey > math.MaxUint32 {
 		return 0, fmt.Errorf("key too large: %d bytes", lenKey)
 	}
 
-	offset = uint32(kvs.file.Offset())
+	offset = uint32(kvs.Size())
 
 	// write little endian uint32 length prefix
 	var lenBuf [4]byte
 	binary.LittleEndian.PutUint32(lenBuf[:], uint32(lenKey))
-	_, err = kvs.file.Write(lenBuf[:])
+	_, err = kvs.Write(lenBuf[:])
 	if err != nil {
 		return 0, err
 	}
 
 	// write key bytes
-	_, err = kvs.file.Write(key)
+	_, err = kvs.Write(key)
 	if err != nil {
 		return 0, err
 	}
@@ -75,15 +90,11 @@ func (kvs *KVDataStore) WriteK(key []byte) (offset uint32, err error) {
 	return offset, nil
 }
 
-func (kvs *KVDataStore) WriteKV(key, value []byte) (offset uint32, err error) {
+func (kvs *KVDataWriter) WriteKV(key, value []byte) (offset uint32, err error) {
 	offset, err = kvs.WriteK(key)
 	if err != nil {
 		return 0, err
 	}
 	_, err = kvs.WriteK(value)
 	return offset, err
-}
-
-func (kvs *KVDataStore) SaveAndRemap() error {
-	return kvs.file.SaveAndRemap()
 }

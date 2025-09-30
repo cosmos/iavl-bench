@@ -14,10 +14,10 @@ type Changeset struct {
 	endVersion    uint32
 	stagedVersion uint32
 
-	KVDataStore
-	branchesData *NodeFile[BranchLayout]
-	leavesData   *NodeFile[LeafLayout]
-	versionsData *StructFile[VersionInfo]
+	KVDataReader
+	branchesData *NodeReader[BranchLayout]
+	leavesData   *NodeReader[LeafLayout]
+	versionsData *StructReader[VersionInfo]
 }
 
 func (cs *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
@@ -42,22 +42,22 @@ func NewChangeset(dir string, startVersion uint32) (*Changeset, error) {
 		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
 	}
 
-	kvDataStore, err := NewKVDataStore(filepath.Join(dir, "kv.dat"))
+	kvDataStore, err := NewKVDataReader(filepath.Join(dir, "kv.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create KV data store: %w", err)
 	}
 
-	leavesData, err := NewNodeFile[LeafLayout](filepath.Join(dir, "leaves.dat"))
+	leavesData, err := NewNodeReader[LeafLayout](filepath.Join(dir, "leaves.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create leaves data file: %w", err)
 	}
 
-	branchesData, err := NewNodeFile[BranchLayout](filepath.Join(dir, "branches.dat"))
+	branchesData, err := NewNodeReader[BranchLayout](filepath.Join(dir, "branches.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create branches data file: %w", err)
 	}
 
-	versionsData, err := NewStructFile[VersionInfo](filepath.Join(dir, "versions.dat"))
+	versionsData, err := NewStructReader[VersionInfo](filepath.Join(dir, "versions.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create versions data file: %w", err)
 	}
@@ -66,7 +66,7 @@ func NewChangeset(dir string, startVersion uint32) (*Changeset, error) {
 		startVersion:  0,
 		endVersion:    0,
 		stagedVersion: startVersion,
-		KVDataStore:   *kvDataStore,
+		KVDataReader:  *kvDataStore,
 		branchesData:  branchesData,
 		leavesData:    leavesData,
 		versionsData:  versionsData,
@@ -162,7 +162,7 @@ func (cs *Changeset) SaveRoot(root *NodePointer, version uint32, totalLeaves, to
 		if err != nil {
 			return fmt.Errorf("failed to save branch data: %w", err)
 		}
-		err = cs.KVDataStore.SaveAndRemap()
+		err = cs.KVDataReader.SaveAndRemap()
 		if err != nil {
 			return fmt.Errorf("failed to save KV data: %w", err)
 		}
@@ -216,7 +216,7 @@ func (cs *Changeset) writeBranch(np *NodePointer, node *MemNode) error {
 	}
 
 	// TODO cache key offset in memory to avoid duplicate writes
-	keyOffset, err := cs.KVDataStore.WriteK(node.key)
+	keyOffset, err := cs.KVDataReader.WriteK(node.key)
 	if err != nil {
 		return fmt.Errorf("failed to write key data: %w", err)
 	}
@@ -249,7 +249,7 @@ func (cs *Changeset) writeBranch(np *NodePointer, node *MemNode) error {
 }
 
 func (cs *Changeset) writeLeaf(np *NodePointer, node *MemNode) error {
-	keyOffset, err := cs.KVDataStore.WriteKV(node.key, node.value)
+	keyOffset, err := cs.KVDataReader.WriteKV(node.key, node.value)
 	if err != nil {
 		return fmt.Errorf("failed to write key-value data: %w", err)
 	}
@@ -286,7 +286,7 @@ func (cs *Changeset) createNodeRef(parentIdx int64, np *NodePointer) NodeRef {
 	}
 }
 
-func (cs *Changeset) compactBranches(retainCriteria RetainCriteria, newBranches *StructFile[BranchLayout]) error {
+func (cs *Changeset) compactBranches(retainCriteria RetainCriteria, newBranches *StructReader[BranchLayout]) error {
 	if !cs.sealed {
 		return fmt.Errorf("changeset is not sealed")
 	}
@@ -311,7 +311,7 @@ func (cs *Changeset) compactBranches(retainCriteria RetainCriteria, newBranches 
 	return nil
 }
 
-func (cs *Changeset) compactLeaves(retainCriteria RetainCriteria, newBranches *StructFile[LeafLayout]) error {
+func (cs *Changeset) compactLeaves(retainCriteria RetainCriteria, newBranches *StructReader[LeafLayout]) error {
 	if !cs.sealed {
 		return fmt.Errorf("changeset is not sealed")
 	}
@@ -364,7 +364,7 @@ func (cs *Changeset) TotalBytes() uint64 {
 	return uint64(cs.leavesData.file.Offset() +
 		cs.branchesData.file.Offset() +
 		cs.versionsData.file.Offset() +
-		cs.KVDataStore.file.Offset())
+		cs.KVDataReader.file.Offset())
 }
 
 var _ NodeStore = (*Changeset)(nil)

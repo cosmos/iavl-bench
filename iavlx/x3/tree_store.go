@@ -83,10 +83,11 @@ func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32, totalLeaves, to
 
 	changesetSize := ts.currentChangeset.TotalBytes()
 	if changesetSize > ts.rolloverThresholdBytes {
-		err = ts.rolloverChangeset(version)
-		if err != nil {
-			return fmt.Errorf("failed to rollover changeset: %w", err)
-		}
+		// TODO
+		//err = ts.rolloverChangeset(version)
+		//if err != nil {
+		//	return fmt.Errorf("failed to rollover changeset: %w", err)
+		//}
 	}
 
 	ts.logger.Debug("saved root", "version", version, "changeset_size", changesetSize)
