@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"unsafe"
 )
 
 type ChangesetReader struct {
@@ -85,20 +86,27 @@ func (cr *ChangesetReader) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayou
 }
 
 func (cr *ChangesetReader) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
+	layout, _, err := cr.resolveBranchWithIdx(nodeId, fileIdx)
+	return layout, err
+}
+
+func (cr *ChangesetReader) resolveBranchWithIdx(nodeId NodeID, fileIdx uint32) (BranchLayout, uint32, error) {
 	if fileIdx == 0 {
 		version := uint32(nodeId.Version())
 		vi, err := cr.getVersionInfo(version)
 		if err != nil {
-			return BranchLayout{}, err
+			return BranchLayout{}, 0, err
 		}
 		branch, err := cr.branchesData.FindByID(nodeId, &vi.Branches)
 		if err != nil {
-			return BranchLayout{}, err
+			return BranchLayout{}, 0, err
 		}
-		return *branch, nil
+		// Compute the actual file index from the pointer
+		itemIdx := uint32((uintptr(unsafe.Pointer(branch)) - uintptr(unsafe.Pointer(&cr.branchesData.items[0]))) / uintptr(cr.branchesData.size))
+		return *branch, itemIdx + 1, nil // +1 to convert back to 1-based
 	} else {
-		fileIdx-- // convert to 0-based index
-		return *cr.branchesData.UnsafeItem(fileIdx), nil
+		itemIdx := fileIdx - 1                                    // convert to 0-based index
+		return *cr.branchesData.UnsafeItem(itemIdx), fileIdx, nil // return original fileIdx
 	}
 }
 
@@ -152,11 +160,11 @@ func (cr *ChangesetReader) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) 
 		}
 		return &LeafPersisted{layout: layout, store: cr}, nil
 	} else {
-		layout, err := cr.ResolveBranch(nodeId, fileIdx)
+		layout, actualIdx, err := cr.resolveBranchWithIdx(nodeId, fileIdx)
 		if err != nil {
 			return nil, err
 		}
-		return &BranchPersisted{layout: layout, store: cr, selfIdx: fileIdx}, nil
+		return &BranchPersisted{layout: layout, store: cr, selfIdx: actualIdx}, nil
 	}
 }
 
