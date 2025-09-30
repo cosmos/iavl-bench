@@ -6,13 +6,15 @@ type KVUpdate struct {
 }
 
 type KVUpdateBatch struct {
-	StagedVersion uint64
-	Updates       []KVUpdate
-	Orphans       []NodeID
+	Version uint32
+	Orphans [][]NodeID
+	Updates []KVUpdate
 }
 
-func NewKVUpdateBatch(stagedVersion uint64) *KVUpdateBatch {
-	return &KVUpdateBatch{StagedVersion: stagedVersion}
+func NewKVUpdateBatch(stagedVersion uint32) *KVUpdateBatch {
+	return &KVUpdateBatch{
+		Version: stagedVersion,
+	}
 }
 
 type MutationContext struct {

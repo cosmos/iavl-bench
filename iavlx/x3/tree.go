@@ -35,11 +35,12 @@ func (tree *Tree) Set(key, value []byte) error {
 	leafNode := &MemNode{
 		height:  0,
 		size:    1,
-		version: tree.updateBatch.StagedVersion,
+		version: tree.updateBatch.Version,
 		key:     key,
 		value:   value,
 	}
-	newRoot, _, err := setRecursive(tree.root, leafNode, MutationContext{Version: tree.updateBatch.StagedVersion})
+	ctx := &MutationContext{Version: tree.updateBatch.Version}
+	newRoot, _, err := setRecursive(tree.root, leafNode, ctx)
 	if err != nil {
 		return err
 	}
@@ -48,11 +49,13 @@ func (tree *Tree) Set(key, value []byte) error {
 	tree.updateBatch.Updates = append(tree.updateBatch.Updates, KVUpdate{
 		SetNode: leafNode,
 	})
+	tree.updateBatch.Orphans = append(tree.updateBatch.Orphans, ctx.Orphans)
 	return nil
 }
 
-func (tree *Tree) Remove(key []byte) error {
-	_, newRoot, _, err := removeRecursive(tree.root, key, MutationContext{Version: tree.updateBatch.StagedVersion})
+func (tree *Tree) Delete(key []byte) error {
+	ctx := &MutationContext{Version: tree.updateBatch.Version}
+	_, newRoot, _, err := removeRecursive(tree.root, key, ctx)
 	if err != nil {
 		return err
 	}
@@ -60,9 +63,25 @@ func (tree *Tree) Remove(key []byte) error {
 	tree.updateBatch.Updates = append(tree.updateBatch.Updates, KVUpdate{
 		DeleteKey: key,
 	})
+	tree.updateBatch.Orphans = append(tree.updateBatch.Orphans, ctx.Orphans)
 	return nil
 }
 
-func (tree *Tree) Iterator(start, end []byte, ascending bool) (corestore.Iterator, error) {
-	return NewIterator(start, end, ascending, tree.root, tree.zeroCopy), nil
+func (tree *Tree) Has(key []byte) (bool, error) {
+	// TODO optimize this
+	val, err := tree.Get(key)
+	if err != nil {
+		return false, err
+	}
+	return val != nil, nil
 }
+
+func (tree *Tree) Iterator(start, end []byte) (corestore.Iterator, error) {
+	return NewIterator(start, end, true, tree.root, tree.zeroCopy), nil
+}
+
+func (tree *Tree) ReverseIterator(start, end []byte) (corestore.Iterator, error) {
+	return NewIterator(start, end, false, tree.root, tree.zeroCopy), nil
+}
+
+var _ corestore.KVStore = &Tree{}

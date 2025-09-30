@@ -4,12 +4,12 @@ import (
 	"log/slog"
 
 	"github.com/cosmos/iavl-bench/bench"
-	"iavlx/internal"
+	"iavlx/x3"
 )
 
 type dbWrapper struct {
 	logger *slog.Logger
-	db     *x2.DB
+	db     *x3.CommitMultiTree
 }
 
 func (t *dbWrapper) Close() error {
@@ -25,7 +25,7 @@ func (t *dbWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool)
 	tree := branch.TreeByName(storeKey)
 	var err error
 	if delete {
-		err = tree.Remove(key)
+		err = tree.Delete(key)
 	} else {
 		err = tree.Set(key, value)
 	}
@@ -48,9 +48,9 @@ var _ bench.Tree = &dbWrapper{}
 
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
-		OptionsType: &x2.Options{},
+		OptionsType: &x3.Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
-			db, err := x2.LoadDB(params.TreeDir, params.StoreNames, params.TreeOptions.(*x2.Options), params.Logger)
+			db, err := x3.LoadDB(params.TreeDir, params.StoreNames, params.TreeOptions.(*x3.Options), params.Logger)
 			if err != nil {
 				return nil, err
 			}

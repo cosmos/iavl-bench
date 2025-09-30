@@ -2,14 +2,43 @@ package x3
 
 import (
 	"fmt"
+	"log/slog"
+	"path/filepath"
+	"sync/atomic"
 
 	"github.com/tidwall/btree"
 )
 
 type TreeStore struct {
-	currentChangeset  *Changeset
-	changesets        btree.Map[uint32, *Changeset]
-	rolloverThreshold uint64
+	logger                 *slog.Logger
+	currentChangeset       *Changeset
+	changesets             *btree.Map[uint32, *Changeset]
+	rolloverThresholdBytes uint64
+	savedVersion           atomic.Uint32
+}
+
+type TreeStoreOptions struct {
+	RolloverThresholdBytes uint64
+}
+
+func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*TreeStore, error) {
+	rolloverThresholdBytes := options.RolloverThresholdBytes
+	if rolloverThresholdBytes == 0 {
+		rolloverThresholdBytes = 1024 * 1024 * 1024 // 1 GiB default
+	}
+
+	ts := &TreeStore{
+		changesets:             &btree.Map[uint32, *Changeset]{},
+		rolloverThresholdBytes: rolloverThresholdBytes,
+		logger:                 logger,
+	}
+	cs, err := NewChangeset(filepath.Join(dir, "0"), 1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create initial changeset: %w", err)
+	}
+	ts.currentChangeset = cs
+	ts.changesets.Set(0, cs)
+	return ts, nil
 }
 
 func (ts *TreeStore) getChangesetForVersion(version uint32) *Changeset {
@@ -37,17 +66,26 @@ func (ts *TreeStore) ResolveBranch(nodeId NodeID) (*BranchLayout, error) {
 	return cs.ResolveBranch(nodeId, 0)
 }
 
+func (ts *TreeStore) SavedVersion() uint32 {
+	return ts.savedVersion.Load()
+}
+
 func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32) error {
+	ts.logger.Debug("saving root", "version", version)
 	err := ts.currentChangeset.SaveRoot(root, version)
 	if err != nil {
 		return err
 	}
 
+	ts.savedVersion.Store(version)
+
 	changesetSize := ts.currentChangeset.TotalBytes()
-	if changesetSize > ts.rolloverThreshold {
-		ts.currentChangeset.sealed = true
+	if changesetSize > ts.rolloverThresholdBytes {
 		// TODO finalize current changeset and create a new one
+		//ts.currentChangeset.sealed = true
 	}
+
+	ts.logger.Debug("saved root", "version", version, "changeset_size", changesetSize)
 	return nil
 }
 

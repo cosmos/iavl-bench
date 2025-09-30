@@ -74,16 +74,22 @@ func (df *StructFile[T]) updateData(buf []byte) error {
 }
 
 func (df *StructFile[T]) Item(i uint32) *T {
+	df.file.flushLock.RLock()
+	defer df.file.flushLock.RUnlock()
+
 	return &df.items[i]
+}
+
+func (df *StructFile[T]) OnDiskCount() uint32 {
+	df.file.flushLock.RLock()
+	defer df.file.flushLock.RUnlock()
+
+	return uint32(len(df.items))
 }
 
 func (df *StructFile[T]) Append(layout *T) error {
 	_, err := df.file.Write(unsafe.Slice((*byte)(unsafe.Pointer(layout)), df.size))
 	return err
-}
-
-func (df *StructFile[T]) OnDiskCount() uint32 {
-	return uint32(len(df.items))
 }
 
 func (df *StructFile[T]) TotalCount() uint32 {

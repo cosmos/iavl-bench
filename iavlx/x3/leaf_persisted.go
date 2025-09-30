@@ -16,8 +16,7 @@ func (node *LeafPersisted) ID() NodeID {
 }
 
 func (node *LeafPersisted) Height() uint8 {
-	//TODO implement me
-	panic("implement me")
+	return 0
 }
 
 func (node *LeafPersisted) IsLeaf() bool {

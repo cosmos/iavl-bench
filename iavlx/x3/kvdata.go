@@ -15,6 +15,16 @@ type KVDataStore struct {
 	file *MmapFile
 }
 
+func NewKVDataStore(filename string) (*KVDataStore, error) {
+	file, err := NewMmapFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &KVDataStore{
+		file: file,
+	}, nil
+}
+
 func (kvs *KVDataStore) ReadK(offset uint32) (key []byte, err error) {
 	bz, err := kvs.file.SliceExactNoCopy(int(offset), 4)
 	if err != nil {
@@ -72,4 +82,8 @@ func (kvs *KVDataStore) WriteKV(key, value []byte) (offset uint32, err error) {
 	}
 	_, err = kvs.WriteK(value)
 	return offset, err
+}
+
+func (kvs *KVDataStore) SaveAndRemap() error {
+	return kvs.file.SaveAndRemap()
 }

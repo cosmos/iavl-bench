@@ -23,8 +23,7 @@ func (p *NodePointer) Resolve() (Node, error) {
 	if mem != nil {
 		return mem, nil
 	}
-	panic("not implemented")
-
+	return p.store.Resolve(p.id, p.fileIdx)
 }
 
 func (p *NodePointer) String() string {

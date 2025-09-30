@@ -37,22 +37,7 @@ func (node *BranchPersisted) Value() ([]byte, error) {
 }
 
 func (node *BranchPersisted) resolveNodePointer(ref NodeRef) *NodePointer {
-	if ref.IsRelativePointer() {
-		id, err := node.store.ResolveNodeID(ref, node.selfIdx)
-		if err != nil {
-			panic(err)
-		}
-		return &NodePointer{
-			store:   node.store,
-			id:      id,
-			fileIdx: uint32(int64(node.selfIdx) + ref.AsRelativePointer().Offset()),
-		}
-	} else {
-		return &NodePointer{
-			store: node.store,
-			id:    ref.AsNodeID(),
-		}
-	}
+	return node.store.ResolveNodeRef(ref, node.selfIdx)
 }
 
 func (node *BranchPersisted) Left() *NodePointer {

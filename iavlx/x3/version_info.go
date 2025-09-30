@@ -11,7 +11,7 @@ func init() {
 	}
 }
 
-const VersionInfoSize = 40
+const VersionInfoSize = 36
 
 type VersionInfo struct {
 	Leaves    NodeSetInfo

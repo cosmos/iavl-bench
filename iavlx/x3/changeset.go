@@ -2,6 +2,8 @@ package x3
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 type Changeset struct {
@@ -18,25 +20,109 @@ type Changeset struct {
 	versionsData *StructFile[VersionInfo]
 }
 
+func (cs *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
+	if nodeId.IsLeaf() {
+		layout, err := cs.ResolveLeaf(nodeId, fileIdx)
+		if err != nil {
+			return nil, err
+		}
+		return &LeafPersisted{layout: *layout, store: cs}, nil
+	} else {
+		layout, err := cs.ResolveBranch(nodeId, fileIdx)
+		if err != nil {
+			return nil, err
+		}
+		return &BranchPersisted{layout: *layout, store: cs, selfIdx: fileIdx}, nil
+	}
+}
+
+func NewChangeset(dir string, startVersion uint32) (*Changeset, error) {
+	err := os.MkdirAll(dir, 0o755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
+	}
+
+	kvDataStore, err := NewKVDataStore(filepath.Join(dir, "kv.dat"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create KV data store: %w", err)
+	}
+
+	leavesData, err := NewNodeFile[LeafLayout](filepath.Join(dir, "leaves.dat"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create leaves data file: %w", err)
+	}
+
+	branchesData, err := NewNodeFile[BranchLayout](filepath.Join(dir, "branches.dat"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create branches data file: %w", err)
+	}
+
+	versionsData, err := NewStructFile[VersionInfo](filepath.Join(dir, "versions.dat"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create versions data file: %w", err)
+	}
+
+	cs := &Changeset{
+		startVersion:  0,
+		endVersion:    0,
+		stagedVersion: startVersion,
+		KVDataStore:   *kvDataStore,
+		branchesData:  branchesData,
+		leavesData:    leavesData,
+		versionsData:  versionsData,
+	}
+	return cs, nil
+}
+
 func (cs *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (*LeafLayout, error) {
 	if compacted := cs.compacted; compacted != nil {
 		return compacted.ResolveLeaf(nodeId, fileIdx)
 	}
-	//TODO implement me
-	panic("implement me")
+	if fileIdx == 0 {
+		return nil, fmt.Errorf("NodeID resolution not implemented for leaves")
+	} else {
+		fileIdx-- // convert to 0-based index
+		return cs.leavesData.Item(fileIdx), nil
+	}
 }
 
 func (cs *Changeset) ResolveBranch(nodeId NodeID, fileIdx uint32) (*BranchLayout, error) {
 	if compacted := cs.compacted; compacted != nil {
 		return compacted.ResolveBranch(nodeId, fileIdx)
 	}
-	//TODO implement me
-	panic("implement me")
+	if fileIdx == 0 {
+		return nil, fmt.Errorf("NodeID resolution not implemented for branches")
+	} else {
+		fileIdx-- // convert to 0-based index
+		return cs.branchesData.Item(fileIdx), nil
+	}
 }
 
-func (cs *Changeset) ResolveNodeID(nodeRef NodeRef, selfIdx uint32) (NodeID, error) {
-	//TODO implement me
-	panic("implement me")
+func (cs *Changeset) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
+	if nodeRef.IsNodeID() {
+		return &NodePointer{
+			id: nodeRef.AsNodeID(),
+			// TODO should we find the actual store for this version to speed up lookups, or make that lazy?
+			store: cs,
+		}
+	}
+	offset := nodeRef.AsRelativePointer().Offset()
+	if nodeRef.IsLeaf() {
+		layout := cs.leavesData.Item(uint32(offset - 1)) // convert to 0-based index
+		return &NodePointer{
+			id:      layout.id,
+			store:   cs,
+			fileIdx: uint32(offset),
+		}
+	} else {
+		idx := int64(selfIdx) + offset
+		layout := cs.branchesData.Item(uint32(idx - 1)) // convert to 0-based index
+		return &NodePointer{
+			id:      layout.id,
+			store:   cs,
+			fileIdx: uint32(idx),
+		}
+	}
 }
 
 func (cs *Changeset) SaveRoot(root *NodePointer, version uint32) error {
@@ -61,6 +147,10 @@ func (cs *Changeset) SaveRoot(root *NodePointer, version uint32) error {
 		if err != nil {
 			return fmt.Errorf("failed to save branch data: %w", err)
 		}
+		err = cs.KVDataStore.SaveAndRemap()
+		if err != nil {
+			return fmt.Errorf("failed to save KV data: %w", err)
+		}
 	}
 	// TODO save version to commit log
 	cs.stagedVersion++
@@ -83,7 +173,6 @@ func (cs *Changeset) writeNode(np *NodePointer) error {
 }
 
 func (cs *Changeset) writeBranch(np *NodePointer, node *MemNode) error {
-	nodeId := np.id
 	// recursively write children in post-order traversal
 	err := cs.writeNode(node.left)
 	if err != nil {
@@ -94,28 +183,33 @@ func (cs *Changeset) writeBranch(np *NodePointer, node *MemNode) error {
 		return err
 	}
 
+	// TODO cache key offset in memory to avoid duplicate writes
+	keyOffset, err := cs.KVDataStore.WriteK(node.key)
+	if err != nil {
+		return fmt.Errorf("failed to write key data: %w", err)
+	}
+
 	// now write parent
-	leftRef := cs.createNodeRef(node.left)
-	rightRef := cs.createNodeRef(node.right)
+	parentIdx := int64(cs.branchesData.TotalCount() + 1) // +1 to account for the node being written
+	leftRef := cs.createNodeRef(parentIdx, node.left)
+	rightRef := cs.createNodeRef(parentIdx, node.right)
 	layout := BranchLayout{
-		id:    nodeId,
-		left:  leftRef,
-		right: rightRef,
-		// TODO key
-		keyOffset:     0,
-		keyLoc:        0,
+		id:            np.id,
+		left:          leftRef,
+		right:         rightRef,
+		keyOffset:     keyOffset,
+		keyLoc:        0, // TODO
 		height:        node.height,
 		size:          uint32(node.size), // TODO check overflow
 		orphanVersion: 0,
-		// TODO hash
 	}
+	copy(layout.hash[:], node.hash) // TODO check length
 
 	err = cs.branchesData.Append(&layout) // TODO check error
 	if err != nil {
 		return fmt.Errorf("failed to write branch node: %w", err)
 	}
 
-	// convert to []byte unsafely
 	np.fileIdx = cs.branchesData.TotalCount()
 	np.store = cs
 
@@ -123,15 +217,19 @@ func (cs *Changeset) writeBranch(np *NodePointer, node *MemNode) error {
 }
 
 func (cs *Changeset) writeLeaf(np *NodePointer, node *MemNode) error {
-	// write key
+	keyOffset, err := cs.KVDataStore.WriteKV(node.key, node.value)
+	if err != nil {
+		return fmt.Errorf("failed to write key-value data: %w", err)
+	}
 
 	layout := LeafLayout{
 		id:            np.id,
-		keyOffset:     0, // TODO
+		keyOffset:     keyOffset,
 		orphanVersion: 0,
-		hash:          [32]byte{}, // TODO
 	}
-	err := cs.leavesData.Append(&layout) // TODO check error
+	copy(layout.hash[:], node.hash) // TODO check length
+
+	err = cs.leavesData.Append(&layout)
 	if err != nil {
 		return fmt.Errorf("failed to write leaf node: %w", err)
 	}
@@ -142,13 +240,13 @@ func (cs *Changeset) writeLeaf(np *NodePointer, node *MemNode) error {
 	return nil
 }
 
-func (cs *Changeset) createNodeRef(np *NodePointer) NodeRef {
+func (cs *Changeset) createNodeRef(parentIdx int64, np *NodePointer) NodeRef {
 	if np.store == cs {
 		if np.id.IsLeaf() {
-			return NodeRef(np.id)
+			return NodeRef(NewNodeRelativePointer(true, int64(np.fileIdx)))
 		} else {
 			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
-			relOffset := int64(np.fileIdx) - int64(cs.branchesData.TotalCount()+1)
+			relOffset := int64(np.fileIdx) - parentIdx
 			return NodeRef(NewNodeRelativePointer(false, relOffset))
 		}
 	} else {
@@ -236,3 +334,5 @@ func (cs *Changeset) TotalBytes() uint64 {
 		cs.versionsData.file.Offset() +
 		cs.KVDataStore.file.Offset())
 }
+
+var _ NodeStore = (*Changeset)(nil)
