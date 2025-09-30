@@ -54,8 +54,8 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 				commitDone <- err
 				return
 			}
-			// start eviction if needed
-			tree.startEvict(req.version)
+			//// start eviction if needed
+			//tree.startEvict(req.version)
 		}
 	}()
 
@@ -120,7 +120,8 @@ func (c *CommitTree) Commit() ([]byte, error) {
 
 	var hash []byte
 	commitCtx := &commitContext{
-		version: c.stagedVersion(),
+		version:      c.stagedVersion(),
+		savedVersion: c.store.SavedVersion(),
 	}
 	if c.root == nil {
 		hash = emptyHash
@@ -153,6 +154,7 @@ func (c *CommitTree) Close() error {
 
 type commitContext struct {
 	version       uint32
+	savedVersion  uint32
 	branchNodeIdx uint32
 	leafNodeIdx   uint32
 }
@@ -168,6 +170,10 @@ func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []by
 	}
 
 	if memNode.version != ctx.version {
+		if memNode.version <= ctx.savedVersion {
+			// node is already persisted, evict
+			np.mem.Store(nil)
+		}
 		return memNode.hash, nil
 	}
 

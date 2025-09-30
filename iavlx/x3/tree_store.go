@@ -50,18 +50,18 @@ func (ts *TreeStore) getChangesetForVersion(version uint32) *Changeset {
 	return res
 }
 
-func (ts *TreeStore) ResolveLeaf(nodeId NodeID) (*LeafLayout, error) {
+func (ts *TreeStore) ResolveLeaf(nodeId NodeID) (LeafLayout, error) {
 	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
 	if cs == nil {
-		return nil, fmt.Errorf("no changeset found for version %d", nodeId.Version())
+		return LeafLayout{}, fmt.Errorf("no changeset found for version %d", nodeId.Version())
 	}
 	return cs.ResolveLeaf(nodeId, 0)
 }
 
-func (ts *TreeStore) ResolveBranch(nodeId NodeID) (*BranchLayout, error) {
+func (ts *TreeStore) ResolveBranch(nodeId NodeID) (BranchLayout, error) {
 	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
 	if cs == nil {
-		return nil, fmt.Errorf("no changeset found for version %d", nodeId.Version())
+		return BranchLayout{}, fmt.Errorf("no changeset found for version %d", nodeId.Version())
 	}
 	return cs.ResolveBranch(nodeId, 0)
 }

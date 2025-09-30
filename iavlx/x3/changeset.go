@@ -26,13 +26,13 @@ func (cs *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &LeafPersisted{layout: *layout, store: cs}, nil
+		return &LeafPersisted{layout: layout, store: cs}, nil
 	} else {
 		layout, err := cs.ResolveBranch(nodeId, fileIdx)
 		if err != nil {
 			return nil, err
 		}
-		return &BranchPersisted{layout: *layout, store: cs, selfIdx: fileIdx}, nil
+		return &BranchPersisted{layout: layout, store: cs, selfIdx: fileIdx}, nil
 	}
 }
 
@@ -74,24 +74,24 @@ func NewChangeset(dir string, startVersion uint32) (*Changeset, error) {
 	return cs, nil
 }
 
-func (cs *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (*LeafLayout, error) {
+func (cs *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
 	if compacted := cs.compacted; compacted != nil {
 		return compacted.ResolveLeaf(nodeId, fileIdx)
 	}
 	if fileIdx == 0 {
-		return nil, fmt.Errorf("NodeID resolution not implemented for leaves")
+		return LeafLayout{}, fmt.Errorf("NodeID resolution not implemented for leaves")
 	} else {
 		fileIdx-- // convert to 0-based index
 		return cs.leavesData.Item(fileIdx), nil
 	}
 }
 
-func (cs *Changeset) ResolveBranch(nodeId NodeID, fileIdx uint32) (*BranchLayout, error) {
+func (cs *Changeset) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
 	if compacted := cs.compacted; compacted != nil {
 		return compacted.ResolveBranch(nodeId, fileIdx)
 	}
 	if fileIdx == 0 {
-		return nil, fmt.Errorf("NodeID resolution not implemented for branches")
+		return BranchLayout{}, fmt.Errorf("NodeID resolution not implemented for branches")
 	} else {
 		fileIdx-- // convert to 0-based index
 		return cs.branchesData.Item(fileIdx), nil
@@ -266,7 +266,7 @@ func (cs *Changeset) compactBranches(retainCriteria RetainCriteria, newBranches 
 		if retainCriteria(uint32(branch.id.Version()), branch.orphanVersion) {
 			// TODO update relative pointers
 			// TODO save key data to KV store if needed
-			err := newBranches.Append(branch)
+			err := newBranches.Append(&branch)
 			if err != nil {
 				return fmt.Errorf("failed to compact branch node %s: %w", branch.id, err)
 			}
@@ -289,7 +289,7 @@ func (cs *Changeset) compactLeaves(retainCriteria RetainCriteria, newBranches *S
 		leaf := cs.leavesData.Item(i)
 		if retainCriteria(uint32(leaf.id.Version()), leaf.orphanVersion) {
 			// TODO save key data to KV store if needed
-			err := newBranches.Append(leaf)
+			err := newBranches.Append(&leaf)
 			if err != nil {
 				return fmt.Errorf("failed to compact leaf node %s: %w", leaf.id, err)
 			}

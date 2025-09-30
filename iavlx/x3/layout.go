@@ -73,11 +73,11 @@ func (df *StructFile[T]) updateData(buf []byte) error {
 	return nil
 }
 
-func (df *StructFile[T]) Item(i uint32) *T {
+func (df *StructFile[T]) Item(i uint32) T {
 	df.file.flushLock.RLock()
 	defer df.file.flushLock.RUnlock()
 
-	return &df.items[i]
+	return df.items[i]
 }
 
 func (df *StructFile[T]) OnDiskCount() uint32 {
