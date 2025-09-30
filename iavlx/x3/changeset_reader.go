@@ -4,18 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"unsafe"
 )
 
 type ChangesetReader struct {
-	info ChangesetInfo
-
-	treeStore *TreeStore
 	dir       string
-	*KVDataReader
-	branchesData *NodeReader[BranchLayout]
-	leavesData   *NodeReader[LeafLayout]
-	versionsData *StructReader[VersionInfo]
+	info      ChangesetInfo
+	treeStore *TreeStore
+
+	*KVDataReader // TODO make sure we handle compaction here too
+	branchesData  *NodeReader[BranchLayout]
+	leavesData    *NodeReader[LeafLayout]
+	versionsData  *StructReader[VersionInfo]
+
+	compacted *ChangesetReader
+	refCount  atomic.Int32
+	disposed  atomic.Bool
 }
 
 func NewChangesetReader(dir string, treeStore *TreeStore) *ChangesetReader {
@@ -68,6 +73,13 @@ func (cr *ChangesetReader) getVersionInfo(version uint32) (*VersionInfo, error) 
 }
 
 func (cr *ChangesetReader) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
+	if compacted := cr.compacted; compacted != nil {
+		cr.tryDispose()
+		return compacted.ResolveLeaf(nodeId, fileIdx)
+	}
+	cr.Pin()
+	defer cr.Unpin()
+
 	if fileIdx == 0 {
 		version := uint32(nodeId.Version())
 		vi, err := cr.getVersionInfo(version)
@@ -86,11 +98,19 @@ func (cr *ChangesetReader) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayou
 }
 
 func (cr *ChangesetReader) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
+	if compacted := cr.compacted; compacted != nil {
+		cr.tryDispose()
+		return compacted.ResolveBranch(nodeId, fileIdx)
+	}
+
 	layout, _, err := cr.resolveBranchWithIdx(nodeId, fileIdx)
 	return layout, err
 }
 
 func (cr *ChangesetReader) resolveBranchWithIdx(nodeId NodeID, fileIdx uint32) (BranchLayout, uint32, error) {
+	cr.Pin()
+	defer cr.Unpin()
+
 	if fileIdx == 0 {
 		version := uint32(nodeId.Version())
 		vi, err := cr.getVersionInfo(version)
@@ -111,6 +131,13 @@ func (cr *ChangesetReader) resolveBranchWithIdx(nodeId NodeID, fileIdx uint32) (
 }
 
 func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
+	if compacted := cr.compacted; compacted != nil {
+		cr.tryDispose()
+		return compacted.ResolveNodeRef(nodeRef, selfIdx)
+	}
+	cr.Pin()
+	defer cr.Unpin()
+
 	if nodeRef.IsNodeID() {
 		id := nodeRef.AsNodeID()
 		return &NodePointer{
@@ -153,6 +180,11 @@ func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *Node
 }
 
 func (cr *ChangesetReader) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
+	if compacted := cr.compacted; compacted != nil {
+		cr.tryDispose()
+		return compacted.Resolve(nodeId, fileIdx)
+	}
+
 	if nodeId.IsLeaf() {
 		layout, err := cr.ResolveLeaf(nodeId, fileIdx)
 		if err != nil {
@@ -175,6 +207,25 @@ func (cr *ChangesetReader) Close() error {
 		cr.branchesData.Close(),
 		cr.versionsData.Close(),
 	)
+}
+
+func (cr *ChangesetReader) Pin() {
+	cr.refCount.Add(1)
+}
+
+func (cr *ChangesetReader) Unpin() {
+	cr.refCount.Add(-1)
+}
+
+func (cr *ChangesetReader) tryDispose() {
+	if cr.disposed.Load() {
+		return
+	}
+	if cr.refCount.Load() <= 0 {
+		if cr.disposed.CompareAndSwap(false, true) {
+			// TODO delete all files and close everything
+		}
+	}
 }
 
 var _ NodeStore = (*ChangesetReader)(nil)
