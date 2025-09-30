@@ -163,20 +163,6 @@ func (cs *ChangesetWriter) writeBranch(np *NodePointer, node *MemNode) error {
 	leftRef := cs.createNodeRef(parentIdx, node.left)
 	rightRef := cs.createNodeRef(parentIdx, node.right)
 
-	// Validate NodeRefs before storing
-	if leftRef.IsRelativePointer() && leftRef.IsLeaf() {
-		testOffset := leftRef.AsRelativePointer().Offset()
-		if testOffset < 1 || testOffset > 100000 {
-			panic(fmt.Sprintf("BUG: created leftRef with bad offset %d, raw=0x%016X", testOffset, uint64(leftRef)))
-		}
-	}
-	if rightRef.IsRelativePointer() && rightRef.IsLeaf() {
-		testOffset := rightRef.AsRelativePointer().Offset()
-		if testOffset < 1 || testOffset > 100000 {
-			panic(fmt.Sprintf("BUG: created rightRef with bad offset %d, raw=0x%016X", testOffset, uint64(rightRef)))
-		}
-	}
-
 	layout := BranchLayout{
 		Id:            np.id,
 		Left:          leftRef,
@@ -227,19 +213,10 @@ func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
 func (cs *ChangesetWriter) createNodeRef(parentIdx int64, np *NodePointer) NodeRef {
 	if np.store == cs.reader {
 		if np.id.IsLeaf() {
-			offset := int64(np.fileIdx)
-			if offset < 1 || offset > 1000000 {
-				panic(fmt.Sprintf("BUG: creating leaf NodeRef with suspicious offset %d (fileIdx=%d, leavesCount=%d)",
-					offset, np.fileIdx, cs.leavesData.Count()))
-			}
-			return NodeRef(NewNodeRelativePointer(true, offset))
+			return NodeRef(NewNodeRelativePointer(true, int64(np.fileIdx)))
 		} else {
 			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
 			relOffset := int64(np.fileIdx) - parentIdx
-			if relOffset < -1000000 || relOffset > 1000000 {
-				panic(fmt.Sprintf("BUG: creating branch NodeRef with suspicious relOffset %d (fileIdx=%d, parentIdx=%d, branchesCount=%d)",
-					relOffset, np.fileIdx, parentIdx, cs.branchesData.Count()))
-			}
 			return NodeRef(NewNodeRelativePointer(false, relOffset))
 		}
 	} else {

@@ -114,21 +114,13 @@ func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *Node
 	offset := relPtr.Offset()
 	if nodeRef.IsLeaf() {
 		if offset < 1 {
-			panic(fmt.Sprintf("invalid leaf offset: %d (must be >= 1), nodeRef=0x%016X, relPtr=0x%016X", offset, uint64(nodeRef), uint64(relPtr)))
+			panic(fmt.Sprintf("invalid leaf offset: %d", offset))
 		}
 		itemIdx := uint32(offset - 1)
 		if itemIdx >= uint32(cr.leavesData.Count()) {
-			panic(fmt.Sprintf("leaf offset %d (index %d) out of bounds (have %d leaves)\nnodeRef=0x%016X, relPtr=0x%016X, isLeaf=%v",
-				offset, itemIdx, cr.leavesData.Count(), uint64(nodeRef), uint64(relPtr), nodeRef.IsLeaf()))
+			panic(fmt.Sprintf("leaf offset %d out of bounds (have %d leaves)", offset, cr.leavesData.Count()))
 		}
 		layout := cr.leavesData.UnsafeItem(itemIdx)
-
-		// Debug: log which changeset we're reading from
-		if offset != int64(layout.Id.Index()) {
-			panic(fmt.Sprintf("DEBUG: offset mismatch! nodeRef offset=%d but layout.Id.Index()=%d, layout.Id=%s, changeset dir=%s",
-				offset, layout.Id.Index(), layout.Id, cr.dir))
-		}
-
 		return &NodePointer{
 			id:      layout.Id,
 			store:   cr,
@@ -141,7 +133,7 @@ func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *Node
 		}
 		itemIdx := uint32(idx - 1)
 		if itemIdx >= uint32(cr.branchesData.Count()) {
-			panic(fmt.Sprintf("branch index %d (itemIdx %d) out of bounds (have %d branches)", idx, itemIdx, cr.branchesData.Count()))
+			panic(fmt.Sprintf("branch index %d out of bounds (have %d branches)", idx, cr.branchesData.Count()))
 		}
 		layout := cr.branchesData.UnsafeItem(itemIdx)
 		return &NodePointer{
