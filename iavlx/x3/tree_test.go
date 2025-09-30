@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"testing"
 
 	corestore "cosmossdk.io/core/store"
@@ -90,6 +91,11 @@ func FuzzIAVLX(f *testing.F) {
 }
 
 func testIAVLXSims(t *rapid.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panic recovered: %v\nStack trace:\n%s", r, debug.Stack())
+		}
+	}()
 	//logger := sdklog.NewTestLogger(t)
 	logger := sdklog.NewNopLogger()
 	dbV1 := dbm.NewMemDB()

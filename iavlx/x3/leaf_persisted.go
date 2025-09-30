@@ -12,7 +12,7 @@ type LeafPersisted struct {
 }
 
 func (node *LeafPersisted) ID() NodeID {
-	return node.layout.id
+	return node.layout.Id
 }
 
 func (node *LeafPersisted) Height() uint8 {
@@ -28,15 +28,15 @@ func (node *LeafPersisted) Size() int64 {
 }
 
 func (node *LeafPersisted) Version() uint32 {
-	return uint32(node.layout.id.Version())
+	return uint32(node.layout.Id.Version())
 }
 
 func (node *LeafPersisted) Key() ([]byte, error) {
-	return node.store.ReadK(node.layout.keyOffset)
+	return node.store.ReadK(node.layout.KeyOffset)
 }
 
 func (node *LeafPersisted) Value() ([]byte, error) {
-	_, v, err := node.store.ReadKV(node.layout.keyOffset)
+	_, v, err := node.store.ReadKV(node.layout.KeyOffset)
 	return v, err
 }
 
@@ -49,12 +49,12 @@ func (node *LeafPersisted) Right() *NodePointer {
 }
 
 func (node *LeafPersisted) Hash() []byte {
-	return node.layout.hash[:]
+	return node.layout.Hash[:]
 }
 
 func (node *LeafPersisted) SafeHash() []byte {
 	// TODO how do we make this safe?
-	return node.layout.hash[:]
+	return node.layout.Hash[:]
 }
 
 func (node *LeafPersisted) MutateBranch(uint32) (*MemNode, error) {

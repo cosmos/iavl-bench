@@ -20,19 +20,20 @@ func NewMmapFile(path string) (*MmapFile, error) {
 		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 
-	// Check file size - cannot mmap empty files
+	// Check file size
 	fi, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
-	if fi.Size() == 0 {
-		_ = file.Close()
-		return nil, fmt.Errorf("cannot mmap empty file: %s", path)
-	}
 
 	res := &MmapFile{
 		file: file,
+	}
+
+	// Empty files are valid - just don't mmap them
+	if fi.Size() == 0 {
+		return res, nil
 	}
 
 	// maybe we can make read/write configurable? not sure if the OS optimizes read-only mapping
@@ -71,8 +72,10 @@ func (m *MmapFile) Data() []byte {
 }
 
 func (m *MmapFile) Flush() error {
-	if err := m.handle.Flush(); err != nil {
-		return fmt.Errorf("failed to flush mmap: %w", err)
+	if m.handle != nil {
+		if err := m.handle.Flush(); err != nil {
+			return fmt.Errorf("failed to flush mmap: %w", err)
+		}
 	}
 	if err := m.file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync file: %w", err)

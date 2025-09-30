@@ -9,11 +9,11 @@ type BranchPersisted struct {
 }
 
 func (node *BranchPersisted) ID() NodeID {
-	return node.layout.id
+	return node.layout.Id
 }
 
 func (node *BranchPersisted) Height() uint8 {
-	return node.layout.height
+	return node.layout.Height
 }
 
 func (node *BranchPersisted) IsLeaf() bool {
@@ -21,15 +21,15 @@ func (node *BranchPersisted) IsLeaf() bool {
 }
 
 func (node *BranchPersisted) Size() int64 {
-	return int64(node.layout.size)
+	return int64(node.layout.Size)
 }
 
 func (node *BranchPersisted) Version() uint32 {
-	return uint32(node.layout.id.Version())
+	return uint32(node.layout.Id.Version())
 }
 
 func (node *BranchPersisted) Key() ([]byte, error) {
-	return node.store.ReadK(node.layout.keyOffset)
+	return node.store.ReadK(node.layout.KeyOffset)
 }
 
 func (node *BranchPersisted) Value() ([]byte, error) {
@@ -41,19 +41,19 @@ func (node *BranchPersisted) resolveNodePointer(ref NodeRef) *NodePointer {
 }
 
 func (node *BranchPersisted) Left() *NodePointer {
-	return node.resolveNodePointer(node.layout.left)
+	return node.resolveNodePointer(node.layout.Left)
 }
 
 func (node *BranchPersisted) Right() *NodePointer {
-	return node.resolveNodePointer(node.layout.right)
+	return node.resolveNodePointer(node.layout.Right)
 }
 
 func (node *BranchPersisted) Hash() []byte {
-	return node.layout.hash[:]
+	return node.layout.Hash[:]
 }
 
 func (node *BranchPersisted) SafeHash() []byte {
-	return node.layout.hash[:]
+	return node.layout.Hash[:]
 }
 
 func (node *BranchPersisted) MutateBranch(version uint32) (*MemNode, error) {

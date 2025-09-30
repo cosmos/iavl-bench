@@ -82,32 +82,39 @@ func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32, totalLeaves, to
 
 	ts.savedVersion.Store(version)
 
-	return nil
-}
-
-func (ts *TreeStore) MarkOrphans(version uint32, nodeIds []NodeID) error {
-	// TODO add locking
-	for _, nodeId := range nodeIds {
-		if nodeId.IsLeaf() {
-			leaf, err := ts.ResolveLeaf(nodeId)
-			if err != nil {
-				return err
-			}
-			if leaf.orphanVersion == 0 {
-				leaf.orphanVersion = version
-			}
-		} else {
-			branch, err := ts.ResolveBranch(nodeId)
-			if err != nil {
-				return err
-			}
-			if branch.orphanVersion == 0 {
-				branch.orphanVersion = version
-			}
-		}
+	nextVersion := version + 1
+	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), nextVersion, ts)
+	if err != nil {
+		return fmt.Errorf("failed to create writer for version %d: %w", nextVersion, err)
 	}
-
-	// TODO flush changes to disk
+	ts.currentWriter = writer
 
 	return nil
 }
+
+//func (ts *TreeStore) MarkOrphans(version uint32, nodeIds []NodeID) error {
+//	// TODO add locking
+//	for _, nodeId := range nodeIds {
+//		if nodeId.IsLeaf() {
+//			leaf, err := ts.ResolveLeaf(nodeId)
+//			if err != nil {
+//				return err
+//			}
+//			if leaf.orphanVersion == 0 {
+//				leaf.orphanVersion = version
+//			}
+//		} else {
+//			branch, err := ts.ResolveBranch(nodeId)
+//			if err != nil {
+//				return err
+//			}
+//			if branch.orphanVersion == 0 {
+//				branch.orphanVersion = version
+//			}
+//		}
+//	}
+//
+//	// TODO flush changes to disk
+//
+//	return nil
+//}

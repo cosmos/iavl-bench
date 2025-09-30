@@ -16,12 +16,12 @@ const (
 )
 
 type LeafLayout struct {
-	id            NodeID
-	keyOffset     uint32
-	orphanVersion uint32 // TODO 5 bytes?
-	hash          [32]byte
+	Id            NodeID
+	KeyOffset     uint32
+	OrphanVersion uint32 // TODO 5 bytes?
+	Hash          [32]byte
 }
 
 func (l LeafLayout) ID() NodeID {
-	return l.id
+	return l.Id
 }

@@ -51,7 +51,7 @@ func (ref NodeRef) IsRelativePointer() bool {
 }
 
 func (ref NodeRef) IsNodeID() bool {
-	return ref&(1<<63) == 1
+	return ref&(1<<63) == 0
 }
 
 func (ref NodeRef) IsLeaf() bool {

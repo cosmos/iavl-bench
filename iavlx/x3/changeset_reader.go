@@ -30,6 +30,10 @@ func (cr *ChangesetReader) Open() error {
 		return fmt.Errorf("failed to open changeset info: %w", err)
 	}
 	defer infoReader.Close()
+
+	if infoReader.Count() == 0 {
+		return fmt.Errorf("changeset info file is empty")
+	}
 	cr.info = *infoReader.UnsafeItem(0)
 
 	cr.KVDataReader, err = NewKVDataReader(filepath.Join(cr.dir, "kv.dat"))
@@ -55,9 +59,25 @@ func (cr *ChangesetReader) Open() error {
 	return nil
 }
 
+func (cr *ChangesetReader) getVersionInfo(version uint32) (*VersionInfo, error) {
+	if version < cr.info.StartVersion || version >= cr.info.StartVersion+uint32(cr.versionsData.Count()) {
+		return nil, fmt.Errorf("version %d out of range for changeset (have %d..%d)", version, cr.info.StartVersion, cr.info.StartVersion+uint32(cr.versionsData.Count())-1)
+	}
+	return cr.versionsData.UnsafeItem(version - cr.info.StartVersion), nil
+}
+
 func (cr *ChangesetReader) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
 	if fileIdx == 0 {
-		return LeafLayout{}, fmt.Errorf("NodeID resolution not implemented for leaves")
+		version := uint32(nodeId.Version())
+		vi, err := cr.getVersionInfo(version)
+		if err != nil {
+			return LeafLayout{}, err
+		}
+		leaf, err := cr.leavesData.FindByID(nodeId, &vi.Leaves)
+		if err != nil {
+			return LeafLayout{}, err
+		}
+		return *leaf, nil
 	} else {
 		fileIdx-- // convert to 0-based index
 		return *cr.leavesData.UnsafeItem(fileIdx), nil
@@ -66,7 +86,16 @@ func (cr *ChangesetReader) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayou
 
 func (cr *ChangesetReader) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
 	if fileIdx == 0 {
-		return BranchLayout{}, fmt.Errorf("NodeID resolution not implemented for branches")
+		version := uint32(nodeId.Version())
+		vi, err := cr.getVersionInfo(version)
+		if err != nil {
+			return BranchLayout{}, err
+		}
+		branch, err := cr.branchesData.FindByID(nodeId, &vi.Branches)
+		if err != nil {
+			return BranchLayout{}, err
+		}
+		return *branch, nil
 	} else {
 		fileIdx-- // convert to 0-based index
 		return *cr.branchesData.UnsafeItem(fileIdx), nil
@@ -75,33 +104,48 @@ func (cr *ChangesetReader) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchL
 
 func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
 	if nodeRef.IsNodeID() {
-		// Cross-changeset reference - use TreeStore to route to correct changeset
+		id := nodeRef.AsNodeID()
 		return &NodePointer{
-			id:    nodeRef.AsNodeID(),
-			store: cr.treeStore,
+			id:    id,
+			store: cr.treeStore.getChangesetForVersion(uint32(id.Version())),
 		}
 	}
-	offset := nodeRef.AsRelativePointer().Offset()
+	relPtr := nodeRef.AsRelativePointer()
+	offset := relPtr.Offset()
 	if nodeRef.IsLeaf() {
 		if offset < 1 {
-			// TODO: return error instead?
-			return nil
+			panic(fmt.Sprintf("invalid leaf offset: %d (must be >= 1), nodeRef=0x%016X, relPtr=0x%016X", offset, uint64(nodeRef), uint64(relPtr)))
 		}
-		layout := cr.leavesData.UnsafeItem(uint32(offset - 1)) // convert to 0-based index
+		itemIdx := uint32(offset - 1)
+		if itemIdx >= uint32(cr.leavesData.Count()) {
+			panic(fmt.Sprintf("leaf offset %d (index %d) out of bounds (have %d leaves)\nnodeRef=0x%016X, relPtr=0x%016X, isLeaf=%v",
+				offset, itemIdx, cr.leavesData.Count(), uint64(nodeRef), uint64(relPtr), nodeRef.IsLeaf()))
+		}
+		layout := cr.leavesData.UnsafeItem(itemIdx)
+
+		// Debug: log which changeset we're reading from
+		if offset != int64(layout.Id.Index()) {
+			panic(fmt.Sprintf("DEBUG: offset mismatch! nodeRef offset=%d but layout.Id.Index()=%d, layout.Id=%s, changeset dir=%s",
+				offset, layout.Id.Index(), layout.Id, cr.dir))
+		}
+
 		return &NodePointer{
-			id:      layout.id,
+			id:      layout.Id,
 			store:   cr,
 			fileIdx: uint32(offset),
 		}
 	} else {
 		idx := int64(selfIdx) + offset
 		if idx < 1 {
-			// TODO: return error instead?
-			return nil
+			panic(fmt.Sprintf("invalid branch index: %d (selfIdx=%d, offset=%d)", idx, selfIdx, offset))
 		}
-		layout := cr.branchesData.UnsafeItem(uint32(idx - 1)) // convert to 0-based index
+		itemIdx := uint32(idx - 1)
+		if itemIdx >= uint32(cr.branchesData.Count()) {
+			panic(fmt.Sprintf("branch index %d (itemIdx %d) out of bounds (have %d branches)", idx, itemIdx, cr.branchesData.Count()))
+		}
+		layout := cr.branchesData.UnsafeItem(itemIdx)
 		return &NodePointer{
-			id:      layout.id,
+			id:      layout.Id,
 			store:   cr,
 			fileIdx: uint32(idx),
 		}

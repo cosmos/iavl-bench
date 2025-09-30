@@ -86,19 +86,6 @@ func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeav
 			return err
 		}
 
-		err = cs.leavesData.Flush()
-		if err != nil {
-			return fmt.Errorf("failed to save leaf data: %w", err)
-		}
-		err = cs.branchesData.Flush()
-		if err != nil {
-			return fmt.Errorf("failed to save branch data: %w", err)
-		}
-		err = cs.kvdata.Flush()
-		if err != nil {
-			return fmt.Errorf("failed to save KV data: %w", err)
-		}
-
 		versionInfo.RootID = root.id
 	}
 
@@ -106,6 +93,24 @@ func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeav
 	err := cs.versionsData.Append(&versionInfo)
 	if err != nil {
 		return fmt.Errorf("failed to write version info: %w", err)
+	}
+
+	// Flush all data to disk
+	err = cs.leavesData.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush leaf data: %w", err)
+	}
+	err = cs.branchesData.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush branch data: %w", err)
+	}
+	err = cs.kvdata.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush KV data: %w", err)
+	}
+	err = cs.versionsData.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush version data: %w", err)
 	}
 
 	// Set start version on first successful save
@@ -157,17 +162,32 @@ func (cs *ChangesetWriter) writeBranch(np *NodePointer, node *MemNode) error {
 	parentIdx := int64(cs.branchesData.Count() + 1) // +1 to account for the node being written
 	leftRef := cs.createNodeRef(parentIdx, node.left)
 	rightRef := cs.createNodeRef(parentIdx, node.right)
-	layout := BranchLayout{
-		id:            np.id,
-		left:          leftRef,
-		right:         rightRef,
-		keyOffset:     keyOffset,
-		keyLoc:        0, // TODO
-		height:        node.height,
-		size:          uint32(node.size), // TODO check overflow
-		orphanVersion: 0,
+
+	// Validate NodeRefs before storing
+	if leftRef.IsRelativePointer() && leftRef.IsLeaf() {
+		testOffset := leftRef.AsRelativePointer().Offset()
+		if testOffset < 1 || testOffset > 100000 {
+			panic(fmt.Sprintf("BUG: created leftRef with bad offset %d, raw=0x%016X", testOffset, uint64(leftRef)))
+		}
 	}
-	copy(layout.hash[:], node.hash) // TODO check length
+	if rightRef.IsRelativePointer() && rightRef.IsLeaf() {
+		testOffset := rightRef.AsRelativePointer().Offset()
+		if testOffset < 1 || testOffset > 100000 {
+			panic(fmt.Sprintf("BUG: created rightRef with bad offset %d, raw=0x%016X", testOffset, uint64(rightRef)))
+		}
+	}
+
+	layout := BranchLayout{
+		Id:            np.id,
+		Left:          leftRef,
+		Right:         rightRef,
+		KeyOffset:     keyOffset,
+		KeyLoc:        0, // TODO
+		Height:        node.height,
+		Size:          uint32(node.size), // TODO check overflow
+		OrphanVersion: 0,
+	}
+	copy(layout.Hash[:], node.hash) // TODO check length
 
 	err = cs.branchesData.Append(&layout) // TODO check error
 	if err != nil {
@@ -187,11 +207,11 @@ func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
 	}
 
 	layout := LeafLayout{
-		id:            np.id,
-		keyOffset:     keyOffset,
-		orphanVersion: 0,
+		Id:            np.id,
+		KeyOffset:     keyOffset,
+		OrphanVersion: 0,
 	}
-	copy(layout.hash[:], node.hash) // TODO check length
+	copy(layout.Hash[:], node.hash) // TODO check length
 
 	err = cs.leavesData.Append(&layout)
 	if err != nil {
@@ -207,10 +227,19 @@ func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
 func (cs *ChangesetWriter) createNodeRef(parentIdx int64, np *NodePointer) NodeRef {
 	if np.store == cs.reader {
 		if np.id.IsLeaf() {
-			return NodeRef(NewNodeRelativePointer(true, int64(np.fileIdx)))
+			offset := int64(np.fileIdx)
+			if offset < 1 || offset > 1000000 {
+				panic(fmt.Sprintf("BUG: creating leaf NodeRef with suspicious offset %d (fileIdx=%d, leavesCount=%d)",
+					offset, np.fileIdx, cs.leavesData.Count()))
+			}
+			return NodeRef(NewNodeRelativePointer(true, offset))
 		} else {
 			// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
 			relOffset := int64(np.fileIdx) - parentIdx
+			if relOffset < -1000000 || relOffset > 1000000 {
+				panic(fmt.Sprintf("BUG: creating branch NodeRef with suspicious relOffset %d (fileIdx=%d, parentIdx=%d, branchesCount=%d)",
+					relOffset, np.fileIdx, parentIdx, cs.branchesData.Count()))
+			}
 			return NodeRef(NewNodeRelativePointer(false, relOffset))
 		}
 	} else {
@@ -236,6 +265,9 @@ func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
 	}
 	if err := infoWriter.Append(&info); err != nil {
 		return nil, fmt.Errorf("failed to write changeset info: %w", err)
+	}
+	if infoWriter.Count() != 1 {
+		return nil, fmt.Errorf("expected info writer count to be 1, got %d", infoWriter.Count())
 	}
 	if err := infoWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close changeset info file: %w", err)
