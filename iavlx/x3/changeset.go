@@ -125,7 +125,7 @@ func (cs *Changeset) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointe
 	}
 }
 
-func (cs *Changeset) SaveRoot(root *NodePointer, version uint32) error {
+func (cs *Changeset) SaveRoot(root *NodePointer, version uint32, totalLeaves, totalBranches uint32) error {
 	if cs.sealed {
 		return fmt.Errorf("changeset is sealed")
 	}
@@ -133,6 +133,21 @@ func (cs *Changeset) SaveRoot(root *NodePointer, version uint32) error {
 	if version != cs.stagedVersion {
 		return fmt.Errorf("version mismatch: expected %d, got %d", cs.stagedVersion, version)
 	}
+
+	var versionInfo VersionInfo
+	versionInfo.Branches.StartOffset = cs.branchesData.TotalCount()
+	versionInfo.Leaves.StartOffset = cs.leavesData.TotalCount()
+	if totalBranches > 0 {
+		versionInfo.Branches.StartIndex = 1
+		versionInfo.Branches.Count = totalBranches
+		versionInfo.Branches.EndIndex = totalBranches
+	}
+	if totalLeaves > 0 {
+		versionInfo.Leaves.StartIndex = 1
+		versionInfo.Leaves.Count = totalLeaves
+		versionInfo.Leaves.EndIndex = totalLeaves
+	}
+
 	if root != nil {
 		err := cs.writeNode(root)
 		if err != nil {
@@ -151,9 +166,26 @@ func (cs *Changeset) SaveRoot(root *NodePointer, version uint32) error {
 		if err != nil {
 			return fmt.Errorf("failed to save KV data: %w", err)
 		}
+
+		versionInfo.RootID = root.id
 	}
-	// TODO save version to commit log
+
+	// commit version info
+	err := cs.versionsData.Append(&versionInfo)
+	if err != nil {
+		return fmt.Errorf("failed to write version info: %w", err)
+	}
+
+	// Set start version on first successful save
+	if cs.startVersion == 0 {
+		cs.startVersion = version
+	}
+
+	// Always update end version
+	cs.endVersion = version
+
 	cs.stagedVersion++
+
 	return nil
 }
 

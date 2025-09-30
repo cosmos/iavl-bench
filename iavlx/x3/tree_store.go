@@ -11,6 +11,7 @@ import (
 
 type TreeStore struct {
 	logger                 *slog.Logger
+	dir                    string
 	currentChangeset       *Changeset
 	changesets             *btree.Map[uint32, *Changeset]
 	rolloverThresholdBytes uint64
@@ -28,6 +29,7 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 	}
 
 	ts := &TreeStore{
+		dir:                    dir,
 		changesets:             &btree.Map[uint32, *Changeset]{},
 		rolloverThresholdBytes: rolloverThresholdBytes,
 		logger:                 logger,
@@ -70,9 +72,9 @@ func (ts *TreeStore) SavedVersion() uint32 {
 	return ts.savedVersion.Load()
 }
 
-func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32) error {
+func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32, totalLeaves, totalBranches uint32) error {
 	ts.logger.Debug("saving root", "version", version)
-	err := ts.currentChangeset.SaveRoot(root, version)
+	err := ts.currentChangeset.SaveRoot(root, version, totalLeaves, totalBranches)
 	if err != nil {
 		return err
 	}
@@ -81,11 +83,41 @@ func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32) error {
 
 	changesetSize := ts.currentChangeset.TotalBytes()
 	if changesetSize > ts.rolloverThresholdBytes {
-		// TODO finalize current changeset and create a new one
-		//ts.currentChangeset.sealed = true
+		err = ts.rolloverChangeset(version)
+		if err != nil {
+			return fmt.Errorf("failed to rollover changeset: %w", err)
+		}
 	}
 
 	ts.logger.Debug("saved root", "version", version, "changeset_size", changesetSize)
+	return nil
+}
+
+func (ts *TreeStore) rolloverChangeset(currentVersion uint32) error {
+	// Seal the current changeset
+	ts.currentChangeset.sealed = true
+
+	nextVersion := currentVersion + 1
+
+	ts.logger.Info("rolling over changeset",
+		"start_version", ts.currentChangeset.startVersion,
+		"end_version", ts.currentChangeset.endVersion,
+		"next_version", nextVersion,
+		"changeset_size", ts.currentChangeset.TotalBytes())
+
+	// Create a new changeset for the next version
+	newChangeset, err := NewChangeset(
+		filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)),
+		nextVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create new changeset: %w", err)
+	}
+
+	// Update the tree store to use the new changeset
+	ts.changesets.Set(nextVersion, newChangeset)
+	ts.currentChangeset = newChangeset
+
 	return nil
 }
 

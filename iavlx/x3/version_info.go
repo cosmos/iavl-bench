@@ -11,12 +11,12 @@ func init() {
 	}
 }
 
-const VersionInfoSize = 36
+const VersionInfoSize = 40
 
 type VersionInfo struct {
-	Leaves    NodeSetInfo
-	Branches  NodeSetInfo
-	RootIndex uint32
+	Leaves   NodeSetInfo
+	Branches NodeSetInfo
+	RootID   NodeID
 }
 
 type NodeSetInfo struct {

@@ -22,8 +22,10 @@ type CommitTree struct {
 }
 
 type commitRequest struct {
-	root    *NodePointer
-	version uint32
+	root            *NodePointer
+	version         uint32
+	branchNodeCount uint32
+	leafNodeCount   uint32
 }
 
 func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, error) {
@@ -49,7 +51,7 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 	go func() {
 		defer close(commitDone)
 		for req := range commitChan {
-			err := ts.SaveRoot(req.root, req.version)
+			err := ts.SaveRoot(req.root, req.version, req.leafNodeCount, req.branchNodeCount)
 			if err != nil {
 				commitDone <- err
 				return
@@ -140,8 +142,10 @@ func (c *CommitTree) Commit() ([]byte, error) {
 
 	// send commit request to background processor
 	c.commitChan <- commitRequest{
-		root:    c.root,
-		version: c.version,
+		root:            c.root,
+		version:         c.version,
+		branchNodeCount: commitCtx.branchNodeIdx,
+		leafNodeCount:   commitCtx.leafNodeIdx,
 	}
 
 	return hash, nil
