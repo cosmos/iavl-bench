@@ -70,23 +70,14 @@ func (m *MmapFile) SliceVar(offset, maxSize int) (int, []byte, error) {
 	return maxSize, copied, nil
 }
 
-func (m *MmapFile) SliceExactNoCopy(offset, size int) ([]byte, error) {
+func (m *MmapFile) SliceExact(offset, size int) ([]byte, error) {
 	m.flushLock.RLock()
 	defer m.flushLock.RUnlock()
 
 	if offset+size > len(m.handle) {
 		return nil, fmt.Errorf("trying to read beyond mapped data: %d + %d >= %d", offset, size, len(m.handle))
 	}
-	return m.handle[offset : offset+size], nil
-}
-
-func (m *MmapFile) SliceExact(offset, size int) ([]byte, error) {
-	bz, err := m.SliceExactNoCopy(offset, size)
-	if err != nil {
-		return nil, err
-	}
-
-	// make a copy of the data to avoid data being changed after remap
+	bz := m.handle[offset : offset+size]
 	copied := make([]byte, size)
 	copy(copied, bz)
 	return copied, nil

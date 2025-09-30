@@ -26,7 +26,7 @@ func NewKVDataStore(filename string) (*KVDataStore, error) {
 }
 
 func (kvs *KVDataStore) ReadK(offset uint32) (key []byte, err error) {
-	bz, err := kvs.file.SliceExactNoCopy(int(offset), 4)
+	bz, err := kvs.file.SliceExact(int(offset), 4)
 	if err != nil {
 		return nil, err
 	}
