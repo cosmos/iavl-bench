@@ -45,11 +45,7 @@ func NewStructFile[T any](filename string) (*StructFile[T], error) {
 }
 
 func (df *StructFile[T]) SaveAndRemap() error {
-	err := df.file.SaveAndRemap()
-	if err != nil {
-		return err
-	}
-	return df.updateData(df.file.handle)
+	return df.file.SaveAndRemapWithCallback(df.updateData)
 }
 
 func (df *StructFile[T]) updateData(buf []byte) error {
@@ -77,7 +73,8 @@ func (df *StructFile[T]) Item(i uint32) T {
 	df.file.flushLock.RLock()
 	defer df.file.flushLock.RUnlock()
 
-	return df.items[i]
+	res := df.items[i]
+	return res
 }
 
 func (df *StructFile[T]) OnDiskCount() uint32 {

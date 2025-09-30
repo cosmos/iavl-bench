@@ -93,6 +93,10 @@ func (m *MmapFile) Write(p []byte) (n int, err error) {
 }
 
 func (m *MmapFile) SaveAndRemap() error {
+	return m.SaveAndRemapWithCallback(nil)
+}
+
+func (m *MmapFile) SaveAndRemapWithCallback(callback func([]byte) error) error {
 	if err := m.flush(); err != nil {
 		return err
 	}
@@ -122,6 +126,11 @@ func (m *MmapFile) SaveAndRemap() error {
 	}
 
 	m.bytesWritten = len(m.handle)
+
+	// Call callback while still holding the lock, allowing atomic updates
+	if callback != nil {
+		return callback(m.handle)
+	}
 
 	return nil
 }
