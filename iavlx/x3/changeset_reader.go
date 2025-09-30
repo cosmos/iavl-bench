@@ -1,6 +1,7 @@
 package x3
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 )
@@ -8,39 +9,45 @@ import (
 type ChangesetReader struct {
 	info ChangesetInfo
 
-	dir string
+	treeStore *TreeStore
+	dir       string
 	*KVDataReader
 	branchesData *NodeReader[BranchLayout]
 	leavesData   *NodeReader[LeafLayout]
 	versionsData *StructReader[VersionInfo]
 }
 
-func (cr *ChangesetReader) Open(dir string) error {
-	cr.dir = dir
+func NewChangesetReader(dir string, treeStore *TreeStore) *ChangesetReader {
+	return &ChangesetReader{
+		treeStore: treeStore,
+		dir:       dir,
+	}
+}
 
-	infoReader, err := NewStructReader[ChangesetInfo](filepath.Join(dir, "info.dat"))
+func (cr *ChangesetReader) Open() error {
+	infoReader, err := NewStructReader[ChangesetInfo](filepath.Join(cr.dir, "info.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open changeset info: %w", err)
 	}
 	defer infoReader.Close()
 	cr.info = *infoReader.UnsafeItem(0)
 
-	cr.KVDataReader, err = NewKVDataReader(filepath.Join(dir, "kv.dat"))
+	cr.KVDataReader, err = NewKVDataReader(filepath.Join(cr.dir, "kv.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open KV data store: %w", err)
 	}
 
-	cr.leavesData, err = NewNodeReader[LeafLayout](filepath.Join(dir, "leaves.dat"))
+	cr.leavesData, err = NewNodeReader[LeafLayout](filepath.Join(cr.dir, "leaves.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open leaves data file: %w", err)
 	}
 
-	cr.branchesData, err = NewNodeReader[BranchLayout](filepath.Join(dir, "branches.dat"))
+	cr.branchesData, err = NewNodeReader[BranchLayout](filepath.Join(cr.dir, "branches.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open branches data file: %w", err)
 	}
 
-	cr.versionsData, err = NewStructReader[VersionInfo](filepath.Join(dir, "versions.dat"))
+	cr.versionsData, err = NewStructReader[VersionInfo](filepath.Join(cr.dir, "versions.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open versions data file: %w", err)
 	}
@@ -68,14 +75,18 @@ func (cr *ChangesetReader) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchL
 
 func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
 	if nodeRef.IsNodeID() {
+		// Cross-changeset reference - use TreeStore to route to correct changeset
 		return &NodePointer{
-			id: nodeRef.AsNodeID(),
-			// TODO should we find the actual store for this version to speed up lookups, or make that lazy?
-			store: cr,
+			id:    nodeRef.AsNodeID(),
+			store: cr.treeStore,
 		}
 	}
 	offset := nodeRef.AsRelativePointer().Offset()
 	if nodeRef.IsLeaf() {
+		if offset < 1 {
+			// TODO: return error instead?
+			return nil
+		}
 		layout := cr.leavesData.UnsafeItem(uint32(offset - 1)) // convert to 0-based index
 		return &NodePointer{
 			id:      layout.id,
@@ -84,6 +95,10 @@ func (cr *ChangesetReader) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *Node
 		}
 	} else {
 		idx := int64(selfIdx) + offset
+		if idx < 1 {
+			// TODO: return error instead?
+			return nil
+		}
 		layout := cr.branchesData.UnsafeItem(uint32(idx - 1)) // convert to 0-based index
 		return &NodePointer{
 			id:      layout.id,
@@ -107,6 +122,15 @@ func (cr *ChangesetReader) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) 
 		}
 		return &BranchPersisted{layout: layout, store: cr, selfIdx: fileIdx}, nil
 	}
+}
+
+func (cr *ChangesetReader) Close() error {
+	return errors.Join(
+		cr.KVDataReader.Close(),
+		cr.leavesData.Close(),
+		cr.branchesData.Close(),
+		cr.versionsData.Close(),
+	)
 }
 
 var _ NodeStore = (*ChangesetReader)(nil)

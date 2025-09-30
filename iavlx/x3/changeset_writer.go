@@ -21,7 +21,7 @@ type ChangesetWriter struct {
 	reader *ChangesetReader
 }
 
-func NewChangesetWriter(dir string, startVersion uint32, store NodeStore) (*ChangesetWriter, error) {
+func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
 	err := os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
@@ -56,7 +56,7 @@ func NewChangesetWriter(dir string, startVersion uint32, store NodeStore) (*Chan
 		branchesData:  branchesData,
 		leavesData:    leavesData,
 		versionsData:  versionsData,
-		reader:        &ChangesetReader{},
+		reader:        NewChangesetReader(dir, treeStore),
 	}
 	return cs, nil
 }
@@ -260,7 +260,7 @@ func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
 		return nil, err
 	}
 
-	err = cs.reader.Open(cs.dir)
+	err = cs.reader.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open changeset reader: %w", err)
 	}
