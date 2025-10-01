@@ -10,17 +10,20 @@ import (
 
 type ChangesetReader struct {
 	dir       string
-	info      ChangesetInfo
+	info      *ChangesetInfo
 	treeStore *TreeStore
 
 	*KVDataReader // TODO make sure we handle compaction here too
+	infoReader    *StructReader[ChangesetInfo]
 	branchesData  *NodeReader[BranchLayout]
 	leavesData    *NodeReader[LeafLayout]
 	versionsData  *StructReader[VersionInfo]
 
-	compacted *ChangesetReader
-	refCount  atomic.Int32
-	disposed  atomic.Bool
+	compacted     *ChangesetReader
+	refCount      atomic.Int32
+	disposed      atomic.Bool
+	dirtyBranches atomic.Bool
+	dirtyLeaves   atomic.Bool
 }
 
 func NewChangesetReader(dir string, treeStore *TreeStore) *ChangesetReader {
@@ -31,16 +34,16 @@ func NewChangesetReader(dir string, treeStore *TreeStore) *ChangesetReader {
 }
 
 func (cr *ChangesetReader) Open() error {
-	infoReader, err := NewStructReader[ChangesetInfo](filepath.Join(cr.dir, "info.dat"))
+	var err error
+	cr.infoReader, err = NewStructReader[ChangesetInfo](filepath.Join(cr.dir, "info.dat"))
 	if err != nil {
 		return fmt.Errorf("failed to open changeset info: %w", err)
 	}
-	defer infoReader.Close()
 
-	if infoReader.Count() == 0 {
+	if cr.infoReader.Count() == 0 {
 		return fmt.Errorf("changeset info file is empty")
 	}
-	cr.info = *infoReader.UnsafeItem(0)
+	cr.info = cr.infoReader.UnsafeItem(0)
 
 	cr.KVDataReader, err = NewKVDataReader(filepath.Join(cr.dir, "kv.dat"))
 	if err != nil {
@@ -200,12 +203,52 @@ func (cr *ChangesetReader) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) 
 	}
 }
 
+func (cr *ChangesetReader) MarkOrphan(version uint32, nodeId NodeID) error {
+	cr.Pin()
+	defer cr.Unpin()
+
+	nodeVersion := uint32(nodeId.Version())
+	vi, err := cr.getVersionInfo(nodeVersion)
+	if err != nil {
+		return err
+	}
+
+	if nodeId.IsLeaf() {
+		leaf, err := cr.leavesData.FindByID(nodeId, &vi.Leaves)
+		if err != nil {
+			return err
+		}
+
+		if leaf.OrphanVersion == 0 {
+			leaf.OrphanVersion = version
+			cr.info.LeafOrphans++
+			cr.info.LeafOrphanVersionTotal += uint64(version)
+			cr.dirtyLeaves.Store(true)
+		}
+	} else {
+		branch, err := cr.branchesData.FindByID(nodeId, &vi.Branches)
+		if err != nil {
+			return err
+		}
+
+		if branch.OrphanVersion == 0 {
+			branch.OrphanVersion = version
+			cr.info.BranchOrphans++
+			cr.info.BranchOrphanVersionTotal += uint64(version)
+			cr.dirtyBranches.Store(true)
+		}
+	}
+
+	return nil
+}
+
 func (cr *ChangesetReader) Close() error {
 	return errors.Join(
 		cr.KVDataReader.Close(),
 		cr.leavesData.Close(),
 		cr.branchesData.Close(),
 		cr.versionsData.Close(),
+		cr.infoReader.Close(),
 	)
 }
 

@@ -10,6 +10,7 @@ import (
 type CommitTree struct {
 	latest           atomic.Pointer[NodePointer]
 	root             *NodePointer
+	orphans          [][]NodeID
 	zeroCopy         bool
 	version          uint32
 	writeMutex       sync.Mutex
@@ -24,7 +25,7 @@ type CommitTree struct {
 
 type commitRequest struct {
 	root            *NodePointer
-	version         uint32
+	updateBatch     *KVUpdateBatch
 	branchNodeCount uint32
 	leafNodeCount   uint32
 }
@@ -53,13 +54,13 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 	go func() {
 		defer close(commitDone)
 		for req := range commitChan {
-			err := ts.SaveRoot(req.root, req.version, req.leafNodeCount, req.branchNodeCount)
+			err := ts.SaveRoot(req.root, req.updateBatch, req.leafNodeCount, req.branchNodeCount)
 			if err != nil {
 				commitDone <- err
 				return
 			}
 			// start eviction if needed
-			tree.startEvict(req.version)
+			tree.startEvict(req.updateBatch.Version)
 		}
 	}()
 
@@ -84,6 +85,7 @@ func (c *CommitTree) Apply(tree *Tree) error {
 		return fmt.Errorf("tree original root does not match current root")
 	}
 	c.root = tree.root
+	c.orphans = append(c.orphans, tree.updateBatch.Orphans...)
 	// TODO prevent further writes to the branch tree
 	// process WAL batch
 	return nil
@@ -120,11 +122,6 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
-	// check WAL errors
-	select {
-	default:
-	}
-
 	var hash []byte
 	commitCtx := &commitContext{
 		version:      c.stagedVersion(),
@@ -141,17 +138,20 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		}
 	}
 
-	// cache the committed tree as the latest version
-	c.latest.Store(c.root)
-	c.version++
-
 	// send commit request to background processor
 	c.commitChan <- commitRequest{
 		root:            c.root,
-		version:         c.version,
 		branchNodeCount: commitCtx.branchNodeIdx,
 		leafNodeCount:   commitCtx.leafNodeIdx,
+		updateBatch:     &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans},
 	}
+
+	// clear orphans
+	c.orphans = nil
+
+	// cache the committed tree as the latest version
+	c.latest.Store(c.root)
+	c.version++
 
 	return hash, nil
 }
@@ -220,7 +220,7 @@ func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uin
 	if memNode.version <= evictVersion && depth >= evictionDepth {
 		np.mem.Store(nil)
 		count = 1
-		return
+		return // delete this if we want to continue traversing to evict deeper nodes that could still be referenced somewhere
 	}
 
 	if memNode.IsLeaf() {

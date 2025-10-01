@@ -64,7 +64,8 @@ func (ts *TreeStore) SavedVersion() uint32 {
 	return ts.savedVersion.Load()
 }
 
-func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32, totalLeaves, totalBranches uint32) error {
+func (ts *TreeStore) SaveRoot(root *NodePointer, batch *KVUpdateBatch, totalLeaves, totalBranches uint32) error {
+	version := batch.Version
 	ts.logger.Debug("saving root", "version", version)
 	err := ts.currentWriter.SaveRoot(root, version, totalLeaves, totalBranches)
 	if err != nil {
@@ -89,32 +90,26 @@ func (ts *TreeStore) SaveRoot(root *NodePointer, version uint32, totalLeaves, to
 	}
 	ts.currentWriter = writer
 
+	err = ts.markOrphans(version, batch.Orphans)
+	if err != nil {
+		return fmt.Errorf("failed to mark orphans for version %d: %w", version, err)
+	}
+
 	return nil
 }
 
-//func (ts *TreeStore) MarkOrphans(version uint32, nodeIds []NodeID) error {
-//	// TODO add locking
-//	for _, nodeId := range nodeIds {
-//		if nodeId.IsLeaf() {
-//			leaf, err := ts.ResolveLeaf(nodeId)
-//			if err != nil {
-//				return err
-//			}
-//			if leaf.orphanVersion == 0 {
-//				leaf.orphanVersion = version
-//			}
-//		} else {
-//			branch, err := ts.ResolveBranch(nodeId)
-//			if err != nil {
-//				return err
-//			}
-//			if branch.orphanVersion == 0 {
-//				branch.orphanVersion = version
-//			}
-//		}
-//	}
-//
-//	// TODO flush changes to disk
-//
-//	return nil
-//}
+func (ts *TreeStore) markOrphans(version uint32, nodeIds [][]NodeID) error {
+	for _, nodeSet := range nodeIds {
+		for _, nodeId := range nodeSet {
+			cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
+			if cs == nil {
+				return fmt.Errorf("no changeset found for version %d", nodeId.Version())
+			}
+			err := cs.MarkOrphan(version, nodeId)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
