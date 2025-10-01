@@ -72,9 +72,6 @@ func (m *MmapFile) Flush() error {
 			return fmt.Errorf("failed to flush mmap: %w", err)
 		}
 	}
-	if err := m.file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file: %w", err)
-	}
 	return nil
 }
 
@@ -89,6 +86,10 @@ func (m *MmapFile) Close() error {
 		m.file = nil
 	}
 	return errors.Join(unmapErr, closeErr)
+}
+
+func (m *MmapFile) TotalBytes() int {
+	return len(m.handle)
 }
 
 var _ io.Closer = &MmapFile{}

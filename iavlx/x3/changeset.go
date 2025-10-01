@@ -4,13 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"unsafe"
 )
 
 type Changeset struct {
+	info *ChangesetInfo
+
 	dir       string
-	info      *ChangesetInfo
+	kvlogPath string
+
 	treeStore *TreeStore
 
 	kvlogReader  *KVLog // TODO make sure we handle compaction here too
@@ -26,10 +30,11 @@ type Changeset struct {
 	dirtyLeaves   atomic.Bool
 }
 
-func NewChangeset(dir string, treeStore *TreeStore) *Changeset {
+func NewChangeset(dir, kvlogPath string, treeStore *TreeStore) *Changeset {
 	return &Changeset{
 		treeStore: treeStore,
 		dir:       dir,
+		kvlogPath: kvlogPath,
 	}
 }
 
@@ -161,14 +166,7 @@ func (cr *Changeset) resolveBranchWithIdx(nodeId NodeID, fileIdx uint32) (Branch
 	}
 }
 
-func (cr *Changeset) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
-	if cr.evicted.Load() {
-		cr.tryDispose()
-		return cr.treeStore.ResolveNodeRef(nodeRef, selfIdx)
-	}
-	cr.Pin()
-	defer cr.Unpin()
-
+func (cr *Changeset) resolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
 	if nodeRef.IsNodeID() {
 		id := nodeRef.AsNodeID()
 		return &NodePointer{
@@ -229,7 +227,17 @@ func (cr *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &BranchPersisted{layout: layout, store: cr, selfIdx: actualIdx}, nil
+
+		leftPtr := cr.resolveNodeRef(layout.Left, actualIdx)
+		rightPtr := cr.resolveNodeRef(layout.Right, actualIdx)
+
+		return &BranchPersisted{
+			layout:   layout,
+			store:    cr,
+			selfIdx:  actualIdx,
+			leftPtr:  leftPtr,
+			rightPtr: rightPtr,
+		}, nil
 	}
 }
 
@@ -272,6 +280,44 @@ func (cr *Changeset) MarkOrphan(version uint32, nodeId NodeID) error {
 	return nil
 }
 
+func (cr *Changeset) ReadyToCompact(orphanPercentTarget, orphanAgeTarget float64) bool {
+	leafOrphanCount := float64(cr.info.LeafOrphans)
+	leafOrphanPercent := leafOrphanCount / float64(cr.leavesData.Count())
+	leafOrphanAge := float64(cr.info.LeafOrphanVersionTotal) / leafOrphanCount
+
+	if leafOrphanPercent >= orphanPercentTarget && leafOrphanAge <= orphanAgeTarget {
+		return true
+	}
+
+	branchOrphanCount := float64(cr.info.BranchOrphans)
+	branchOrphanPercent := branchOrphanCount / float64(cr.branchesData.Count())
+	branchOrphanAge := float64(cr.info.BranchOrphanVersionTotal) / branchOrphanCount
+	if branchOrphanPercent >= orphanPercentTarget && branchOrphanAge <= orphanAgeTarget {
+		return true
+	}
+
+	return false
+}
+
+func (cr *Changeset) FlushOrphans() error {
+	cr.Pin()
+	defer cr.Unpin()
+
+	if cr.dirtyLeaves.Load() {
+		err := cr.leavesData.Flush()
+		if err != nil {
+			return fmt.Errorf("failed to flush leaf data: %w", err)
+		}
+	}
+	if cr.dirtyBranches.Load() {
+		err := cr.branchesData.Flush()
+		if err != nil {
+			return fmt.Errorf("failed to flush branch data: %w", err)
+		}
+	}
+	return nil
+}
+
 func (cr *Changeset) Close() error {
 	return errors.Join(
 		cr.kvlogReader.Close(),
@@ -290,13 +336,46 @@ func (cr *Changeset) Unpin() {
 	cr.refCount.Add(-1)
 }
 
+func (cr *Changeset) Evict() {
+	cr.evicted.Store(true)
+}
+
 func (cr *Changeset) tryDispose() {
 	if cr.disposed.Load() {
 		return
 	}
 	if cr.refCount.Load() <= 0 {
 		if cr.disposed.CompareAndSwap(false, true) {
-			// TODO delete all files and close everything
+			_ = cr.Close()
+			cr.versionsData = nil
+			cr.branchesData = nil
+			cr.leavesData = nil
+			cr.kvlogReader = nil
+			cr.infoReader = nil
 		}
 	}
+}
+
+func (cr *Changeset) IsDisposed() bool {
+	return cr.disposed.Load()
+}
+
+func (cr *Changeset) DeleteFiles(saveKVLogPath string) error {
+	var errs []error
+	if cr.kvlogPath != saveKVLogPath {
+		errs = append(errs, os.Remove(cr.kvlogPath))
+	}
+	errs = append(errs, os.Remove(filepath.Join(cr.dir, "leaves.dat")))
+	errs = append(errs, os.Remove(filepath.Join(cr.dir, "branches.dat")))
+	errs = append(errs, os.Remove(filepath.Join(cr.dir, "versions.dat")))
+	errs = append(errs, os.Remove(filepath.Join(cr.dir, "info.dat")))
+	errs = append(errs, os.Remove(cr.dir))
+	return errors.Join(errs...)
+}
+
+func (cr *Changeset) TotalBytes() any {
+	return cr.leavesData.TotalBytes() +
+		cr.branchesData.TotalBytes() +
+		cr.kvlogReader.TotalBytes() +
+		cr.versionsData.TotalBytes()
 }

@@ -13,6 +13,7 @@ type ChangesetWriter struct {
 	stagedVersion uint32
 
 	dir          string
+	kvlogPath    string
 	kvlog        *KVLogWriter
 	branchesData *StructWriter[BranchLayout]
 	leavesData   *StructWriter[LeafLayout]
@@ -23,13 +24,16 @@ type ChangesetWriter struct {
 	keyCache map[string]uint32
 }
 
-func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
+func NewChangesetWriter(dir, kvlogPath string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
 	err := os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
 	}
 
-	kvData, err := NewKVDataWriter(filepath.Join(dir, "kv.dat"))
+	if kvlogPath == "" {
+		kvlogPath = filepath.Join(dir, "kv.log")
+	}
+	kvData, err := NewKVDataWriter(kvlogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create KV data store: %w", err)
 	}
@@ -58,7 +62,7 @@ func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (
 		branchesData:  branchesData,
 		leavesData:    leavesData,
 		versionsData:  versionsData,
-		reader:        NewChangeset(dir, treeStore),
+		reader:        NewChangeset(dir, kvlogPath, treeStore),
 		keyCache:      make(map[string]uint32),
 	}
 	return cs, nil

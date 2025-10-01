@@ -7,47 +7,73 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/tidwall/btree"
 )
 
 type TreeStore struct {
-	logger            *slog.Logger
-	dir               string
+	logger *slog.Logger
+	dir    string
+
 	currentWriter     *ChangesetWriter
-	changesets        *btree.Map[uint32, *Changeset]
+	changesets        *btree.Map[uint32, *changesetEntry]
 	changesetsMapLock sync.RWMutex
 	savedVersion      atomic.Uint32
+
+	opts TreeStoreOptions
+
+	toDelete      map[*Changeset]string
+	compactorDone chan struct{}
+}
+
+type changesetEntry struct {
+	changeset atomic.Pointer[Changeset]
+	compactor atomic.Pointer[Compactor]
 }
 
 type TreeStoreOptions struct {
+	RetainCriteria         RetainCriteria
+	CompactWAL             bool
+	CompactOrphanThreshold float64
+	CompactOrphanAge       float64
 }
 
 func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*TreeStore, error) {
 	ts := &TreeStore{
 		dir:        dir,
-		changesets: &btree.Map[uint32, *Changeset]{},
+		changesets: &btree.Map[uint32, *changesetEntry]{},
+		toDelete:   map[*Changeset]string{},
 		logger:     logger,
+		opts:       options,
 	}
 
-	writer, err := NewChangesetWriter(filepath.Join(dir, "1"), 1, ts)
+	writer, err := NewChangesetWriter(filepath.Join(dir, "1"), "", 1, ts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create initial changeset: %w", err)
 	}
 	ts.currentWriter = writer
+
+	ts.compactorDone = make(chan struct{})
+	go ts.compacterProc()
+
 	return ts, nil
 }
 
-func (ts *TreeStore) getChangesetForVersion(version uint32) *Changeset {
+func (ts *TreeStore) getChangesetEntryForVersion(version uint32) *changesetEntry {
 	ts.changesetsMapLock.RLock()
 	defer ts.changesetsMapLock.RUnlock()
 
-	var res *Changeset
-	ts.changesets.Ascend(version, func(key uint32, cs *Changeset) bool {
+	var res *changesetEntry
+	ts.changesets.Ascend(version, func(key uint32, cs *changesetEntry) bool {
 		res = cs
 		return false
 	})
 	return res
+}
+
+func (ts *TreeStore) getChangesetForVersion(version uint32) *Changeset {
+	return ts.getChangesetEntryForVersion(version).changeset.Load()
 }
 
 func (ts *TreeStore) ReadK(nodeId NodeID, _ uint32) (key []byte, err error) {
@@ -59,12 +85,43 @@ func (ts *TreeStore) ReadK(nodeId NodeID, _ uint32) (key []byte, err error) {
 		return nil, fmt.Errorf("no changeset found for version %d", nodeId.Version())
 	}
 
-	panic("implement me")
+	var offset uint32
+	if nodeId.IsLeaf() {
+		leaf, err := cs.ResolveLeaf(nodeId, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve leaf %s: %w", nodeId.String(), err)
+		}
+		offset = leaf.KeyOffset
+	} else {
+		branch, err := cs.ResolveBranch(nodeId, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve branch %s: %w", nodeId.String(), err)
+		}
+		offset = branch.KeyOffset
+	}
+
+	return cs.ReadK(nodeId, offset)
 }
 
-func (ts *TreeStore) ReadKV(nodePtr NodeID, offset uint32) (key, value []byte, err error) {
-	//TODO implement me
-	panic("implement me")
+func (ts *TreeStore) ReadKV(nodeId NodeID, _ uint32) (key, value []byte, err error) {
+	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
+	cs.Pin()
+	defer cs.Unpin()
+
+	if cs == nil {
+		return nil, nil, fmt.Errorf("no changeset found for version %d", nodeId.Version())
+	}
+
+	if !nodeId.IsLeaf() {
+		return nil, nil, fmt.Errorf("node %s is not a leaf", nodeId.String())
+	}
+
+	leaf, err := cs.ResolveLeaf(nodeId, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to resolve leaf %s: %w", nodeId.String(), err)
+	}
+
+	return cs.ReadKV(nodeId, leaf.KeyOffset)
 }
 
 func (ts *TreeStore) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
@@ -83,14 +140,13 @@ func (ts *TreeStore) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout,
 	return cs.ResolveBranch(nodeId, 0)
 }
 
-func (ts *TreeStore) ResolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointer {
-	//TODO implement me
-	panic("implement me")
-}
+func (ts *TreeStore) Resolve(nodeId NodeID, _ uint32) (Node, error) {
+	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
+	if cs == nil {
+		return nil, fmt.Errorf("no changeset found for version %d", nodeId.Version())
+	}
 
-func (ts *TreeStore) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
-	//TODO implement me
-	panic("implement me")
+	return cs.Resolve(nodeId, 0)
 }
 
 func (ts *TreeStore) SavedVersion() uint32 {
@@ -119,14 +175,17 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		return fmt.Errorf("failed to seal changeset for version %d: %w", version, err)
 	}
 
+	var changesetEntry changesetEntry
+	changesetEntry.changeset.Store(reader)
+
 	ts.changesetsMapLock.Lock()
-	ts.changesets.Set(version, reader)
+	ts.changesets.Set(version, &changesetEntry)
 	ts.changesetsMapLock.Unlock()
 
 	ts.savedVersion.Store(version)
 
 	nextVersion := version + 1
-	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), nextVersion, ts)
+	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), "", nextVersion, ts)
 	if err != nil {
 		return fmt.Errorf("failed to create writer for version %d: %w", nextVersion, err)
 	}
@@ -138,23 +197,144 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) error {
 	for _, nodeSet := range nodeIds {
 		for _, nodeId := range nodeSet {
-			cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
-			if cs == nil {
+			ce := ts.getChangesetEntryForVersion(uint32(nodeId.Version()))
+			if ce == nil {
 				return fmt.Errorf("no changeset found for version %d", nodeId.Version())
 			}
-			err := cs.MarkOrphan(version, nodeId)
-			if err != nil {
-				return err
+			if compactor := ce.compactor.Load(); compactor != nil {
+				compactor.MarkOrphan(version, nodeId)
+			} else {
+				err := ce.changeset.Load().MarkOrphan(version, nodeId)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
 }
 
+func (ts *TreeStore) compacterProc() {
+	minCompactorInterval := 10 * time.Second
+	var lastCompactorStart time.Time
+	for {
+		sleepTime := time.Duration(0)
+		if time.Since(lastCompactorStart) < minCompactorInterval {
+			sleepTime = minCompactorInterval - time.Since(lastCompactorStart)
+		}
+		select {
+		case <-ts.compactorDone:
+			return
+		case <-time.After(sleepTime):
+		default:
+		}
+
+		lastCompactorStart = time.Now()
+
+		ts.changesetsMapLock.RLock()
+		var entries []*changesetEntry
+		ts.changesets.Scan(func(version uint32, entry *changesetEntry) bool {
+			entries = append(entries, entry)
+			return true
+		})
+		ts.changesetsMapLock.RUnlock()
+
+		for _, entry := range entries {
+			select {
+			case <-ts.compactorDone:
+				return
+			default:
+			}
+
+			cs := entry.changeset.Load()
+			err := cs.FlushOrphans()
+			if err != nil {
+				ts.logger.Error("failed to flush orphans", "error", err)
+				continue
+			}
+
+			savedVersion := ts.savedVersion.Load()
+			ageTarget := float64(savedVersion) - ts.opts.CompactOrphanAge
+			if !cs.ReadyToCompact(ts.opts.CompactOrphanThreshold, ageTarget) {
+				continue
+			}
+
+			retainCriteria := ts.opts.RetainCriteria
+			if retainCriteria == nil {
+				retainCriteria = func(createVersion, orphanVersion uint32) bool {
+					return orphanVersion < savedVersion
+				}
+			}
+
+			compactor, err := NewCompacter(ts.logger, cs, CompactOptions{
+				RetainCriteria: retainCriteria,
+				CompactWAL:     ts.opts.CompactWAL,
+			}, ts)
+			if err != nil {
+				ts.logger.Error("failed to create compactor", "error", err)
+				continue
+			}
+
+			entry.compactor.Store(compactor)
+
+			ts.logger.Info("compacting changeset", "start_version", cs.info.StartVersion, "end_version", cs.info.EndVersion, "size", cs.TotalBytes())
+			newCs, err := compactor.Compact()
+			if err != nil {
+				ts.logger.Error("failed to compact changeset", "error", err)
+				entry.compactor.Store(nil)
+				continue
+			}
+			ts.logger.Info("compacted changeset", "start_version", cs.info.StartVersion, "end_version", cs.info.EndVersion, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
+
+			cs.Evict()
+			entry.changeset.Store(newCs)
+			entry.compactor.Store(nil)
+
+			err = compactor.ApplyPendingOrphans(newCs)
+			if err != nil {
+				ts.logger.Error("failed to apply pending orphans", "error", err)
+				continue
+			}
+
+			if !cs.IsDisposed() {
+				ts.toDelete[cs] = newCs.kvlogPath
+			} else {
+				// delete all .dat files in old changeset
+				err = cs.DeleteFiles(newCs.kvlogPath)
+				if err != nil {
+					ts.logger.Error("failed to delete old changeset files", "error", err)
+				}
+			}
+		}
+
+		for oldCs, kvlogPath := range ts.toDelete {
+			select {
+			case <-ts.compactorDone:
+				return
+			default:
+			}
+
+			if !oldCs.IsDisposed() {
+				continue
+			}
+
+			err := oldCs.DeleteFiles(kvlogPath)
+			if err != nil {
+				ts.logger.Error("failed to delete old changeset files", "error", err)
+			}
+			delete(ts.toDelete, oldCs)
+		}
+	}
+}
+
 func (ts *TreeStore) Close() error {
+	close(ts.compactorDone)
+
+	ts.changesetsMapLock.Lock()
+
 	var errs []error
-	ts.changesets.Scan(func(version uint32, cs *Changeset) bool {
-		errs = append(errs, cs.Close())
+	ts.changesets.Scan(func(version uint32, entry *changesetEntry) bool {
+		errs = append(errs, entry.changeset.Load().Close())
 		return true
 	})
 	return errors.Join(errs...)

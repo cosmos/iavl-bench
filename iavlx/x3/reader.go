@@ -59,6 +59,14 @@ func (df *StructReader[T]) Count() int {
 	return len(df.items)
 }
 
+func (df *StructReader[T]) Flush() error {
+	return df.file.Flush()
+}
+
+func (df *StructReader[T]) TotalBytes() int {
+	return df.file.TotalBytes()
+}
+
 func (df *StructReader[T]) Close() error {
 	return df.file.Close()
 }

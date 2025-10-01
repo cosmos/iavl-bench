@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type CompactOptions struct {
@@ -12,23 +13,30 @@ type CompactOptions struct {
 	CompactWAL     bool
 }
 
-type RetainCriteria func(version, orphanVersion uint32) bool
+type RetainCriteria func(createVersion, orphanVersion uint32) bool
 
-type compacter struct {
+type Compactor struct {
 	logger *slog.Logger
 
 	criteria   RetainCriteria
 	compactWAL bool
 
-	store  *TreeStore
 	reader *Changeset
 	writer *ChangesetWriter
 
 	leafOffsetRemappings map[uint32]uint32
 	keyCache             map[string]uint32
+
+	pendingOrphans    []pendingOrphan
+	pendingOrphansLoc sync.Mutex
 }
 
-func Compact(logger *slog.Logger, reader *Changeset, opts CompactOptions, store *TreeStore) (*Changeset, error) {
+type pendingOrphan struct {
+	version uint32
+	nodeId  NodeID
+}
+
+func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, store *TreeStore) (*Compactor, error) {
 	dir := reader.dir
 	dirName := filepath.Base(dir)
 	split := strings.Split(dir, ".")
@@ -45,40 +53,30 @@ func Compact(logger *slog.Logger, reader *Changeset, opts CompactOptions, store 
 	newDir := filepath.Join(filepath.Dir(dir), dirName)
 	logger.Info("compacting changeset", "from", reader.dir, "to", newDir)
 
-	writer, err := NewChangesetWriter(dir, 0, store)
+	kvlogPath := ""
+	if !opts.CompactWAL {
+		kvlogPath = reader.kvlogPath
+	}
+
+	writer, err := NewChangesetWriter(dir, kvlogPath, 0, store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new changeset writer: %w", err)
 	}
 
-	if !opts.CompactWAL {
-		// if not compacting WAL, we can share the same KVLog
-		// TODO update writer to point to this file
-	}
-
-	c := &compacter{
+	c := &Compactor{
 		logger:               logger,
 		criteria:             opts.RetainCriteria,
 		compactWAL:           opts.CompactWAL,
-		store:                store,
 		reader:               reader,
 		writer:               writer,
 		keyCache:             make(map[string]uint32),
 		leafOffsetRemappings: make(map[uint32]uint32),
 	}
 
-	_, err = c.compact()
-	if err != nil {
-		return nil, fmt.Errorf("failed to compact leaves: %w", err)
-	}
-	newReader, err := writer.Seal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to seal new changeset: %w", err)
-	}
-
-	return newReader, nil
+	return c, nil
 }
 
-func (c *compacter) compact() (*Changeset, error) {
+func (c *Compactor) Compact() (*Changeset, error) {
 	versionsData := c.reader.versionsData
 	numVersions := versionsData.Count()
 	leavesData := c.reader.leavesData
@@ -229,41 +227,7 @@ func (c *compacter) compact() (*Changeset, error) {
 	return c.writer.seal(info)
 }
 
-//	func (c *compacter) compactLeaves() error {
-//		leavesData := c.reader.leavesData
-//		n := leavesData.Count()
-//		for i := 1; i <= n; i++ {
-//			leaf := *leavesData.UnsafeItem(uint32(i) - 1) // convert to 0-based & copy
-//			retain := c.criteria(uint32(leaf.Id.Version()), leaf.OrphanVersion)
-//			if !retain {
-//				continue
-//			}
-//
-//			if c.compactWAL {
-//				k, v, err := c.reader.ReadKV(leaf.Id, leaf.KeyOffset)
-//				if err != nil {
-//					return fmt.Errorf("failed to read KV for leaf %s: %w", leaf.Id, err)
-//				}
-//
-//				offset, err := c.writer.kvlog.WriteKV(k, v)
-//				if err != nil {
-//					return fmt.Errorf("failed to write KV for leaf %s: %w", leaf.Id, err)
-//				}
-//
-//				leaf.KeyOffset = offset
-//				c.keyCache[string(k)] = offset
-//			}
-//
-//			err := c.writer.leavesData.Append(&leaf)
-//			if err != nil {
-//				return fmt.Errorf("failed to append leaf %s: %w", leaf.Id, err)
-//			}
-//
-//			c.leafOffsetRemappings[uint32(i)] = uint32(c.writer.leavesData.Count()) // 1-based
-//		}
-//		return nil
-//	}
-func (c *compacter) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
+func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 	if ref.IsNodeID() {
 		return ref, nil
 	}
@@ -286,94 +250,24 @@ func (c *compacter) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 	}
 }
 
-//
-//func (c *compacter) compactBranches() error {
-//	branchesData := c.reader.branchesData
-//	n := branchesData.Count()
-//	skipped := 0
-//	for i := 1; i <= n; i++ {
-//		branch := *branchesData.UnsafeItem(uint32(i) - 1) // convert to 0-based & copy
-//		retain := c.criteria(uint32(branch.Id.Version()), branch.OrphanVersion)
-//		if !retain {
-//			skipped++
-//			continue
-//		}
-//		var err error
-//		branch.Left, err = c.updateNodeRef(branch.Left, skipped)
-//		if err != nil {
-//			return fmt.Errorf("failed to update left ref for branch %s: %w", branch.Id, err)
-//		}
-//		branch.Right, err = c.updateNodeRef(branch.Right, skipped)
-//		if err != nil {
-//			return fmt.Errorf("failed to update right ref for branch %s: %w", branch.Id, err)
-//		}
-//
-//		if c.compactWAL {
-//			k, err := c.reader.ReadK(branch.Id, branch.KeyOffset)
-//			if err != nil {
-//				return fmt.Errorf("failed to read key for branch %s: %w", branch.Id, err)
-//			}
-//			offset, ok := c.keyCache[string(k)]
-//			if !ok {
-//				offset, err = c.writer.kvlog.WriteK(k)
-//				if err != nil {
-//					return fmt.Errorf("failed to write key for branch %s: %w", branch.Id, err)
-//				}
-//			}
-//			branch.KeyOffset = offset
-//		}
-//
-//		err = c.writer.branchesData.Append(&branch)
-//		if err != nil {
-//			return fmt.Errorf("failed to append branch %s: %w", branch.Id, err)
-//		}
-//	}
-//	return nil
-//}
+func (c *Compactor) MarkOrphan(orphanVersion uint32, orphanNodeId NodeID) {
+	c.pendingOrphansLoc.Lock()
+	defer c.pendingOrphansLoc.Unlock()
 
-//func (cs *Changeset) compactBranches(retainCriteria RetainCriteria, newBranches *StructReader[BranchLayout]) error {
-//	if !cs.sealed {
-//		return fmt.Errorf("changeset is not sealed")
-//	}
-//
-//	n := cs.branchesData.OnDiskCount()
-//	skipped := 0
-//	for i := uint32(0); i < n; i++ {
-//		branch := cs.branchesData.Item(i)
-//		if retainCriteria(uint32(branch.id.Version()), branch.orphanVersion) {
-//			// TODO update relative pointers
-//			// TODO save key data to KV store if needed
-//			err := newBranches.Append(&branch)
-//			if err != nil {
-//				return fmt.Errorf("failed to compact branch node %s: %w", branch.id, err)
-//			}
-//		} else {
-//			skipped++
-//			// TODO remove key from KV store if possible
-//		}
-//	}
-//
-//	return nil
-//}
-//
-//func (cs *Changeset) compactLeaves(retainCriteria RetainCriteria, newBranches *StructReader[LeafLayout]) error {
-//	if !cs.sealed {
-//		return fmt.Errorf("changeset is not sealed")
-//	}
-//
-//	n := cs.leavesData.OnDiskCount()
-//	for i := uint32(0); i < n; i++ {
-//		leaf := cs.leavesData.Item(i)
-//		if retainCriteria(uint32(leaf.id.Version()), leaf.orphanVersion) {
-//			// TODO save key data to KV store if needed
-//			err := newBranches.Append(&leaf)
-//			if err != nil {
-//				return fmt.Errorf("failed to compact leaf node %s: %w", leaf.id, err)
-//			}
-//		} else {
-//			// TODO remove key from KV store if possible
-//		}
-//	}
-//
-//	return nil
-//}
+	c.pendingOrphans = append(c.pendingOrphans, pendingOrphan{version: orphanVersion, nodeId: orphanNodeId})
+}
+
+func (c *Compactor) ApplyPendingOrphans(newChangeset *Changeset) error {
+	c.pendingOrphansLoc.Lock()
+	defer c.pendingOrphansLoc.Unlock()
+
+	for _, po := range c.pendingOrphans {
+		err := newChangeset.MarkOrphan(po.version, po.nodeId)
+		if err != nil {
+			return fmt.Errorf("failed to mark orphan %s for version %d: %w", po.nodeId, po.version, err)
+		}
+	}
+	c.pendingOrphans = nil
+
+	return nil
+}

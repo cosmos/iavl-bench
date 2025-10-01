@@ -3,9 +3,10 @@ package x3
 import "bytes"
 
 type BranchPersisted struct {
-	store   *Changeset
-	selfIdx uint32
-	layout  BranchLayout
+	store             *Changeset
+	selfIdx           uint32
+	layout            BranchLayout
+	leftPtr, rightPtr *NodePointer
 }
 
 func (node *BranchPersisted) ID() NodeID {
@@ -36,16 +37,36 @@ func (node *BranchPersisted) Value() ([]byte, error) {
 	return nil, nil
 }
 
-func (node *BranchPersisted) resolveNodePointer(ref NodeRef) *NodePointer {
-	return node.store.ResolveNodeRef(ref, node.selfIdx)
+func (node *BranchPersisted) makeNodePointer(ref NodeRef, maybeId NodeID) *NodePointer {
+	if ref.IsNodeID() {
+		return &NodePointer{
+			id:    ref.AsNodeID(),
+			store: node.store,
+		}
+	} else {
+		relPtr := ref.AsRelativePointer()
+		if relPtr.IsLeaf() {
+			return &NodePointer{
+				id:      maybeId,
+				store:   node.store,
+				fileIdx: uint32(relPtr.Offset()) + 1, // +1 because offset is 1-based
+			}
+		} else {
+			return &NodePointer{
+				id:      maybeId,
+				store:   node.store,
+				fileIdx: uint32(int64(node.selfIdx) + relPtr.Offset()),
+			}
+		}
+	}
 }
 
 func (node *BranchPersisted) Left() *NodePointer {
-	return node.resolveNodePointer(node.layout.Left)
+	return node.leftPtr
 }
 
 func (node *BranchPersisted) Right() *NodePointer {
-	return node.resolveNodePointer(node.layout.Right)
+	return node.rightPtr
 }
 
 func (node *BranchPersisted) Hash() []byte {
