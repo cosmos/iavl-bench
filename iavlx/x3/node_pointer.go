@@ -8,7 +8,7 @@ import (
 type NodePointer struct {
 	mem     atomic.Pointer[MemNode]
 	fileIdx uint32
-	store   NodeStore
+	store   *Changeset
 	id      NodeID
 }
 

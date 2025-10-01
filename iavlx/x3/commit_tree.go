@@ -8,26 +8,30 @@ import (
 )
 
 type CommitTree struct {
-	latest        atomic.Pointer[NodePointer]
-	root          *NodePointer
-	orphans       [][]NodeID
-	zeroCopy      bool
-	version       uint32
-	writeMutex    sync.Mutex
-	evictionDepth uint8
-	logger        *slog.Logger
-	store         *TreeStore
-	//commitChan       chan<- commitRequest
-	//commitDone       <-chan error
+	latest     atomic.Pointer[NodePointer]
+	root       *NodePointer
+	version    uint32
+	writeMutex sync.Mutex
+	store      *TreeStore
+	zeroCopy   bool
+
+	evictionDepth    uint8
 	evictorRunning   bool
 	lastEvictVersion uint32
+
+	writeWal bool
+	walChan  chan<- []KVUpdate
+	walDone  <-chan error
+
+	markOrphansChan chan<- markOrphansReq
+	markOrphansDone <-chan error
+
+	logger *slog.Logger
 }
 
-type commitRequest struct {
-	root            *NodePointer
-	updateBatch     *KVUpdateBatch
-	branchNodeCount uint32
-	leafNodeCount   uint32
+type markOrphansReq struct {
+	version uint32
+	orphans [][]NodeID
 }
 
 func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, error) {
@@ -36,39 +40,62 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 		return nil, fmt.Errorf("failed to create tree store: %w", err)
 	}
 
-	//commitChan := make(chan commitRequest, 1024)
-	//commitDone := make(chan error, 1)
-
 	tree := &CommitTree{
-		root:     nil,
-		zeroCopy: opts.ZeroCopy,
-		version:  0,
-		logger:   logger,
-		store:    ts,
-		//commitChan:    commitChan,
-		//commitDone:    commitDone,
+		root:          nil,
+		zeroCopy:      opts.ZeroCopy,
+		version:       0,
+		logger:        logger,
+		store:         ts,
 		evictionDepth: opts.EvictDepth,
+		writeWal:      opts.WriteWAL,
 	}
-
-	// background commit processor
-	//go func() {
-	//	defer close(commitDone)
-	//	for req := range commitChan {
-	//		err := ts.SaveRoot(req.root, req.updateBatch, req.leafNodeCount, req.branchNodeCount)
-	//		if err != nil {
-	//			commitDone <- err
-	//			return
-	//		}
-	//		// start eviction if needed
-	//		tree.startEvict(req.updateBatch.Version)
-	//	}
-	//}()
+	tree.reinitWalProc()
+	tree.initOrphanProc()
 
 	return tree, nil
 }
 
 func (c *CommitTree) stagedVersion() uint32 {
 	return c.version + 1
+}
+
+func (c *CommitTree) initOrphanProc() {
+	orphanChan := make(chan markOrphansReq, 2048)
+	orphanDone := make(chan error, 1)
+	c.markOrphansChan = orphanChan
+	c.markOrphansDone = orphanDone
+	go func() {
+		defer close(orphanDone)
+		for msg := range orphanChan {
+			err := c.store.MarkOrphans(msg.version, msg.orphans)
+			if err != nil {
+				orphanDone <- err
+				return
+			}
+		}
+	}()
+}
+
+func (c *CommitTree) reinitWalProc() {
+	if !c.writeWal {
+		return
+	}
+
+	walChan := make(chan []KVUpdate, 2048)
+	walDone := make(chan error, 1)
+	c.walChan = walChan
+	c.walDone = walDone
+
+	go func() {
+		defer close(walDone)
+		for updates := range walChan {
+			err := c.store.WriteWALUpdates(updates)
+			if err != nil {
+				walDone <- err
+				return
+			}
+		}
+	}()
 }
 
 func (c *CommitTree) Branch() *Tree {
@@ -80,14 +107,27 @@ func (c *CommitTree) Apply(tree *Tree) error {
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
+	if tree.updateBatch.Version != c.stagedVersion() {
+		return fmt.Errorf("tree version %d does not match staged version %d", tree.updateBatch.Version, c.stagedVersion())
+	}
 	if tree.origRoot != c.root {
 		// TODO find a way to apply the changes incrementally when roots don't match
 		return fmt.Errorf("tree original root does not match current root")
 	}
 	c.root = tree.root
-	c.orphans = append(c.orphans, tree.updateBatch.Orphans...)
+	batch := tree.updateBatch
+
+	c.markOrphansChan <- markOrphansReq{
+		version: batch.Version,
+		orphans: batch.Orphans,
+	}
+
+	if c.writeWal {
+		c.walChan <- batch.Updates
+	}
+
 	// TODO prevent further writes to the branch tree
-	// process WAL batch
+
 	return nil
 }
 
@@ -122,6 +162,10 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	c.writeMutex.Lock()
 	defer c.writeMutex.Unlock()
 
+	if c.writeWal {
+		close(c.walChan)
+	}
+
 	var hash []byte
 	commitCtx := &commitContext{
 		version:      c.stagedVersion(),
@@ -138,20 +182,25 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		}
 	}
 
-	// send commit request to background processor
-	//c.commitChan <- commitRequest{
-	//	root:            c.root,
-	//	branchNodeCount: commitCtx.branchNodeIdx,
-	//	leafNodeCount:   commitCtx.leafNodeIdx,
-	//	updateBatch:     &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans},
-	//}
-	err := c.store.SaveRoot(c.root, &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans}, commitCtx.leafNodeIdx, commitCtx.branchNodeIdx)
+	if c.writeWal {
+		// wait for WAL write to complete
+		err := <-c.walDone
+		if err != nil {
+			return nil, err
+		}
+
+		err = c.store.WriteWALCommit(c.stagedVersion())
+		if err != nil {
+			return nil, err
+		}
+
+		c.reinitWalProc()
+	}
+
+	err := c.store.SaveRoot(c.stagedVersion(), c.root, commitCtx.leafNodeIdx, commitCtx.branchNodeIdx)
 	if err != nil {
 		return nil, err
 	}
-
-	// clear orphans
-	c.orphans = nil
 
 	// start eviction if needed
 	c.startEvict(c.stagedVersion())

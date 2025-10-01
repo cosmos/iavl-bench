@@ -5,6 +5,7 @@ install:
 	cd iavl-v1 && go install .
 	cd iavl-v2/alpha5 && go install .
 	cd iavl-v2/alpha6 && go install .
+	#cd memiavl && go install -tags=nativebyteorder .  # was getting some SIGSEGV's with nativebyteorder
 	cd memiavl && go install .
 	cd memiavl/thread-safe && go install .
 	cd memiavl/query-thread-safe && go install .

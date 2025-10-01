@@ -3,7 +3,7 @@ package x3
 import "bytes"
 
 type BranchPersisted struct {
-	store   NodeStore
+	store   *Changeset
 	selfIdx uint32
 	layout  BranchLayout
 }
@@ -29,7 +29,7 @@ func (node *BranchPersisted) Version() uint32 {
 }
 
 func (node *BranchPersisted) Key() ([]byte, error) {
-	return node.store.ReadK(node.layout.KeyOffset)
+	return node.store.ReadK(node.layout.Id, node.layout.KeyOffset)
 }
 
 func (node *BranchPersisted) Value() ([]byte, error) {

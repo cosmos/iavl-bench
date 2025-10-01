@@ -13,12 +13,14 @@ type ChangesetWriter struct {
 	stagedVersion uint32
 
 	dir          string
-	kvdata       *KVDataWriter
+	kvlog        *KVLogWriter
 	branchesData *StructWriter[BranchLayout]
 	leavesData   *StructWriter[LeafLayout]
 	versionsData *StructWriter[VersionInfo]
 
-	reader *ChangesetReader
+	reader *Changeset
+
+	keyCache map[string]uint32
 }
 
 func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
@@ -52,13 +54,22 @@ func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (
 		startVersion:  0,
 		endVersion:    0,
 		stagedVersion: startVersion,
-		kvdata:        kvData,
+		kvlog:         kvData,
 		branchesData:  branchesData,
 		leavesData:    leavesData,
 		versionsData:  versionsData,
-		reader:        NewChangesetReader(dir, treeStore),
+		reader:        NewChangeset(dir, treeStore),
+		keyCache:      make(map[string]uint32),
 	}
 	return cs, nil
+}
+
+func (cs *ChangesetWriter) WriteWALUpdates(updates []KVUpdate) error {
+	return cs.kvlog.WriteUpdates(updates)
+}
+
+func (cs *ChangesetWriter) WriteWALCommit(version uint32) error {
+	return cs.kvlog.WriteCommit(version)
 }
 
 func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeaves, totalBranches uint32) error {
@@ -118,7 +129,7 @@ func (cs *ChangesetWriter) Flush() error {
 	if err != nil {
 		return fmt.Errorf("failed to flush branch data: %w", err)
 	}
-	err = cs.kvdata.Flush()
+	err = cs.kvlog.Flush()
 	if err != nil {
 		return fmt.Errorf("failed to flush KV data: %w", err)
 	}
@@ -156,9 +167,13 @@ func (cs *ChangesetWriter) writeBranch(np *NodePointer, node *MemNode) error {
 	}
 
 	// TODO cache key offset in memory to avoid duplicate writes
-	keyOffset, err := cs.kvdata.WriteK(node.key)
-	if err != nil {
-		return fmt.Errorf("failed to write key data: %w", err)
+	keyOffset, ok := cs.keyCache[string(node.key)]
+	if !ok {
+		var err error
+		keyOffset, err = cs.kvlog.WriteK(node.key)
+		if err != nil {
+			return fmt.Errorf("failed to write key data: %w", err)
+		}
 	}
 
 	// now write parent
@@ -190,9 +205,13 @@ func (cs *ChangesetWriter) writeBranch(np *NodePointer, node *MemNode) error {
 }
 
 func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
-	keyOffset, err := cs.kvdata.WriteKV(node.key, node.value)
-	if err != nil {
-		return fmt.Errorf("failed to write key-value data: %w", err)
+	keyOffset := node.keyOffset
+	if keyOffset == 0 {
+		var err error
+		keyOffset, err = cs.kvlog.WriteKV(node.key, node.value)
+		if err != nil {
+			return fmt.Errorf("failed to write key-value data: %w", err)
+		}
 	}
 
 	layout := LeafLayout{
@@ -202,13 +221,15 @@ func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
 	}
 	copy(layout.Hash[:], node.hash) // TODO check length
 
-	err = cs.leavesData.Append(&layout)
+	err := cs.leavesData.Append(&layout)
 	if err != nil {
 		return fmt.Errorf("failed to write leaf node: %w", err)
 	}
 
 	np.fileIdx = uint32(cs.leavesData.Count())
 	np.store = cs.reader
+
+	cs.keyCache[string(node.key)] = keyOffset
 
 	return nil
 }
@@ -231,10 +252,10 @@ func (cs *ChangesetWriter) TotalBytes() uint64 {
 	return uint64(cs.leavesData.Size() +
 		cs.branchesData.Size() +
 		cs.versionsData.Size() +
-		cs.kvdata.Size())
+		cs.kvlog.Size())
 }
 
-func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
+func (cs *ChangesetWriter) Seal() (*Changeset, error) {
 	info := ChangesetInfo{
 		StartVersion: cs.startVersion,
 		EndVersion:   cs.endVersion,
@@ -267,7 +288,7 @@ func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close versions data: %w", err))
 	}
-	kvDataFile, err := cs.kvdata.Dispose()
+	kvDataFile, err := cs.kvlog.Dispose()
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close KV data: %w", err))
 	}

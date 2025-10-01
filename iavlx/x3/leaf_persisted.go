@@ -6,7 +6,7 @@ import (
 )
 
 type LeafPersisted struct {
-	store   NodeStore
+	store   *Changeset
 	selfIdx uint32
 	layout  LeafLayout
 }
@@ -32,11 +32,11 @@ func (node *LeafPersisted) Version() uint32 {
 }
 
 func (node *LeafPersisted) Key() ([]byte, error) {
-	return node.store.ReadK(node.layout.KeyOffset)
+	return node.store.ReadK(node.layout.Id, node.layout.KeyOffset)
 }
 
 func (node *LeafPersisted) Value() ([]byte, error) {
-	_, v, err := node.store.ReadKV(node.layout.KeyOffset)
+	_, v, err := node.store.ReadKV(node.layout.Id, node.layout.KeyOffset)
 	return v, err
 }
 
