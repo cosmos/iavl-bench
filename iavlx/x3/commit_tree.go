@@ -8,17 +8,17 @@ import (
 )
 
 type CommitTree struct {
-	latest           atomic.Pointer[NodePointer]
-	root             *NodePointer
-	orphans          [][]NodeID
-	zeroCopy         bool
-	version          uint32
-	writeMutex       sync.Mutex
-	evictionDepth    uint8
-	logger           *slog.Logger
-	store            *TreeStore
-	commitChan       chan<- commitRequest
-	commitDone       <-chan error
+	latest        atomic.Pointer[NodePointer]
+	root          *NodePointer
+	orphans       [][]NodeID
+	zeroCopy      bool
+	version       uint32
+	writeMutex    sync.Mutex
+	evictionDepth uint8
+	logger        *slog.Logger
+	store         *TreeStore
+	//commitChan       chan<- commitRequest
+	//commitDone       <-chan error
 	evictorRunning   bool
 	lastEvictVersion uint32
 }
@@ -36,33 +36,33 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 		return nil, fmt.Errorf("failed to create tree store: %w", err)
 	}
 
-	commitChan := make(chan commitRequest, 128)
-	commitDone := make(chan error, 1)
+	//commitChan := make(chan commitRequest, 1024)
+	//commitDone := make(chan error, 1)
 
 	tree := &CommitTree{
-		root:          nil,
-		zeroCopy:      opts.ZeroCopy,
-		version:       0,
-		logger:        logger,
-		store:         ts,
-		commitChan:    commitChan,
-		commitDone:    commitDone,
+		root:     nil,
+		zeroCopy: opts.ZeroCopy,
+		version:  0,
+		logger:   logger,
+		store:    ts,
+		//commitChan:    commitChan,
+		//commitDone:    commitDone,
 		evictionDepth: opts.EvictDepth,
 	}
 
 	// background commit processor
-	go func() {
-		defer close(commitDone)
-		for req := range commitChan {
-			err := ts.SaveRoot(req.root, req.updateBatch, req.leafNodeCount, req.branchNodeCount)
-			if err != nil {
-				commitDone <- err
-				return
-			}
-			// start eviction if needed
-			tree.startEvict(req.updateBatch.Version)
-		}
-	}()
+	//go func() {
+	//	defer close(commitDone)
+	//	for req := range commitChan {
+	//		err := ts.SaveRoot(req.root, req.updateBatch, req.leafNodeCount, req.branchNodeCount)
+	//		if err != nil {
+	//			commitDone <- err
+	//			return
+	//		}
+	//		// start eviction if needed
+	//		tree.startEvict(req.updateBatch.Version)
+	//	}
+	//}()
 
 	return tree, nil
 }
@@ -139,15 +139,22 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	}
 
 	// send commit request to background processor
-	c.commitChan <- commitRequest{
-		root:            c.root,
-		branchNodeCount: commitCtx.branchNodeIdx,
-		leafNodeCount:   commitCtx.leafNodeIdx,
-		updateBatch:     &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans},
+	//c.commitChan <- commitRequest{
+	//	root:            c.root,
+	//	branchNodeCount: commitCtx.branchNodeIdx,
+	//	leafNodeCount:   commitCtx.leafNodeIdx,
+	//	updateBatch:     &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans},
+	//}
+	err := c.store.SaveRoot(c.root, &KVUpdateBatch{Version: c.stagedVersion(), Orphans: c.orphans}, commitCtx.leafNodeIdx, commitCtx.branchNodeIdx)
+	if err != nil {
+		return nil, err
 	}
 
 	// clear orphans
 	c.orphans = nil
+
+	// start eviction if needed
+	c.startEvict(c.stagedVersion())
 
 	// cache the committed tree as the latest version
 	c.latest.Store(c.root)
@@ -157,8 +164,9 @@ func (c *CommitTree) Commit() ([]byte, error) {
 }
 
 func (c *CommitTree) Close() error {
-	close(c.commitChan)
-	return <-c.commitDone
+	//close(c.commitChan)
+	//return <-c.commitDone
+	return c.store.Close()
 }
 
 type commitContext struct {

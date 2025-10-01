@@ -1,6 +1,7 @@
 package x3
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -112,4 +113,13 @@ func (ts *TreeStore) markOrphans(version uint32, nodeIds [][]NodeID) error {
 		}
 	}
 	return nil
+}
+
+func (ts *TreeStore) Close() error {
+	var errs []error
+	ts.changesets.Scan(func(version uint32, cs *ChangesetReader) bool {
+		errs = append(errs, cs.Close())
+		return true
+	})
+	return errors.Join(errs...)
 }

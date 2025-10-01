@@ -15,7 +15,7 @@ type CommitMultiTree struct {
 	treeNames   []string       // always ordered by tree name
 	treesByName map[string]int // index of the trees by name
 	version     uint64
-	hashPool    pond.ResultPool[[]byte]
+	commitPool  pond.ResultPool[[]byte]
 }
 
 func LoadDB(path string, treeNames []string, opts *Options, logger *slog.Logger) (*CommitMultiTree, error) {
@@ -44,7 +44,7 @@ func LoadDB(path string, treeNames []string, opts *Options, logger *slog.Logger)
 		trees:       trees,
 		treeNames:   treeNames,
 		treesByName: treesByName,
-		hashPool:    pond.NewResultPool[[]byte](n),
+		commitPool:  pond.NewResultPool[[]byte](n),
 	}
 	return db, nil
 }
@@ -82,7 +82,7 @@ func (db *CommitMultiTree) Apply(mt *MultiTree) error {
 }
 
 func (db *CommitMultiTree) Commit(logger *slog.Logger) (*storev1beta1.CommitInfo, error) {
-	taskGroup := db.hashPool.NewGroup()
+	taskGroup := db.commitPool.NewGroup()
 	for _, tree := range db.trees {
 		t := tree
 		taskGroup.SubmitErr(func() ([]byte, error) {
