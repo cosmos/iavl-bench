@@ -23,15 +23,7 @@ type CommitTree struct {
 	walChan  chan<- []KVUpdate
 	walDone  <-chan error
 
-	markOrphansChan chan<- markOrphansReq
-	markOrphansDone <-chan error
-
 	logger *slog.Logger
-}
-
-type markOrphansReq struct {
-	version uint32
-	orphans [][]NodeID
 }
 
 func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, error) {
@@ -50,30 +42,12 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 		writeWal:      opts.WriteWAL,
 	}
 	tree.reinitWalProc()
-	tree.initOrphanProc()
 
 	return tree, nil
 }
 
 func (c *CommitTree) stagedVersion() uint32 {
 	return c.version + 1
-}
-
-func (c *CommitTree) initOrphanProc() {
-	orphanChan := make(chan markOrphansReq, 2048)
-	orphanDone := make(chan error, 1)
-	c.markOrphansChan = orphanChan
-	c.markOrphansDone = orphanDone
-	go func() {
-		defer close(orphanDone)
-		for msg := range orphanChan {
-			err := c.store.MarkOrphans(msg.version, msg.orphans)
-			if err != nil {
-				orphanDone <- err
-				return
-			}
-		}
-	}()
 }
 
 func (c *CommitTree) reinitWalProc() {
@@ -117,10 +91,7 @@ func (c *CommitTree) Apply(tree *Tree) error {
 	c.root = tree.root
 	batch := tree.updateBatch
 
-	c.markOrphansChan <- markOrphansReq{
-		version: batch.Version,
-		orphans: batch.Orphans,
-	}
+	c.store.MarkOrphans(batch.Version, batch.Orphans)
 
 	if c.writeWal {
 		c.walChan <- batch.Updates

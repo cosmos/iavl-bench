@@ -202,10 +202,18 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			var err error
 			branch.Left, err = c.updateNodeRef(branch.Left, skippedBranches)
 			if err != nil {
+				c.logger.Error("failed to update left ref",
+					"branchId", id,
+					"branchOrphanVersion", branch.OrphanVersion,
+					"leftRef", branch.Left)
 				return nil, fmt.Errorf("failed to update left ref for branch %s: %w", id, err)
 			}
 			branch.Right, err = c.updateNodeRef(branch.Right, skippedBranches)
 			if err != nil {
+				c.logger.Error("failed to update right ref",
+					"branchId", id,
+					"branchOrphanVersion", branch.OrphanVersion,
+					"rightRef", branch.Right)
 				return nil, fmt.Errorf("failed to update right ref for branch %s: %w", id, err)
 			}
 
@@ -273,6 +281,13 @@ func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 		oldOffset := relPtr.Offset()
 		newOffset, ok := c.leafOffsetRemappings[uint32(oldOffset)]
 		if !ok {
+			// Debug: look up the orphaned leaf
+			oldLeaf := c.reader.leavesData.UnsafeItem(uint32(oldOffset) - 1)
+			c.logger.Error("leaf remapping failed - orphaned leaf still referenced",
+				"leafOffset", oldOffset,
+				"leafId", oldLeaf.Id,
+				"leafOrphanVersion", oldLeaf.OrphanVersion,
+				"remappings", c.leafOffsetRemappings)
 			return 0, fmt.Errorf("failed to find remapping for leaf offset %d", oldOffset)
 		}
 		return NodeRef(NewNodeRelativePointer(true, int64(newOffset))), nil

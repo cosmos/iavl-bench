@@ -23,8 +23,15 @@ type TreeStore struct {
 
 	opts TreeStoreOptions
 
-	toDelete      map[*Changeset]string
-	compactorDone chan struct{}
+	toDelete         map[*Changeset]string
+	cleanupProcDone  chan struct{}
+	orphanWriteQueue []markOrphansReq
+	orphanQueueLock  sync.Mutex
+}
+
+type markOrphansReq struct {
+	version uint32
+	orphans [][]NodeID
 }
 
 type changesetEntry struct {
@@ -54,8 +61,8 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 	}
 	ts.currentWriter = writer
 
-	ts.compactorDone = make(chan struct{})
-	go ts.compacterProc()
+	ts.cleanupProcDone = make(chan struct{})
+	go ts.cleanupProc()
 
 	return ts, nil
 }
@@ -194,27 +201,19 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 	return nil
 }
 
-func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) error {
-	for _, nodeSet := range nodeIds {
-		for _, nodeId := range nodeSet {
-			ce := ts.getChangesetEntryForVersion(uint32(nodeId.Version()))
-			if ce == nil {
-				return fmt.Errorf("no changeset found for version %d", nodeId.Version())
-			}
-			if compactor := ce.compactor.Load(); compactor != nil {
-				compactor.MarkOrphan(version, nodeId)
-			} else {
-				err := ce.changeset.Load().MarkOrphan(version, nodeId)
-				if err != nil {
-					return err
-				}
-			}
-		}
+func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
+	req := markOrphansReq{
+		version: version,
+		orphans: nodeIds,
 	}
-	return nil
+
+	ts.orphanQueueLock.Lock()
+	defer ts.orphanQueueLock.Unlock()
+
+	ts.orphanWriteQueue = append(ts.orphanWriteQueue, req)
 }
 
-func (ts *TreeStore) compacterProc() {
+func (ts *TreeStore) cleanupProc() {
 	minCompactorInterval := 10 * time.Second
 	var lastCompactorStart time.Time
 	for {
@@ -223,7 +222,7 @@ func (ts *TreeStore) compacterProc() {
 			sleepTime = minCompactorInterval - time.Since(lastCompactorStart)
 		}
 		select {
-		case <-ts.compactorDone:
+		case <-ts.cleanupProcDone:
 			return
 		case <-time.After(sleepTime):
 		default:
@@ -241,13 +240,18 @@ func (ts *TreeStore) compacterProc() {
 
 		for _, entry := range entries {
 			select {
-			case <-ts.compactorDone:
+			case <-ts.cleanupProcDone:
 				return
 			default:
 			}
 
+			err := ts.doMarkOrphans()
+			if err != nil {
+				ts.logger.Error("failed to mark orphans", "error", err)
+			}
+
 			cs := entry.changeset.Load()
-			err := cs.FlushOrphans()
+			err = cs.FlushOrphans()
 			if err != nil {
 				ts.logger.Error("failed to flush orphans", "error", err)
 				continue
@@ -317,7 +321,7 @@ func (ts *TreeStore) compacterProc() {
 
 		for oldCs, kvlogPath := range ts.toDelete {
 			select {
-			case <-ts.compactorDone:
+			case <-ts.cleanupProcDone:
 				return
 			default:
 			}
@@ -335,8 +339,35 @@ func (ts *TreeStore) compacterProc() {
 	}
 }
 
+func (ts *TreeStore) doMarkOrphans() error {
+	var orphanQueue []markOrphansReq
+	ts.orphanQueueLock.Lock()
+	orphanQueue, ts.orphanWriteQueue = ts.orphanWriteQueue, nil
+	ts.orphanQueueLock.Unlock()
+
+	for _, req := range orphanQueue {
+		for _, nodeSet := range req.orphans {
+			for _, nodeId := range nodeSet {
+				ce := ts.getChangesetEntryForVersion(uint32(nodeId.Version()))
+				if ce == nil {
+					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
+				}
+				if compactor := ce.compactor.Load(); compactor != nil {
+					compactor.MarkOrphan(req.version, nodeId)
+				} else {
+					err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (ts *TreeStore) Close() error {
-	close(ts.compactorDone)
+	close(ts.cleanupProcDone)
 
 	ts.changesetsMapLock.Lock()
 
