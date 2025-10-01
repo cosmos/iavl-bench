@@ -88,7 +88,7 @@ func (cr *Changeset) getVersionInfo(version uint32) (*VersionInfo, error) {
 
 func (cr *Changeset) ReadK(nodeId NodeID, offset uint32) (key []byte, err error) {
 	if cr.evicted.Load() {
-		cr.tryDispose()
+		cr.TryDispose()
 		return cr.treeStore.ReadK(nodeId, offset)
 	}
 	cr.Pin()
@@ -105,7 +105,7 @@ func (cr *Changeset) ReadK(nodeId NodeID, offset uint32) (key []byte, err error)
 
 func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, err error) {
 	if cr.evicted.Load() {
-		cr.tryDispose()
+		cr.TryDispose()
 		return cr.treeStore.ReadKV(nodeId, offset)
 	}
 	cr.Pin()
@@ -125,7 +125,7 @@ func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, er
 
 func (cr *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
 	if cr.evicted.Load() {
-		cr.tryDispose()
+		cr.TryDispose()
 		return cr.treeStore.ResolveLeaf(nodeId)
 	}
 	cr.Pin()
@@ -150,7 +150,7 @@ func (cr *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, err
 
 func (cr *Changeset) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
 	if cr.evicted.Load() {
-		cr.tryDispose()
+		cr.TryDispose()
 		return cr.treeStore.ResolveBranch(nodeId)
 	}
 
@@ -225,7 +225,7 @@ func (cr *Changeset) resolveNodeRef(nodeRef NodeRef, selfIdx uint32) *NodePointe
 
 func (cr *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
 	if cr.evicted.Load() {
-		cr.tryDispose()
+		cr.TryDispose()
 		return cr.treeStore.Resolve(nodeId, fileIdx)
 	}
 	cr.Pin()
@@ -355,9 +355,9 @@ func (cr *Changeset) Evict() {
 	cr.evicted.Store(true)
 }
 
-func (cr *Changeset) tryDispose() {
+func (cr *Changeset) TryDispose() bool {
 	if cr.disposed.Load() {
-		return
+		return true
 	}
 	if cr.refCount.Load() <= 0 {
 		if cr.disposed.CompareAndSwap(false, true) {
@@ -367,12 +367,10 @@ func (cr *Changeset) tryDispose() {
 			cr.leavesData = nil
 			cr.kvlogReader = nil
 			cr.infoReader = nil
+			return true
 		}
 	}
-}
-
-func (cr *Changeset) IsDisposed() bool {
-	return cr.disposed.Load()
+	return false
 }
 
 func (cr *Changeset) DeleteFiles(saveKVLogPath string) error {
