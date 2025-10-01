@@ -15,7 +15,7 @@ type FileWriter struct {
 }
 
 func NewFileWriter(path string) (*FileWriter, error) {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
@@ -36,9 +36,6 @@ func (f *FileWriter) Flush() error {
 	if err := f.writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush writer: %w", err)
 	}
-	if err := f.file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file: %w", err)
-	}
 	return nil
 }
 
@@ -46,15 +43,14 @@ func (f *FileWriter) Size() int {
 	return f.written
 }
 
-func (f *FileWriter) Close() error {
+func (f *FileWriter) Dispose() (*os.File, error) {
 	if err := f.Flush(); err != nil {
 		_ = f.file.Close()
-		return err
+		return nil, err
 	}
-	return f.file.Close()
+	return f.file, nil
 }
 
-var _ io.Closer = (*FileWriter)(nil)
 var _ io.Writer = (*FileWriter)(nil)
 
 type StructWriter[T any] struct {

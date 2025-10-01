@@ -2,6 +2,7 @@ package x3
 
 import (
 	"fmt"
+	"os"
 	"unsafe"
 )
 
@@ -21,19 +22,19 @@ type StructReader[T any] struct {
 	size  int
 }
 
-func NewStructReader[T any](filename string) (*StructReader[T], error) {
-	file, err := NewMmapFile(filename)
+func NewStructReader[T any](file *os.File) (*StructReader[T], error) {
+	mmap, err := NewMmapFile(file)
 	if err != nil {
 		return nil, err
 	}
 
 	var zero T
 	df := &StructReader[T]{
-		file: file,
+		file: mmap,
 		size: int(unsafe.Sizeof(zero)),
 	}
 
-	buf := file.Data()
+	buf := mmap.Data()
 	p := unsafe.Pointer(unsafe.SliceData(buf))
 	align := unsafe.Alignof(zero)
 	if uintptr(p)%align != 0 {
@@ -70,8 +71,8 @@ type NodeReader[T NodeLayout] struct {
 	*StructReader[T]
 }
 
-func NewNodeReader[T NodeLayout](filename string) (*NodeReader[T], error) {
-	sf, err := NewStructReader[T](filename)
+func NewNodeReader[T NodeLayout](file *os.File) (*NodeReader[T], error) {
+	sf, err := NewStructReader[T](file)
 	if err != nil {
 		return nil, err
 	}

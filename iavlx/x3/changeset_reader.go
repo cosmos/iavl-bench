@@ -3,7 +3,7 @@ package x3
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"os"
 	"sync/atomic"
 	"unsafe"
 )
@@ -33,9 +33,15 @@ func NewChangesetReader(dir string, treeStore *TreeStore) *ChangesetReader {
 	}
 }
 
-func (cr *ChangesetReader) Open() error {
+func (cr *ChangesetReader) Init(
+	infoFile *os.File,
+	kvDataFile *os.File,
+	leavesDataFile *os.File,
+	branchesDataFile *os.File,
+	versionsDataFile *os.File,
+) error {
 	var err error
-	cr.infoReader, err = NewStructReader[ChangesetInfo](filepath.Join(cr.dir, "info.dat"))
+	cr.infoReader, err = NewStructReader[ChangesetInfo](infoFile)
 	if err != nil {
 		return fmt.Errorf("failed to open changeset info: %w", err)
 	}
@@ -45,22 +51,22 @@ func (cr *ChangesetReader) Open() error {
 	}
 	cr.info = cr.infoReader.UnsafeItem(0)
 
-	cr.KVDataReader, err = NewKVDataReader(filepath.Join(cr.dir, "kv.dat"))
+	cr.KVDataReader, err = NewKVDataReader(kvDataFile)
 	if err != nil {
 		return fmt.Errorf("failed to open KV data store: %w", err)
 	}
 
-	cr.leavesData, err = NewNodeReader[LeafLayout](filepath.Join(cr.dir, "leaves.dat"))
+	cr.leavesData, err = NewNodeReader[LeafLayout](leavesDataFile)
 	if err != nil {
 		return fmt.Errorf("failed to open leaves data file: %w", err)
 	}
 
-	cr.branchesData, err = NewNodeReader[BranchLayout](filepath.Join(cr.dir, "branches.dat"))
+	cr.branchesData, err = NewNodeReader[BranchLayout](branchesDataFile)
 	if err != nil {
 		return fmt.Errorf("failed to open branches data file: %w", err)
 	}
 
-	cr.versionsData, err = NewStructReader[VersionInfo](filepath.Join(cr.dir, "versions.dat"))
+	cr.versionsData, err = NewStructReader[VersionInfo](versionsDataFile)
 	if err != nil {
 		return fmt.Errorf("failed to open versions data file: %w", err)
 	}

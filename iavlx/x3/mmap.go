@@ -14,17 +14,12 @@ type MmapFile struct {
 	handle mmap.MMap
 }
 
-func NewMmapFile(path string) (*MmapFile, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
-	}
-
+func NewMmapFile(file *os.File) (*MmapFile, error) {
 	// Check file size
 	fi, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
-		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
+		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	res := &MmapFile{
@@ -40,7 +35,7 @@ func NewMmapFile(path string) (*MmapFile, error) {
 	handle, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
 		_ = file.Close()
-		return nil, fmt.Errorf("failed to mmap file %s: %w", path, err)
+		return nil, fmt.Errorf("failed to mmap file: %w", err)
 	}
 
 	res.handle = handle

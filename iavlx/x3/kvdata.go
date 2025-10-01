@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 )
 
 type KVData interface {
@@ -30,13 +31,13 @@ type KVDataReader struct {
 	*MmapFile
 }
 
-func NewKVDataReader(filename string) (*KVDataReader, error) {
-	file, err := NewMmapFile(filename)
+func NewKVDataReader(file *os.File) (*KVDataReader, error) {
+	mmap, err := NewMmapFile(file)
 	if err != nil {
 		return nil, err
 	}
 	return &KVDataReader{
-		MmapFile: file,
+		MmapFile: mmap,
 	}, nil
 }
 

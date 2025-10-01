@@ -228,7 +228,6 @@ func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uin
 	if memNode.version <= evictVersion && depth >= evictionDepth {
 		np.mem.Store(nil)
 		count = 1
-		return // delete this if we want to continue traversing to evict deeper nodes that could still be referenced somewhere
 	}
 
 	if memNode.IsLeaf() {

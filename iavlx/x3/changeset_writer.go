@@ -95,8 +95,22 @@ func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeav
 		return fmt.Errorf("failed to write version info: %w", err)
 	}
 
+	// Set start version on first successful save
+	if cs.startVersion == 0 {
+		cs.startVersion = version
+	}
+
+	// Always update end version
+	cs.endVersion = version
+
+	cs.stagedVersion++
+
+	return nil
+}
+
+func (cs *ChangesetWriter) Flush() error {
 	// Flush all data to disk
-	err = cs.leavesData.Flush()
+	err := cs.leavesData.Flush()
 	if err != nil {
 		return fmt.Errorf("failed to flush leaf data: %w", err)
 	}
@@ -112,17 +126,6 @@ func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeav
 	if err != nil {
 		return fmt.Errorf("failed to flush version data: %w", err)
 	}
-
-	// Set start version on first successful save
-	if cs.startVersion == 0 {
-		cs.startVersion = version
-	}
-
-	// Always update end version
-	cs.endVersion = version
-
-	cs.stagedVersion++
-
 	return nil
 }
 
@@ -246,21 +249,26 @@ func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
 	if infoWriter.Count() != 1 {
 		return nil, fmt.Errorf("expected info writer count to be 1, got %d", infoWriter.Count())
 	}
-	if err := infoWriter.Close(); err != nil {
+	infoFile, err := infoWriter.Dispose()
+	if err != nil {
 		return nil, fmt.Errorf("failed to close changeset info file: %w", err)
 	}
 
 	var errs []error
-	if err := cs.leavesData.Close(); err != nil {
+	leavesFile, err := cs.leavesData.Dispose()
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close leaves data: %w", err))
 	}
-	if err := cs.branchesData.Close(); err != nil {
+	branchesFile, err := cs.branchesData.Dispose()
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close branches data: %w", err))
 	}
-	if err := cs.versionsData.Close(); err != nil {
+	versionsFile, err := cs.versionsData.Dispose()
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close versions data: %w", err))
 	}
-	if err := cs.kvdata.Close(); err != nil {
+	kvDataFile, err := cs.kvdata.Dispose()
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to close KV data: %w", err))
 	}
 
@@ -269,7 +277,12 @@ func (cs *ChangesetWriter) Seal() (*ChangesetReader, error) {
 		return nil, err
 	}
 
-	err = cs.reader.Open()
+	err = cs.reader.Init(
+		infoFile,
+		kvDataFile,
+		leavesFile,
+		branchesFile,
+		versionsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open changeset reader: %w", err)
 	}
