@@ -27,7 +27,7 @@ func NewKVLog(file *os.File) (*KVLog, error) {
 	}, nil
 }
 
-func (kvs *KVLog) ReadK(offset uint32) (key []byte, err error) {
+func (kvs *KVLog) UnsafeReadK(offset uint32) (key []byte, err error) {
 	bz, err := kvs.UnsafeSliceExact(int(offset), 4)
 	if err != nil {
 		return nil, err
@@ -38,12 +38,12 @@ func (kvs *KVLog) ReadK(offset uint32) (key []byte, err error) {
 }
 
 func (kvs *KVLog) ReadKV(offset uint32) (key, value []byte, err error) {
-	key, err = kvs.ReadK(offset)
+	key, err = kvs.UnsafeReadK(offset)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	value, err = kvs.ReadK(offset + 4 + uint32(len(key)))
+	value, err = kvs.UnsafeReadK(offset + 4 + uint32(len(key)))
 	if err != nil {
 		return nil, nil, err
 	}

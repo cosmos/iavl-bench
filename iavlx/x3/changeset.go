@@ -94,7 +94,13 @@ func (cr *Changeset) ReadK(nodeId NodeID, offset uint32) (key []byte, err error)
 	cr.Pin()
 	defer cr.Unpin()
 
-	return cr.kvlogReader.ReadK(offset)
+	k, err := cr.kvlogReader.UnsafeReadK(offset)
+	if err != nil {
+		return nil, err
+	}
+	copyKey := make([]byte, len(k))
+	copy(copyKey, k)
+	return copyKey, nil
 }
 
 func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, err error) {
@@ -105,7 +111,16 @@ func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, er
 	cr.Pin()
 	defer cr.Unpin()
 
-	return cr.kvlogReader.ReadKV(offset)
+	// TODO add an optimization when we only want to read and copy value
+	k, v, err := cr.kvlogReader.ReadKV(offset)
+	if err != nil {
+		return nil, nil, err
+	}
+	copyKey := make([]byte, len(k))
+	copy(copyKey, k)
+	copyValue := make([]byte, len(v))
+	copy(copyValue, v)
+	return copyKey, copyValue, nil
 }
 
 func (cr *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {

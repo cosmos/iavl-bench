@@ -23,6 +23,8 @@ type CommitTree struct {
 	walChan  chan<- []KVUpdate
 	walDone  <-chan error
 
+	pendingOrphans [][]NodeID
+
 	logger *slog.Logger
 }
 
@@ -90,8 +92,7 @@ func (c *CommitTree) Apply(tree *Tree) error {
 	}
 	c.root = tree.root
 	batch := tree.updateBatch
-
-	c.store.MarkOrphans(batch.Version, batch.Orphans)
+	c.pendingOrphans = append(c.pendingOrphans, batch.Orphans...)
 
 	if c.writeWal {
 		c.walChan <- batch.Updates
@@ -172,6 +173,9 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	c.store.MarkOrphans(c.stagedVersion(), c.pendingOrphans)
+	c.pendingOrphans = nil
 
 	// start eviction if needed
 	c.startEvict(c.stagedVersion())

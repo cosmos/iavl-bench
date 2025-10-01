@@ -129,11 +129,19 @@ func (c *Compactor) Compact() (*Changeset, error) {
 		leafCount := verInfo.Leaves.Count
 		newLeafStartOffset := uint32(c.leavesWriter.Count())
 		newLeafCount := uint32(0)
+		c.logger.Debug("version info", "verInfo", verInfo)
+		// Iterate leaves
+		// For each leaf, check if it should be retained
 		for j := uint32(0); j < leafCount; j++ {
 			leaf := *leavesData.UnsafeItem(leafStartOffset + j) // copy
 			id := leaf.Id
 			retain := c.criteria(uint32(id.Version()), leaf.OrphanVersion)
 			if !retain {
+				c.logger.Debug("pruning leaf",
+					"leafId", id,
+					"leafOrphanVersion", leaf.OrphanVersion,
+					"fileOffset", leafStartOffset+j+1,
+				)
 				continue
 			}
 
@@ -185,6 +193,12 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			retain := c.criteria(uint32(id.Version()), branch.OrphanVersion)
 			if !retain {
 				skippedBranches++
+				c.logger.Debug("pruning branch",
+					"branchId", id,
+					"branchOrphanVersion", branch.OrphanVersion,
+					"leftRef", branch.Left,
+					"rightRef", branch.Right)
+
 				continue
 			}
 
@@ -200,20 +214,22 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			newBranchCount++
 
 			var err error
-			branch.Left, err = c.updateNodeRef(branch.Left, skippedBranches)
+			left := branch.Left
+			branch.Left, err = c.updateNodeRef(left, skippedBranches)
 			if err != nil {
 				c.logger.Error("failed to update left ref",
 					"branchId", id,
 					"branchOrphanVersion", branch.OrphanVersion,
-					"leftRef", branch.Left)
+					"leftRef", left)
 				return nil, fmt.Errorf("failed to update left ref for branch %s: %w", id, err)
 			}
-			branch.Right, err = c.updateNodeRef(branch.Right, skippedBranches)
+			right := branch.Right
+			branch.Right, err = c.updateNodeRef(right, skippedBranches)
 			if err != nil {
 				c.logger.Error("failed to update right ref",
 					"branchId", id,
 					"branchOrphanVersion", branch.OrphanVersion,
-					"rightRef", branch.Right)
+					"rightRef", right)
 				return nil, fmt.Errorf("failed to update right ref for branch %s: %w", id, err)
 			}
 

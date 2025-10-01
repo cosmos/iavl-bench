@@ -23,10 +23,11 @@ type TreeStore struct {
 
 	opts TreeStoreOptions
 
-	toDelete         map[*Changeset]string
-	cleanupProcDone  chan struct{}
-	orphanWriteQueue []markOrphansReq
-	orphanQueueLock  sync.Mutex
+	toDelete          map[*Changeset]string
+	cleanupProcDone   chan struct{}
+	orphanWriteQueue  []markOrphansReq
+	orphanQueueLock   sync.Mutex
+	disableCompaction bool
 }
 
 type markOrphansReq struct {
@@ -63,6 +64,7 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
+	ts.disableCompaction = true // for testing
 
 	return ts, nil
 }
@@ -254,6 +256,10 @@ func (ts *TreeStore) cleanupProc() {
 			err = cs.FlushOrphans()
 			if err != nil {
 				ts.logger.Error("failed to flush orphans", "error", err)
+				continue
+			}
+
+			if ts.disableCompaction {
 				continue
 			}
 
