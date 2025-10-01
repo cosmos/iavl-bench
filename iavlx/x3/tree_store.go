@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,9 @@ type TreeStore struct {
 	cleanupProcDone  chan struct{}
 	orphanWriteQueue []markOrphansReq
 	orphanQueueLock  sync.Mutex
+
+	syncQueue chan *os.File
+	syncDone  chan error
 }
 
 type markOrphansReq struct {
@@ -56,6 +60,10 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
+
+	ts.syncQueue = make(chan *os.File, 128)
+	ts.syncDone = make(chan error)
+	go ts.syncProc()
 
 	return ts, nil
 }
@@ -184,6 +192,18 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 
 	ts.savedVersion.Store(version)
 
+	// Queue WAL file for async sync if enabled
+	if ts.opts.WriteWAL {
+		select {
+		case err := <-ts.syncDone:
+			if err != nil {
+				return err
+			}
+		default:
+		}
+		ts.syncQueue <- reader.kvlogReader.file
+	}
+
 	nextVersion := version + 1
 	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), nextVersion, ts)
 	if err != nil {
@@ -204,6 +224,16 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 	defer ts.orphanQueueLock.Unlock()
 
 	ts.orphanWriteQueue = append(ts.orphanWriteQueue, req)
+}
+
+func (ts *TreeStore) syncProc() {
+	defer close(ts.syncDone)
+	for file := range ts.syncQueue {
+		if err := file.Sync(); err != nil {
+			ts.syncDone <- fmt.Errorf("failed to sync WAL file %s: %w", file.Name(), err)
+			return
+		}
+	}
 }
 
 func (ts *TreeStore) cleanupProc() {
@@ -361,6 +391,11 @@ func (ts *TreeStore) doMarkOrphans() error {
 
 func (ts *TreeStore) Close() error {
 	close(ts.cleanupProcDone)
+	close(ts.syncQueue)
+	err := <-ts.syncDone
+	if err != nil {
+		return err
+	}
 
 	ts.changesetsMapLock.Lock()
 
