@@ -337,11 +337,11 @@ func (ts *TreeStore) cleanupProc() {
 			if !cs.TryDispose() {
 				ts.toDelete[cs] = newCs.kvlogPath
 			} else {
-				ts.logger.Info("old changeset already disposed, deleting files", "info", cs.info, "path", newCs.kvlogPath)
+				ts.logger.Info("old changeset already disposed, deleting files", "path", cs.dir)
 				// delete all .dat files in old changeset
 				err = cs.DeleteFiles(newCs.kvlogPath)
 				if err != nil {
-					ts.logger.Error("failed to delete old changeset files", "error", err)
+					ts.logger.Error("failed to delete old changeset files", "error", err, "path", cs.dir)
 				}
 			}
 		}
@@ -354,11 +354,11 @@ func (ts *TreeStore) cleanupProc() {
 			}
 
 			if !oldCs.TryDispose() {
-				ts.logger.Warn("old changeset not disposed, skipping delete", "info", oldCs.info, "path", kvlogPath)
+				ts.logger.Warn("old changeset not disposed, skipping delete", "path", oldCs.dir)
 				continue
 			}
 
-			ts.logger.Info("deleting old changeset files", "info", oldCs.info, "path", kvlogPath)
+			ts.logger.Info("deleting old changeset files", "path", oldCs.dir)
 			err := oldCs.DeleteFiles(kvlogPath)
 			if err != nil {
 				ts.logger.Error("failed to delete old changeset files", "error", err)
