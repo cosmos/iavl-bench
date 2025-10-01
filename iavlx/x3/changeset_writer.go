@@ -25,7 +25,14 @@ type ChangesetWriter struct {
 }
 
 func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
-	err := os.MkdirAll(dir, 0o755)
+	// Ensure absolute path
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
+	}
+	dir = absDir
+
+	err = os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
 	}

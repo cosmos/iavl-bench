@@ -29,7 +29,7 @@ type CommitTree struct {
 }
 
 func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, error) {
-	ts, err := NewTreeStore(dir, TreeStoreOptions{}, logger)
+	ts, err := NewTreeStore(dir, opts, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tree store: %w", err)
 	}

@@ -21,13 +21,12 @@ type TreeStore struct {
 	changesetsMapLock sync.RWMutex
 	savedVersion      atomic.Uint32
 
-	opts TreeStoreOptions
+	opts Options
 
-	toDelete          map[*Changeset]string
-	cleanupProcDone   chan struct{}
-	orphanWriteQueue  []markOrphansReq
-	orphanQueueLock   sync.Mutex
-	disableCompaction bool
+	toDelete         map[*Changeset]string
+	cleanupProcDone  chan struct{}
+	orphanWriteQueue []markOrphansReq
+	orphanQueueLock  sync.Mutex
 }
 
 type markOrphansReq struct {
@@ -40,14 +39,7 @@ type changesetEntry struct {
 	compactor atomic.Pointer[Compactor]
 }
 
-type TreeStoreOptions struct {
-	RetainCriteria         RetainCriteria
-	CompactWAL             bool
-	CompactOrphanThreshold float64
-	CompactOrphanAge       float64
-}
-
-func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*TreeStore, error) {
+func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore, error) {
 	ts := &TreeStore{
 		dir:        dir,
 		changesets: &btree.Map[uint32, *changesetEntry]{},
@@ -64,7 +56,6 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
-	//ts.disableCompaction = true
 
 	return ts, nil
 }
@@ -133,7 +124,7 @@ func (ts *TreeStore) ReadKV(nodeId NodeID, _ uint32) (key, value []byte, err err
 	return cs.ReadKV(nodeId, leaf.KeyOffset)
 }
 
-func (ts *TreeStore) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
+func (ts *TreeStore) ResolveLeaf(nodeId NodeID) (LeafLayout, error) {
 	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
 	if cs == nil {
 		return LeafLayout{}, fmt.Errorf("no changeset found for version %d", nodeId.Version())
@@ -141,7 +132,7 @@ func (ts *TreeStore) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, err
 	return cs.ResolveLeaf(nodeId, 0)
 }
 
-func (ts *TreeStore) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
+func (ts *TreeStore) ResolveBranch(nodeId NodeID) (BranchLayout, error) {
 	cs := ts.getChangesetForVersion(uint32(nodeId.Version()))
 	if cs == nil {
 		return BranchLayout{}, fmt.Errorf("no changeset found for version %d", nodeId.Version())
@@ -216,7 +207,7 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 }
 
 func (ts *TreeStore) cleanupProc() {
-	minCompactorInterval := time.Duration(0)
+	minCompactorInterval := time.Second * time.Duration(ts.opts.MinCompactionSeconds)
 	var lastCompactorStart time.Time
 	for {
 		sleepTime := time.Duration(0)
@@ -258,16 +249,16 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
-			if ts.disableCompaction {
+			if ts.opts.DisableCompaction {
 				continue
 			}
 
 			savedVersion := ts.savedVersion.Load()
-			compactOrphanAge := ts.opts.CompactOrphanAge
+			compactOrphanAge := ts.opts.CompactionOrphanAge
 			if compactOrphanAge <= 0 {
 				compactOrphanAge = 3
 			}
-			compactOrphanThreshold := ts.opts.CompactOrphanThreshold
+			compactOrphanThreshold := ts.opts.CompactionOrphanRatio
 			if compactOrphanThreshold <= 0 {
 				compactOrphanThreshold = 0.6
 			}
@@ -276,10 +267,16 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
-			retainCriteria := ts.opts.RetainCriteria
-			if retainCriteria == nil {
-				retainCriteria = func(createVersion, orphanVersion uint32) bool {
-					return orphanVersion == 0 // keep nodes that are not orphaned
+			retainVersions := ts.opts.RetainVersions
+			retainVersion := savedVersion - retainVersions
+			retainCriteria := func(createVersion, orphanVersion uint32) bool {
+				// orphanVersion should be non-zero
+				if orphanVersion >= retainVersion {
+					// keep the orphan if it's in the retain window
+					return true
+				} else {
+					// otherwise, we can remove it
+					return false
 				}
 			}
 
@@ -306,12 +303,6 @@ func (ts *TreeStore) cleanupProc() {
 			entry.changeset.Store(newCs)
 			cs.Evict()
 			entry.compactor.Store(nil)
-
-			err = compactor.ApplyPendingOrphans(newCs)
-			if err != nil {
-				ts.logger.Error("failed to apply pending orphans", "error", err)
-				continue
-			}
 
 			if !cs.IsDisposed() {
 				ts.toDelete[cs] = newCs.kvlogPath
@@ -344,6 +335,7 @@ func (ts *TreeStore) cleanupProc() {
 	}
 }
 
+// doMarkOrphans must only be called from the cleanupProc
 func (ts *TreeStore) doMarkOrphans() error {
 	var orphanQueue []markOrphansReq
 	ts.orphanQueueLock.Lock()
@@ -357,13 +349,9 @@ func (ts *TreeStore) doMarkOrphans() error {
 				if ce == nil {
 					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
 				}
-				if compactor := ce.compactor.Load(); compactor != nil {
-					compactor.MarkOrphan(req.version, nodeId)
-				} else {
-					err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
-					if err != nil {
-						return err
-					}
+				err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
+				if err != nil {
+					return err
 				}
 			}
 		}

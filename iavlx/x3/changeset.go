@@ -126,7 +126,7 @@ func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, er
 func (cr *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, error) {
 	if cr.evicted.Load() {
 		cr.tryDispose()
-		return cr.treeStore.ResolveLeaf(nodeId, fileIdx)
+		return cr.treeStore.ResolveLeaf(nodeId)
 	}
 	cr.Pin()
 	defer cr.Unpin()
@@ -151,7 +151,7 @@ func (cr *Changeset) ResolveLeaf(nodeId NodeID, fileIdx uint32) (LeafLayout, err
 func (cr *Changeset) ResolveBranch(nodeId NodeID, fileIdx uint32) (BranchLayout, error) {
 	if cr.evicted.Load() {
 		cr.tryDispose()
-		return cr.treeStore.ResolveBranch(nodeId, fileIdx)
+		return cr.treeStore.ResolveBranch(nodeId)
 	}
 
 	layout, _, err := cr.resolveBranchWithIdx(nodeId, fileIdx)

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 type CompactOptions struct {
@@ -34,20 +33,12 @@ type Compactor struct {
 
 	leafOffsetRemappings map[uint32]uint32
 	keyCache             map[string]uint32
-
-	pendingOrphans    []pendingOrphan
-	pendingOrphansLoc sync.Mutex
-}
-
-type pendingOrphan struct {
-	version uint32
-	nodeId  NodeID
 }
 
 func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, store *TreeStore) (*Compactor, error) {
 	dir := reader.dir
 	dirName := filepath.Base(dir)
-	split := strings.Split(dir, ".")
+	split := strings.Split(dirName, ".") // Split base name only, not full path
 	revision := uint32(0)
 	if len(split) == 2 {
 		dirName = split[0]
@@ -59,9 +50,17 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 	revision++
 	dirName = fmt.Sprintf("%s.%d", dirName, revision)
 	newDir := filepath.Join(filepath.Dir(dir), dirName)
+
+	// Ensure absolute path
+	absNewDir, err := filepath.Abs(newDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for %s: %w", newDir, err)
+	}
+	newDir = absNewDir
+
 	logger.Info("compacting changeset", "from", reader.dir, "to", newDir)
 
-	err := os.MkdirAll(newDir, 0o755)
+	err = os.MkdirAll(newDir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new changeset dir: %w", err)
 	}
@@ -129,19 +128,13 @@ func (c *Compactor) Compact() (*Changeset, error) {
 		leafCount := verInfo.Leaves.Count
 		newLeafStartOffset := uint32(c.leavesWriter.Count())
 		newLeafCount := uint32(0)
-		c.logger.Debug("version info", "verInfo", verInfo)
 		// Iterate leaves
 		// For each leaf, check if it should be retained
 		for j := uint32(0); j < leafCount; j++ {
 			leaf := *leavesData.UnsafeItem(leafStartOffset + j) // copy
 			id := leaf.Id
-			retain := c.criteria(uint32(id.Version()), leaf.OrphanVersion)
+			retain := leaf.OrphanVersion == 0 || c.criteria(uint32(id.Version()), leaf.OrphanVersion)
 			if !retain {
-				c.logger.Debug("pruning leaf",
-					"leafId", id,
-					"leafOrphanVersion", leaf.OrphanVersion,
-					"fileOffset", leafStartOffset+j+1,
-				)
 				continue
 			}
 
@@ -190,15 +183,9 @@ func (c *Compactor) Compact() (*Changeset, error) {
 		for j := uint32(0); j < branchCount; j++ {
 			branch := *branchesData.UnsafeItem(branchStartOffset + j) // copy
 			id := branch.Id
-			retain := c.criteria(uint32(id.Version()), branch.OrphanVersion)
+			retain := branch.OrphanVersion == 0 || c.criteria(uint32(id.Version()), branch.OrphanVersion)
 			if !retain {
 				skippedBranches++
-				c.logger.Debug("pruning branch",
-					"branchId", id,
-					"branchOrphanVersion", branch.OrphanVersion,
-					"leftRef", branch.Left,
-					"rightRef", branch.Right)
-
 				continue
 			}
 
@@ -315,13 +302,6 @@ func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 	}
 }
 
-func (c *Compactor) MarkOrphan(orphanVersion uint32, orphanNodeId NodeID) {
-	c.pendingOrphansLoc.Lock()
-	defer c.pendingOrphansLoc.Unlock()
-
-	c.pendingOrphans = append(c.pendingOrphans, pendingOrphan{version: orphanVersion, nodeId: orphanNodeId})
-}
-
 func (c *Compactor) seal(info ChangesetInfo) (*Changeset, error) {
 	infoWriter, err := NewStructWriter[ChangesetInfo](filepath.Join(c.dir, "info.dat"))
 	if err != nil {
@@ -374,19 +354,4 @@ func (c *Compactor) seal(info ChangesetInfo) (*Changeset, error) {
 	}
 
 	return reader, nil
-}
-
-func (c *Compactor) ApplyPendingOrphans(newChangeset *Changeset) error {
-	c.pendingOrphansLoc.Lock()
-	defer c.pendingOrphansLoc.Unlock()
-
-	for _, po := range c.pendingOrphans {
-		err := newChangeset.MarkOrphan(po.version, po.nodeId)
-		if err != nil {
-			return fmt.Errorf("failed to mark orphan %s for version %d: %w", po.nodeId, po.version, err)
-		}
-	}
-	c.pendingOrphans = nil
-
-	return nil
 }
