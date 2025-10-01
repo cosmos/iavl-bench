@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 type CommitTree struct {
-	latest           *NodePointer
+	latest           atomic.Pointer[NodePointer]
 	root             *NodePointer
 	zeroCopy         bool
 	version          uint32
@@ -34,17 +35,18 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 		return nil, fmt.Errorf("failed to create tree store: %w", err)
 	}
 
-	commitChan := make(chan commitRequest, 1024)
+	commitChan := make(chan commitRequest, 128)
 	commitDone := make(chan error, 1)
 
 	tree := &CommitTree{
-		root:       nil,
-		zeroCopy:   opts.ZeroCopy,
-		version:    0,
-		logger:     logger,
-		store:      ts,
-		commitChan: commitChan,
-		commitDone: commitDone,
+		root:          nil,
+		zeroCopy:      opts.ZeroCopy,
+		version:       0,
+		logger:        logger,
+		store:         ts,
+		commitChan:    commitChan,
+		commitDone:    commitDone,
+		evictionDepth: opts.EvictDepth,
 	}
 
 	// background commit processor
@@ -56,8 +58,8 @@ func NewCommitTree(dir string, opts Options, logger *slog.Logger) (*CommitTree, 
 				commitDone <- err
 				return
 			}
-			//// start eviction if needed
-			//tree.startEvict(req.version)
+			// start eviction if needed
+			tree.startEvict(req.version)
 		}
 	}()
 
@@ -98,14 +100,17 @@ func (c *CommitTree) startEvict(evictVersion uint32) {
 		return
 	}
 
-	latest := c.latest
+	latest := c.latest.Load()
 	if latest == nil {
 		// nothing to evict
 		return
 	}
 
+	c.logger.Debug("start eviction", "version", evictVersion, "depth", c.evictionDepth)
+	c.evictorRunning = true
 	go func() {
-		evictTraverse(latest, 0, c.evictionDepth, evictVersion)
+		evictedCount := evictTraverse(latest, 0, c.evictionDepth, evictVersion)
+		c.logger.Debug("eviction completed", "version", evictVersion, "lastEvict", c.lastEvictVersion, "evictedNodes", evictedCount)
 		c.lastEvictVersion = evictVersion
 		c.evictorRunning = false
 	}()
@@ -137,7 +142,7 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	}
 
 	// cache the committed tree as the latest version
-	c.latest = c.root
+	c.latest.Store(c.root)
 	c.version++
 
 	// send commit request to background processor
@@ -174,10 +179,6 @@ func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []by
 	}
 
 	if memNode.version != ctx.version {
-		if memNode.version <= ctx.savedVersion {
-			// node is already persisted, evict
-			np.mem.Store(nil)
-		}
 		return memNode.hash, nil
 	}
 
@@ -209,19 +210,17 @@ func commitTraverse(ctx *commitContext, np *NodePointer, depth uint8) (hash []by
 	return computeAndSetHash(memNode, leftHash, rightHash)
 }
 
-func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uint32) {
+func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uint32) (count int) {
 	memNode := np.mem.Load()
 	if memNode == nil {
-		return
-	}
-
-	if memNode.version > evictVersion {
-		return
+		return 0
 	}
 
 	// Evict nodes at or below the eviction depth
-	if depth >= evictionDepth {
+	if memNode.version <= evictVersion && depth >= evictionDepth {
 		np.mem.Store(nil)
+		count = 1
+		return
 	}
 
 	if memNode.IsLeaf() {
@@ -229,6 +228,7 @@ func evictTraverse(np *NodePointer, depth, evictionDepth uint8, evictVersion uin
 	}
 
 	// Continue traversing to find nodes to evict
-	evictTraverse(memNode.left, depth+1, evictionDepth, evictVersion)
-	evictTraverse(memNode.right, depth+1, evictionDepth, evictVersion)
+	count += evictTraverse(memNode.left, depth+1, evictionDepth, evictVersion)
+	count += evictTraverse(memNode.right, depth+1, evictionDepth, evictVersion)
+	return
 }

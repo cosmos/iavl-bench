@@ -6,11 +6,12 @@ import (
 )
 
 func VerifyTree(tree *CommitTree) error {
-	if tree.latest == nil {
+	latest := tree.latest.Load()
+	if latest == nil {
 		return nil
 	}
 
-	return verifyNode(tree.latest)
+	return verifyNode(latest)
 }
 
 type DebugError struct {
