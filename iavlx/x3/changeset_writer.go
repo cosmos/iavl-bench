@@ -24,15 +24,13 @@ type ChangesetWriter struct {
 	keyCache map[string]uint32
 }
 
-func NewChangesetWriter(dir, kvlogPath string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
+func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
 	err := os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
 	}
 
-	if kvlogPath == "" {
-		kvlogPath = filepath.Join(dir, "kv.log")
-	}
+	kvlogPath := filepath.Join(dir, "kv.log")
 	kvData, err := NewKVDataWriter(kvlogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create KV data store: %w", err)

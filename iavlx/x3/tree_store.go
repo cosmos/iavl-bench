@@ -48,7 +48,7 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 		opts:       options,
 	}
 
-	writer, err := NewChangesetWriter(filepath.Join(dir, "1"), "", 1, ts)
+	writer, err := NewChangesetWriter(filepath.Join(dir, "1"), 1, ts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create initial changeset: %w", err)
 	}
@@ -185,7 +185,7 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 	ts.savedVersion.Store(version)
 
 	nextVersion := version + 1
-	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), "", nextVersion, ts)
+	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), nextVersion, ts)
 	if err != nil {
 		return fmt.Errorf("failed to create writer for version %d: %w", nextVersion, err)
 	}
@@ -254,15 +254,23 @@ func (ts *TreeStore) compacterProc() {
 			}
 
 			savedVersion := ts.savedVersion.Load()
-			ageTarget := float64(savedVersion) - ts.opts.CompactOrphanAge
-			if !cs.ReadyToCompact(ts.opts.CompactOrphanThreshold, ageTarget) {
+			compactOrphanAge := ts.opts.CompactOrphanAge
+			if compactOrphanAge <= 0 {
+				compactOrphanAge = 3
+			}
+			compactOrphanThreshold := ts.opts.CompactOrphanThreshold
+			if compactOrphanThreshold <= 0 {
+				compactOrphanThreshold = 0.6
+			}
+			ageTarget := float64(savedVersion) - compactOrphanAge
+			if !cs.ReadyToCompact(compactOrphanThreshold, ageTarget) {
 				continue
 			}
 
 			retainCriteria := ts.opts.RetainCriteria
 			if retainCriteria == nil {
 				retainCriteria = func(createVersion, orphanVersion uint32) bool {
-					return orphanVersion < savedVersion
+					return orphanVersion == 0 // keep nodes that are not orphaned
 				}
 			}
 
@@ -277,17 +285,17 @@ func (ts *TreeStore) compacterProc() {
 
 			entry.compactor.Store(compactor)
 
-			ts.logger.Info("compacting changeset", "start_version", cs.info.StartVersion, "end_version", cs.info.EndVersion, "size", cs.TotalBytes())
+			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
 			newCs, err := compactor.Compact()
 			if err != nil {
 				ts.logger.Error("failed to compact changeset", "error", err)
 				entry.compactor.Store(nil)
 				continue
 			}
-			ts.logger.Info("compacted changeset", "start_version", cs.info.StartVersion, "end_version", cs.info.EndVersion, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
+			ts.logger.Info("compacted changeset", "info", newCs.info, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
 
-			cs.Evict()
 			entry.changeset.Store(newCs)
+			cs.Evict()
 			entry.compactor.Store(nil)
 
 			err = compactor.ApplyPendingOrphans(newCs)

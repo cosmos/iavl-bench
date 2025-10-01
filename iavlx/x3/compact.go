@@ -58,7 +58,7 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		kvlogPath = reader.kvlogPath
 	}
 
-	writer, err := NewChangesetWriter(dir, kvlogPath, 0, store)
+	writer, err := NewChangesetWriter(newDir, kvlogPath, 0, store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new changeset writer: %w", err)
 	}
@@ -85,7 +85,9 @@ func (c *Compactor) Compact() (*Changeset, error) {
 	branchOrphanCount := uint32(0)
 	leafOrphanVersionTotal := uint64(0)
 	branchOrphanVersionTotal := uint64(0)
+	c.logger.Info("starting compaction", "versions", numVersions)
 	for i := 0; i < numVersions; i++ {
+		c.logger.Info("compacting version", "version", c.reader.info.StartVersion+uint32(i))
 		verInfo := *versionsData.UnsafeItem(uint32(i)) // copy
 		newLeafStartIdx := uint32(0)
 		newLeafEndIdx := uint32(0)
@@ -132,7 +134,8 @@ func (c *Compactor) Compact() (*Changeset, error) {
 				return nil, fmt.Errorf("failed to append leaf %s: %w", id, err)
 			}
 
-			c.leafOffsetRemappings[uint32(i)] = uint32(c.writer.leavesData.Count()) // 1-based
+			oldLeafFileIdx := leafStartOffset + j + 1 // 1-based file index
+			c.leafOffsetRemappings[oldLeafFileIdx] = uint32(c.writer.leavesData.Count())
 		}
 
 		newBranchStartIdx := uint32(0)
@@ -243,9 +246,6 @@ func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 		// branch nodes we reduce by the number of skipped nodes
 		oldOffset := relPtr.Offset()
 		newOffset := oldOffset - int64(skipped)
-		if newOffset < 1 {
-			return 0, fmt.Errorf("invalid new branch offset: %d", newOffset)
-		}
 		return NodeRef(NewNodeRelativePointer(false, newOffset)), nil
 	}
 }
