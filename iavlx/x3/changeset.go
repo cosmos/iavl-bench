@@ -384,7 +384,6 @@ func (cr *Changeset) DeleteFiles(saveKVLogPath string) error {
 	errs = append(errs, os.Remove(filepath.Join(cr.dir, "branches.dat")))
 	errs = append(errs, os.Remove(filepath.Join(cr.dir, "versions.dat")))
 	errs = append(errs, os.Remove(filepath.Join(cr.dir, "info.dat")))
-	errs = append(errs, os.Remove(cr.dir))
 	return errors.Join(errs...)
 }
 

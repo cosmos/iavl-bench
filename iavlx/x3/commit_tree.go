@@ -188,6 +188,9 @@ func (c *CommitTree) Commit() ([]byte, error) {
 }
 
 func (c *CommitTree) Close() error {
+	if c.walChan != nil {
+		close(c.walChan)
+	}
 	//close(c.commitChan)
 	//return <-c.commitDone
 	return c.store.Close()

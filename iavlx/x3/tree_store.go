@@ -64,7 +64,7 @@ func NewTreeStore(dir string, options TreeStoreOptions, logger *slog.Logger) (*T
 
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
-	ts.disableCompaction = true // for testing
+	//ts.disableCompaction = true
 
 	return ts, nil
 }
@@ -216,7 +216,7 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 }
 
 func (ts *TreeStore) cleanupProc() {
-	minCompactorInterval := 10 * time.Second
+	minCompactorInterval := time.Duration(0)
 	var lastCompactorStart time.Time
 	for {
 		sleepTime := time.Duration(0)
@@ -227,7 +227,6 @@ func (ts *TreeStore) cleanupProc() {
 		case <-ts.cleanupProcDone:
 			return
 		case <-time.After(sleepTime):
-		default:
 		}
 
 		lastCompactorStart = time.Now()
