@@ -260,6 +260,10 @@ func (cs *ChangesetWriter) Seal() (*Changeset, error) {
 		StartVersion: cs.startVersion,
 		EndVersion:   cs.endVersion,
 	}
+	return cs.seal(info)
+}
+
+func (cs *ChangesetWriter) seal(info ChangesetInfo) (*Changeset, error) {
 	infoWriter, err := NewStructWriter[ChangesetInfo](filepath.Join(cs.dir, "info.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset info file: %w", err)
