@@ -64,8 +64,6 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 	}
 	newDir = absNewDir
 
-	logger.Info("compacting changeset", "from", reader.dir, "to", newDir)
-
 	err = os.MkdirAll(newDir, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new changeset dir: %w", err)
@@ -395,8 +393,6 @@ func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
 	if reader.infoReader == nil || reader.infoReader.Count() == 0 {
 		return nil, fmt.Errorf("BUG: compacted info reader not properly initialized, count=%d", reader.infoReader.Count())
 	}
-	c.logger.Info("sealed compacted changeset", "startVersion", reader.info.StartVersion, "endVersion", reader.info.EndVersion)
-
 	return reader, nil
 }
 
