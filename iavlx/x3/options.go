@@ -25,6 +25,38 @@ type Options struct {
 	RetainVersions uint32 `json:"retain_versions"`
 	// MinCompactionSeconds is the minimum interval between compaction runs
 	MinCompactionSeconds uint32 `json:"min_compaction_seconds"`
-	// ChangesetMaxTarget is the maximum size of a changeset file when joining changesets.
+	// ChangesetMaxTarget is the maximum size of a changeset file when batching or joining changesets
 	ChangesetMaxTarget uint32 `json:"changeset_max_target"`
+}
+
+// GetWalSyncBufferSize returns the actual buffer size to use (handling 0 = 1 case)
+func (o Options) GetWalSyncBufferSize() int {
+	if o.WalSyncBuffer == 0 {
+		return 1 // 0 means async sync immediately with buffer of 1
+	}
+	return o.WalSyncBuffer
+}
+
+// GetCompactionOrphanAge returns the orphan age threshold with default
+func (o Options) GetCompactionOrphanAge() uint32 {
+	if o.CompactionOrphanAge == 0 {
+		return 10 // Default to 10 versions
+	}
+	return o.CompactionOrphanAge
+}
+
+// GetCompactionOrphanRatio returns the orphan ratio threshold with default
+func (o Options) GetCompactionOrphanRatio() float64 {
+	if o.CompactionOrphanRatio <= 0 {
+		return 0.6 // Default to 60% orphans
+	}
+	return o.CompactionOrphanRatio
+}
+
+// GetChangesetMaxTarget returns the max changeset size with default
+func (o Options) GetChangesetMaxTarget() uint64 {
+	if o.ChangesetMaxTarget == 0 {
+		return 512 * 1024 * 1024 // 512MB default
+	}
+	return uint64(o.ChangesetMaxTarget)
 }

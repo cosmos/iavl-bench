@@ -3,25 +3,21 @@ package x3
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"unsafe"
 )
 
 type Changeset struct {
-	info *ChangesetInfo
-
-	dir       string
-	kvlogPath string
+	files *ChangesetFiles
 
 	treeStore *TreeStore
 
-	kvlogReader  *KVLog // TODO make sure we handle compaction here too
-	infoReader   *StructReader[ChangesetInfo]
-	branchesData *NodeReader[BranchLayout]
-	leavesData   *NodeReader[LeafLayout]
-	versionsData *StructReader[VersionInfo]
+	info         *ChangesetInfo
+	infoMmap     *StructMmap[ChangesetInfo]
+	kvLog        *KVLog // TODO make sure we handle compaction here too
+	branchesData *NodeMmap[BranchLayout]
+	leavesData   *NodeMmap[LeafLayout]
+	versionsData *StructMmap[VersionInfo]
 
 	refCount      atomic.Int32
 	evicted       atomic.Bool
@@ -31,51 +27,47 @@ type Changeset struct {
 	needsSync     atomic.Bool
 }
 
-func NewChangeset(dir, kvlogPath string, treeStore *TreeStore) *Changeset {
+func NewChangeset(treeStore *TreeStore) *Changeset {
 	return &Changeset{
 		treeStore: treeStore,
-		dir:       dir,
-		kvlogPath: kvlogPath,
 	}
 }
 
-func (cr *Changeset) Init(
-	infoFile *os.File,
-	kvDataFile *os.File,
-	leavesDataFile *os.File,
-	branchesDataFile *os.File,
-	versionsDataFile *os.File,
-) error {
-	var err error
-	cr.infoReader, err = NewStructReader[ChangesetInfo](infoFile)
+func (cr *Changeset) InitOwned(files *ChangesetFiles) error {
+	err := cr.InitShared(files)
 	if err != nil {
-		return fmt.Errorf("failed to open changeset info: %w", err)
+		return err
 	}
+	cr.files = files
+	return nil
+}
 
-	if cr.infoReader.Count() == 0 {
-		return fmt.Errorf("changeset info file is empty")
-	}
-	cr.info = cr.infoReader.UnsafeItem(0)
+func (cr *Changeset) InitShared(files *ChangesetFiles) error {
+	var err error
 
-	cr.kvlogReader, err = NewKVLog(kvDataFile)
+	cr.kvLog, err = NewKVLog(files.kvlogFile)
 	if err != nil {
 		return fmt.Errorf("failed to open KV data store: %w", err)
 	}
 
-	cr.leavesData, err = NewNodeReader[LeafLayout](leavesDataFile)
+	cr.leavesData, err = NewNodeReader[LeafLayout](files.leavesFile)
 	if err != nil {
 		return fmt.Errorf("failed to open leaves data file: %w", err)
 	}
 
-	cr.branchesData, err = NewNodeReader[BranchLayout](branchesDataFile)
+	cr.branchesData, err = NewNodeReader[BranchLayout](files.branchesFile)
 	if err != nil {
 		return fmt.Errorf("failed to open branches data file: %w", err)
 	}
 
-	cr.versionsData, err = NewStructReader[VersionInfo](versionsDataFile)
+	cr.versionsData, err = NewStructReader[VersionInfo](files.versionsFile)
 	if err != nil {
 		return fmt.Errorf("failed to open versions data file: %w", err)
 	}
+
+	// we need a reference to the changeset info mmap to be able to flush it later when orphans are marked
+	cr.info = files.info
+	cr.infoMmap = files.infoMmap
 
 	return nil
 }
@@ -95,7 +87,7 @@ func (cr *Changeset) ReadK(nodeId NodeID, offset uint32) (key []byte, err error)
 	cr.Pin()
 	defer cr.Unpin()
 
-	k, err := cr.kvlogReader.UnsafeReadK(offset)
+	k, err := cr.kvLog.UnsafeReadK(offset)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +105,7 @@ func (cr *Changeset) ReadKV(nodeId NodeID, offset uint32) (key, value []byte, er
 	defer cr.Unpin()
 
 	// TODO add an optimization when we only want to read and copy value
-	k, v, err := cr.kvlogReader.ReadKV(offset)
+	k, v, err := cr.kvLog.ReadKV(offset)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -341,7 +333,7 @@ func (cr *Changeset) FlushOrphans() error {
 		cr.dirtyBranches.Store(false)
 	}
 	if wasDirty {
-		err := cr.infoReader.Flush()
+		err := cr.infoMmap.Flush()
 		if err != nil {
 			return fmt.Errorf("failed to flush changeset info: %w", err)
 		}
@@ -350,13 +342,16 @@ func (cr *Changeset) FlushOrphans() error {
 }
 
 func (cr *Changeset) Close() error {
-	return errors.Join(
-		cr.kvlogReader.Close(),
+	errs := []error{
+		cr.kvLog.Close(),
 		cr.leavesData.Close(),
 		cr.branchesData.Close(),
 		cr.versionsData.Close(),
-		cr.infoReader.Close(),
-	)
+	}
+	if cr.files != nil {
+		errs = append(errs, cr.files.Close())
+	}
+	return errors.Join(errs...)
 }
 
 func (cr *Changeset) Pin() {
@@ -378,33 +373,23 @@ func (cr *Changeset) TryDispose() bool {
 	if cr.refCount.Load() <= 0 {
 		if cr.disposed.CompareAndSwap(false, true) {
 			_ = cr.Close()
-			cr.info = nil
 			cr.versionsData = nil
 			cr.branchesData = nil
 			cr.leavesData = nil
-			cr.kvlogReader = nil
-			cr.infoReader = nil
+			cr.kvLog = nil
+			cr.files = nil
+			cr.info = nil
+			cr.infoMmap = nil
+			cr.treeStore = nil
 			return true
 		}
 	}
 	return false
 }
 
-func (cr *Changeset) DeleteFiles(saveKVLogPath string) error {
-	var errs []error
-	if cr.kvlogPath != saveKVLogPath {
-		errs = append(errs, os.Remove(cr.kvlogPath))
-	}
-	errs = append(errs, os.Remove(filepath.Join(cr.dir, "leaves.dat")))
-	errs = append(errs, os.Remove(filepath.Join(cr.dir, "branches.dat")))
-	errs = append(errs, os.Remove(filepath.Join(cr.dir, "versions.dat")))
-	errs = append(errs, os.Remove(filepath.Join(cr.dir, "info.dat")))
-	return errors.Join(errs...)
-}
-
 func (cr *Changeset) TotalBytes() int {
 	return cr.leavesData.TotalBytes() +
 		cr.branchesData.TotalBytes() +
-		cr.kvlogReader.TotalBytes() +
+		cr.kvLog.TotalBytes() +
 		cr.versionsData.TotalBytes()
 }

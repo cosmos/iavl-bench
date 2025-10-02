@@ -16,20 +16,20 @@ func init() {
 	}
 }
 
-type StructReader[T any] struct {
+type StructMmap[T any] struct {
 	items []T
 	file  *MmapFile
 	size  int
 }
 
-func NewStructReader[T any](file *os.File) (*StructReader[T], error) {
+func NewStructReader[T any](file *os.File) (*StructMmap[T], error) {
 	mmap, err := NewMmapFile(file)
 	if err != nil {
 		return nil, err
 	}
 
 	var zero T
-	df := &StructReader[T]{
+	df := &StructMmap[T]{
 		file: mmap,
 		size: int(unsafe.Sizeof(zero)),
 	}
@@ -51,23 +51,23 @@ func NewStructReader[T any](file *os.File) (*StructReader[T], error) {
 	return df, nil
 }
 
-func (df *StructReader[T]) UnsafeItem(i uint32) *T {
+func (df *StructMmap[T]) UnsafeItem(i uint32) *T {
 	return &df.items[i]
 }
 
-func (df *StructReader[T]) Count() int {
+func (df *StructMmap[T]) Count() int {
 	return len(df.items)
 }
 
-func (df *StructReader[T]) Flush() error {
+func (df *StructMmap[T]) Flush() error {
 	return df.file.Flush()
 }
 
-func (df *StructReader[T]) TotalBytes() int {
+func (df *StructMmap[T]) TotalBytes() int {
 	return df.file.TotalBytes()
 }
 
-func (df *StructReader[T]) Close() error {
+func (df *StructMmap[T]) Close() error {
 	return df.file.Close()
 }
 
@@ -75,19 +75,19 @@ type NodeLayout interface {
 	ID() NodeID
 }
 
-type NodeReader[T NodeLayout] struct {
-	*StructReader[T]
+type NodeMmap[T NodeLayout] struct {
+	*StructMmap[T]
 }
 
-func NewNodeReader[T NodeLayout](file *os.File) (*NodeReader[T], error) {
+func NewNodeReader[T NodeLayout](file *os.File) (*NodeMmap[T], error) {
 	sf, err := NewStructReader[T](file)
 	if err != nil {
 		return nil, err
 	}
-	return &NodeReader[T]{StructReader: sf}, nil
+	return &NodeMmap[T]{StructReader: sf}, nil
 }
 
-func (nf *NodeReader[T]) FindByID(id NodeID, info *NodeSetInfo) (*T, error) {
+func (nf *NodeMmap[T]) FindByID(id NodeID, info *NodeSetInfo) (*T, error) {
 	// binary search with interpolation
 	lowOffset := info.StartOffset
 	targetIdx := id.Index()

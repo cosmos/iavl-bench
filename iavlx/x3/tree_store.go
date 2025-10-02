@@ -17,10 +17,11 @@ type TreeStore struct {
 	logger *slog.Logger
 	dir    string
 
-	currentWriter     *ChangesetWriter
-	changesets        *btree.Map[uint32, *changesetEntry]
-	changesetsMapLock sync.RWMutex
-	savedVersion      atomic.Uint32
+	currentWriter         *ChangesetWriter
+	currentChangesetEntry *changesetEntry // Entry for the current batch being written
+	changesets            *btree.Map[uint32, *changesetEntry]
+	changesetsMapLock     sync.RWMutex
+	savedVersion          atomic.Uint32
 
 	opts Options
 
@@ -51,19 +52,15 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 		opts:       options,
 	}
 
-	writer, err := NewChangesetWriter(filepath.Join(dir, "1"), 1, ts)
+	err := ts.initNewWriter()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create initial changeset: %w", err)
+		return nil, fmt.Errorf("failed to initialize first writer: %w", err)
 	}
-	ts.currentWriter = writer
 
 	ts.cleanupProc = newCleanupProc(ts)
 
 	if options.WriteWAL && options.WalSyncBuffer >= 0 {
-		bufferSize := options.WalSyncBuffer
-		if bufferSize == 0 {
-			bufferSize = 1 // Almost synchronous
-		}
+		bufferSize := options.GetWalSyncBufferSize()
 		ts.syncQueue = make(chan *Changeset, bufferSize)
 		ts.syncDone = make(chan error)
 		go ts.syncProc()
@@ -72,14 +69,32 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 	return ts, nil
 }
 
+func (ts *TreeStore) initNewWriter() error {
+	stagedVersion := ts.savedVersion.Load() + 1
+	dirName := filepath.Join(ts.dir, fmt.Sprintf("%d", stagedVersion)
+	files, err := OpenChangesetFiles(dirName, "")
+	if err != nil {
+		return fmt.Errorf("failed to open changeset files: %w in %s", err, dirName)
+	}
+
+	writer, err := NewChangesetWriter(files, stagedVersion, ts)
+	if err != nil {
+		return fmt.Errorf("failed to create changeset writer: %w", err)
+	}
+	ts.currentWriter = writer
+
+	return nil
+}
+
 func (ts *TreeStore) getChangesetEntryForVersion(version uint32) *changesetEntry {
 	ts.changesetsMapLock.RLock()
 	defer ts.changesetsMapLock.RUnlock()
 
 	var res *changesetEntry
-	ts.changesets.Ascend(version, func(key uint32, cs *changesetEntry) bool {
+	// Find the changeset with the highest start version <= the requested version
+	ts.changesets.Descend(version, func(key uint32, cs *changesetEntry) bool {
 		res = cs
-		return false
+		return false // Take the first (highest) entry <= version
 	})
 	return res
 }
@@ -180,20 +195,65 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		return err
 	}
 
-	ts.logger.Debug("saved root", "version", version, "changeset_size", ts.currentWriter.TotalBytes())
+	currentSize := ts.currentWriter.TotalBytes()
+	maxSize := ts.opts.GetChangesetMaxTarget()
+	startVersion := ts.currentWriter.startVersion
 
+	ts.logger.Debug("saved root", "version", version, "changeset_size", currentSize, "max_size", maxSize, "start_version", startVersion)
+
+	// Check if we should continue batching or seal
+	if uint64(currentSize) < maxSize {
+		// Continue batching in the same changeset
+		// Create an updated reader with new mmap for the increased size
+		reader := ts.createUpdatedReader()
+
+		if ts.currentChangesetEntry == nil {
+			// First time we're creating an entry for this batch
+			ts.currentChangesetEntry = &changesetEntry{}
+			ts.currentChangesetEntry.changeset.Store(reader)
+
+			// Register at the start version only
+			ts.changesetsMapLock.Lock()
+			ts.changesets.Set(startVersion, ts.currentChangesetEntry)
+			ts.changesetsMapLock.Unlock()
+		} else {
+			// Update existing entry with new reader
+			oldReader := ts.currentChangesetEntry.changeset.Swap(reader)
+			if oldReader != nil {
+				oldReader.Evict()
+				ts.cleanupProc.addPendingDisposal(oldReader)
+			}
+		}
+
+		ts.savedVersion.Store(version)
+		return nil
+	}
+
+	// Size limit reached - seal the current batch
 	reader, err := ts.currentWriter.Seal()
 	if err != nil {
 		return fmt.Errorf("failed to seal changeset for version %d: %w", version, err)
 	}
 
-	var changesetEntry changesetEntry
-	changesetEntry.changeset.Store(reader)
+	if ts.currentChangesetEntry == nil {
+		// This was a single large version that exceeded the size immediately
+		ts.currentChangesetEntry = &changesetEntry{}
+		ts.currentChangesetEntry.changeset.Store(reader)
 
-	ts.changesetsMapLock.Lock()
-	ts.changesets.Set(version, &changesetEntry)
-	ts.changesetsMapLock.Unlock()
+		// Register at the start version only
+		ts.changesetsMapLock.Lock()
+		ts.changesets.Set(startVersion, ts.currentChangesetEntry)
+		ts.changesetsMapLock.Unlock()
+	} else {
+		// Update existing entry with the final sealed reader
+		oldReader := ts.currentChangesetEntry.changeset.Swap(reader)
+		if oldReader != nil {
+			oldReader.Evict()
+			ts.cleanupProc.addPendingDisposal(oldReader)
+		}
+	}
 
+	ts.currentChangesetEntry = nil // Reset for next batch
 	ts.savedVersion.Store(version)
 
 	// Queue changeset for async WAL sync if enabled
@@ -209,18 +269,17 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		ts.syncQueue <- reader
 	} else {
 		// Otherwise, sync immediately
-		err := reader.kvlogReader.file.Sync()
+		err := reader.kvLog.file.Sync()
 		if err != nil {
 			return fmt.Errorf("failed to sync WAL file: %w", err)
 		}
 	}
 
-	nextVersion := version + 1
-	writer, err := NewChangesetWriter(filepath.Join(ts.dir, fmt.Sprintf("%d", nextVersion)), nextVersion, ts)
+	// Create new writer for next batch
+	err = ts.initNewWriter()
 	if err != nil {
-		return fmt.Errorf("failed to create writer for version %d: %w", nextVersion, err)
+		return fmt.Errorf("failed to initialize new writer after sealing version %d: %w", version, err)
 	}
-	ts.currentWriter = writer
 
 	return nil
 }
@@ -232,12 +291,26 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 func (ts *TreeStore) syncProc() {
 	defer close(ts.syncDone)
 	for cs := range ts.syncQueue {
-		if err := cs.kvlogReader.file.Sync(); err != nil {
+		if err := cs.kvLog.file.Sync(); err != nil {
 			ts.syncDone <- fmt.Errorf("failed to sync WAL file: %w", err)
 			return
 		}
 		cs.needsSync.Store(false)
 	}
+}
+
+func (ts *TreeStore) createUpdatedReader() *Changeset {
+	// Create a new reader that will re-mmap the files with their current size
+	reader := NewChangeset(ts)
+
+	// Initialize the reader - it will read version info and mmap the files at their current size
+	err := reader.InitShared(ts.currentWriter.files)
+	if err != nil {
+		ts.logger.Error("failed to initialize updated reader", "error", err)
+		return nil
+	}
+
+	return reader
 }
 
 func (ts *TreeStore) Close() error {
@@ -270,6 +343,9 @@ type cleanupProc struct {
 	toDelete         map[*Changeset]deleteInfo
 	activeCompactor  *Compactor
 	beingCompacted   []compactionEntry
+
+	// Disposal queue for evicted changesets awaiting refcount=0
+	disposalQueue sync.Map // *Changeset -> struct{}
 }
 
 type compactionEntry struct {
@@ -343,6 +419,7 @@ func (cp *cleanupProc) run() {
 		}
 
 		cp.processToDelete()
+		cp.processDisposalQueue()
 	}
 }
 
@@ -385,14 +462,19 @@ func (cp *cleanupProc) doMarkOrphans() error {
 func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 	cs := entry.changeset.Load()
 
+	if cs.files == nil {
+		// skipping incomplete changeset which is still open for writing
+		return nil
+	}
+
 	// safety check - skip if evicted or disposed
 	if cs.evicted.Load() || cs.disposed.Load() {
-		return fmt.Errorf("evicted/disposed changeset: %s found in queue", cs.dir)
+		return fmt.Errorf("evicted/disposed changeset: %s found in queue", cs.files.dir)
 	}
 
 	// safety check - ensure info is valid
 	if cs.info == nil {
-		return fmt.Errorf("changeset has nil info: %s found in queue", cs.dir)
+		return fmt.Errorf("changeset has nil info: %s found in queue", cs.files.dir)
 	}
 
 	err := cs.FlushOrphans()
@@ -411,7 +493,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 
 	if cp.activeCompactor != nil {
 		if cp.opts.CompactWAL &&
-			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.ChangesetMaxTarget) {
+			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.GetChangesetMaxTarget()) {
 			// add to active compactor
 			err = cp.activeCompactor.AddChangeset(cs)
 			if err != nil {
@@ -443,14 +525,8 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 		return nil
 	}
 
-	compactOrphanAge := cp.opts.CompactionOrphanAge
-	if compactOrphanAge == 0 {
-		compactOrphanAge = 10
-	}
-	compactOrphanThreshold := cp.opts.CompactionOrphanRatio
-	if compactOrphanThreshold <= 0 {
-		compactOrphanThreshold = 0.6
-	}
+	compactOrphanAge := cp.opts.GetCompactionOrphanAge()
+	compactOrphanThreshold := cp.opts.GetCompactionOrphanRatio()
 
 	// Age target relative to bottom of retention window
 	ageTarget := retentionWindowBottom - compactOrphanAge
@@ -459,15 +535,13 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 	shouldCompact := cs.ReadyToCompact(compactOrphanThreshold, ageTarget)
 
 	// Check size-based joining trigger
-	maxSize := uint64(cp.opts.ChangesetMaxTarget)
-	if maxSize == 0 {
-		maxSize = 1024 * 1024 * 1024 // 1GB default
-	}
+	maxSize := cp.opts.GetChangesetMaxTarget()
 
 	canJoin := false
-	if !shouldCompact && nextEntry != nil && cp.opts.CompactWAL {
+	if !shouldCompact && cp.opts.CompactWAL && nextEntry != nil {
 		nextCs := nextEntry.changeset.Load()
-		if nextCs.info.StartVersion == cs.info.EndVersion+1 {
+		if nextCs.files != nil && // we can't compact a changeset that's still being written
+			nextCs.info.StartVersion == cs.info.EndVersion+1 {
 			if uint64(cs.TotalBytes())+uint64(nextCs.TotalBytes()) <= maxSize {
 				canJoin = true
 			}
@@ -577,4 +651,28 @@ func (cp *cleanupProc) processToDelete() {
 func (cp *cleanupProc) shutdown() {
 	close(cp.closeCleanupProc)
 	<-cp.cleanupProcDone
+}
+
+// addPendingDisposal adds an evicted changeset to the disposal queue
+func (cp *cleanupProc) addPendingDisposal(cs *Changeset) {
+	cp.disposalQueue.Store(cs, struct{}{})
+}
+
+// processDisposalQueue tries to dispose changesets waiting for refcount=0
+func (cp *cleanupProc) processDisposalQueue() {
+	disposalCount := 0
+	cp.disposalQueue.Range(func(key, value interface{}) bool {
+		disposalCount++
+		cs := key.(*Changeset)
+		if cs.TryDispose() {
+			cp.disposalQueue.Delete(cs)
+			cp.logger.Debug("disposed evicted changeset", "dir", cs.dir)
+		}
+		return true
+	})
+
+	// Warn if the disposal queue is getting large
+	if disposalCount > 100 {
+		cp.logger.Warn("disposal queue is large", "size", disposalCount)
+	}
 }

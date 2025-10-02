@@ -77,50 +77,50 @@ with tab1:
 
 with tab2:
     mem_field = st.selectbox('Memory field', ['alloc', 'sys', 'heap_inuse', 'heap_idle', 'heap_released'], index=0)
-    mem_data = {}
+    mem_dfs = []
     for d in data:
         if not d.mem_df.is_empty():
-            # Select version and memory field, convert to GB
-            mem_data[d.name] = d.mem_df.select(
+            # Select version and memory field, convert to GB, add name column
+            mem_df = d.mem_df.select(
                 pl.col('version'),
-                (pl.col(mem_field) / 1_000_000_000).alias(d.name)
+                (pl.col(mem_field) / 1_000_000_000).alias('mem_gb')
+            ).with_columns(
+                pl.lit(d.name).alias('benchmark')
             )
+            mem_dfs.append(mem_df)
 
-    if mem_data:
-        # Merge all dataframes on version
-        mem_df = None
-        for name, df in mem_data.items():
-            if mem_df is None:
-                mem_df = df
-            else:
-                mem_df = mem_df.join(df, on='version', how='outer')
+    if mem_dfs:
+        # Concatenate all data
+        mem_df = pl.concat(mem_dfs)
+        mem_pandas = mem_df.to_pandas()
 
-        mem_df = mem_df.sort('version')
-        st.line_chart(mem_df, x='version', y_label='mem (GB)')
+        # Pivot to wide format for line chart (use pivot_table to handle duplicates)
+        mem_wide = mem_pandas.pivot_table(index='version', columns='benchmark', values='mem_gb', aggfunc='mean')
+        st.line_chart(mem_wide, y_label='mem (GB)')
     else:
         st.warning('No memory data available')
 
 with tab3:
-    disk_data = {}
+    disk_dfs = []
     for d in data:
         if not d.disk_df.is_empty():
-            # Select version and size, convert to GB
-            disk_data[d.name] = d.disk_df.select(
+            # Select version and size, convert to GB, add name column
+            disk_df = d.disk_df.select(
                 pl.col('version'),
-                (pl.col('size') / 1_000_000_000).alias(d.name)
+                (pl.col('size') / 1_000_000_000).alias('disk_gb')
+            ).with_columns(
+                pl.lit(d.name).alias('benchmark')
             )
+            disk_dfs.append(disk_df)
 
-    if disk_data:
-        # Merge all dataframes on version
-        disk_df = None
-        for name, df in disk_data.items():
-            if disk_df is None:
-                disk_df = df
-            else:
-                disk_df = disk_df.join(df, on='version', how='outer')
+    if disk_dfs:
+        # Concatenate all data
+        disk_df = pl.concat(disk_dfs)
+        disk_pandas = disk_df.to_pandas()
 
-        disk_df = disk_df.sort('version')
-        st.line_chart(disk_df, x='version', y_label='disk (GB)')
+        # Pivot to wide format for line chart (use pivot_table to handle duplicates)
+        disk_wide = disk_pandas.pivot_table(index='version', columns='benchmark', values='disk_gb', aggfunc='mean')
+        st.line_chart(disk_wide, y_label='disk (GB)')
     else:
         st.warning('No disk data available')
 

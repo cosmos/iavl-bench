@@ -9,21 +9,14 @@ import (
 )
 
 type FileWriter struct {
-	file    *os.File
 	writer  *bufio.Writer
 	written int
 }
 
-func NewFileWriter(path string) (*FileWriter, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
-	}
-
+func NewFileWriter(file *os.File) *FileWriter {
 	return &FileWriter{
-		file:   file,
 		writer: bufio.NewWriter(file),
-	}, nil
+	}
 }
 
 func (f *FileWriter) Write(p []byte) (n int, err error) {
@@ -43,14 +36,6 @@ func (f *FileWriter) Size() int {
 	return f.written
 }
 
-func (f *FileWriter) Dispose() (*os.File, error) {
-	if err := f.Flush(); err != nil {
-		_ = f.file.Close()
-		return nil, err
-	}
-	return f.file, nil
-}
-
 var _ io.Writer = (*FileWriter)(nil)
 
 type StructWriter[T any] struct {
@@ -58,16 +43,13 @@ type StructWriter[T any] struct {
 	*FileWriter
 }
 
-func NewStructWriter[T any](path string) (*StructWriter[T], error) {
-	fw, err := NewFileWriter(path)
-	if err != nil {
-		return nil, err
-	}
+func NewStructWriter[T any](file *os.File) *StructWriter[T] {
+	fw := NewFileWriter(file)
 
 	return &StructWriter[T]{
 		size:       int(unsafe.Sizeof(*new(T))),
 		FileWriter: fw,
-	}, nil
+	}
 }
 
 func (sw *StructWriter[T]) Append(x *T) error {

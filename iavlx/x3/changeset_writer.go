@@ -3,17 +3,13 @@ package x3
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 type ChangesetWriter struct {
-	startVersion  uint32
-	endVersion    uint32
 	stagedVersion uint32
 
-	dir          string
-	kvlogPath    string
+	files *ChangesetFiles
+
 	kvlog        *KVLogWriter
 	branchesData *StructWriter[BranchLayout]
 	leavesData   *StructWriter[LeafLayout]
@@ -24,50 +20,14 @@ type ChangesetWriter struct {
 	keyCache map[string]uint32
 }
 
-func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
-	// Ensure absolute path
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
-	}
-	dir = absDir
-
-	err = os.MkdirAll(dir, 0o755)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create changeset dir: %w", err)
-	}
-
-	kvlogPath := filepath.Join(dir, "kv.log")
-	kvData, err := NewKVDataWriter(kvlogPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create KV data store: %w", err)
-	}
-
-	leavesData, err := NewStructWriter[LeafLayout](filepath.Join(dir, "leaves.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create leaves data file: %w", err)
-	}
-
-	branchesData, err := NewStructWriter[BranchLayout](filepath.Join(dir, "branches.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create branches data file: %w", err)
-	}
-
-	versionsData, err := NewStructWriter[VersionInfo](filepath.Join(dir, "versions.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create versions data file: %w", err)
-	}
-
+func NewChangesetWriter(files *ChangesetFiles, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
 	cs := &ChangesetWriter{
-		dir:           dir,
-		startVersion:  0,
-		endVersion:    0,
 		stagedVersion: startVersion,
-		kvlog:         kvData,
-		branchesData:  branchesData,
-		leavesData:    leavesData,
-		versionsData:  versionsData,
-		reader:        NewChangeset(dir, kvlogPath, treeStore),
+		kvlog:         NewKVDataWriter(files.kvlogFile),
+		branchesData:  NewStructWriter[BranchLayout](files.branchesFile),
+		leavesData:    NewStructWriter[LeafLayout](files.leavesFile),
+		versionsData:  NewStructWriter[VersionInfo](files.versionsFile),
+		reader:        NewChangeset(treeStore),
 		keyCache:      make(map[string]uint32),
 	}
 	return cs, nil
@@ -116,37 +76,43 @@ func (cs *ChangesetWriter) SaveRoot(root *NodePointer, version uint32, totalLeav
 	}
 
 	// Set start version on first successful save
-	if cs.startVersion == 0 {
-		cs.startVersion = version
+	info := cs.files.info
+	if info.StartVersion == 0 {
+		info.StartVersion = version
 	}
 
 	// Always update end version
-	cs.endVersion = version
+	info.EndVersion = version
 
 	cs.stagedVersion++
 
 	return nil
 }
 
+func (cs *ChangesetWriter) CreatedSharedReader() (*Changeset, error) {
+	err := cs.Flush()
+	if err != nil {
+		return nil, fmt.Errorf("failed to flush data before creating shared reader: %w", err)
+	}
+
+	err = cs.reader.InitShared(cs.files)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize shared changeset reader: %w", err)
+	}
+
+	reader := cs.reader
+	cs.reader = NewChangeset(reader.treeStore)
+	return reader, nil
+}
+
 func (cs *ChangesetWriter) Flush() error {
-	// Flush all data to disk
-	err := cs.leavesData.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush leaf data: %w", err)
-	}
-	err = cs.branchesData.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush branch data: %w", err)
-	}
-	err = cs.kvlog.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush KV data: %w", err)
-	}
-	err = cs.versionsData.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush version data: %w", err)
-	}
-	return nil
+	return errors.Join(
+		cs.files.infoMmap.Flush(),
+		cs.leavesData.Flush(),
+		cs.branchesData.Flush(),
+		cs.kvlog.Flush(),
+		cs.versionsData.Flush(),
+	)
 }
 
 func (cs *ChangesetWriter) writeNode(np *NodePointer) error {
@@ -257,77 +223,31 @@ func (cs *ChangesetWriter) createNodeRef(parentIdx int64, np *NodePointer) NodeR
 	//}
 }
 
-func (cs *ChangesetWriter) TotalBytes() uint64 {
-	return uint64(cs.leavesData.Size() +
+func (cs *ChangesetWriter) TotalBytes() int {
+	return cs.leavesData.Size() +
 		cs.branchesData.Size() +
 		cs.versionsData.Size() +
-		cs.kvlog.Size())
+		cs.kvlog.Size()
 }
 
 func (cs *ChangesetWriter) Seal() (*Changeset, error) {
-	info := ChangesetInfo{
-		StartVersion: cs.startVersion,
-		EndVersion:   cs.endVersion,
-	}
-	return cs.seal(info)
-}
-
-func (cs *ChangesetWriter) seal(info ChangesetInfo) (*Changeset, error) {
-	infoWriter, err := NewStructWriter[ChangesetInfo](filepath.Join(cs.dir, "info.dat"))
+	err := cs.Flush()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create changeset info file: %w", err)
-	}
-	if err := infoWriter.Append(&info); err != nil {
-		return nil, fmt.Errorf("failed to write changeset info: %w", err)
-	}
-	if infoWriter.Count() != 1 {
-		return nil, fmt.Errorf("expected info writer count to be 1, got %d", infoWriter.Count())
-	}
-	infoFile, err := infoWriter.Dispose()
-	if err != nil {
-		return nil, fmt.Errorf("failed to close changeset info file: %w", err)
+		return nil, fmt.Errorf("failed to flush changeset data: %w", err)
 	}
 
-	var errs []error
-	leavesFile, err := cs.leavesData.Dispose()
+	err = cs.reader.InitOwned(cs.files)
 	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to close leaves data: %w", err))
+		return nil, fmt.Errorf("failed to initialize owned changeset reader: %w", err)
 	}
-	branchesFile, err := cs.branchesData.Dispose()
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to close branches data: %w", err))
-	}
-	versionsFile, err := cs.versionsData.Dispose()
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to close versions data: %w", err))
-	}
-	kvDataFile, err := cs.kvlog.Dispose()
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to close KV data: %w", err))
-	}
+	cs.files = nil
+	cs.leavesData = nil
+	cs.branchesData = nil
+	cs.versionsData = nil
+	cs.kvlog = nil
+	cs.keyCache = nil
+	reader := cs.reader
+	cs.reader = nil
 
-	err = errors.Join(errs...)
-	if err != nil {
-		return nil, err
-	}
-
-	err = cs.reader.Init(
-		infoFile,
-		kvDataFile,
-		leavesFile,
-		branchesFile,
-		versionsFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open changeset reader: %w", err)
-	}
-
-	// Validate initialization
-	if cs.reader.info == nil {
-		return nil, fmt.Errorf("BUG: changeset init resulted in nil info")
-	}
-	if cs.reader.infoReader == nil || cs.reader.infoReader.Count() == 0 {
-		return nil, fmt.Errorf("BUG: info reader not properly initialized, count=%d", cs.reader.infoReader.Count())
-	}
-
-	return cs.reader, nil
+	return reader, nil
 }

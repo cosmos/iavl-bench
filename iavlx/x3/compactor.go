@@ -1,9 +1,9 @@
 package x3
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -23,9 +23,8 @@ type Compactor struct {
 
 	processedChangesets []*Changeset
 	treeStore           *TreeStore
-	dir                 string
-	kvlogPath           string
 
+	files          *ChangesetFiles
 	leavesWriter   *StructWriter[LeafLayout]
 	branchesWriter *StructWriter[BranchLayout]
 	versionsWriter *StructWriter[VersionInfo]
@@ -42,56 +41,43 @@ type Compactor struct {
 }
 
 func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, store *TreeStore) (*Compactor, error) {
-	dir := reader.dir
-	dirName := filepath.Base(dir)
-	split := strings.Split(dirName, ".") // Split base name only, not full path
+	if reader.files == nil {
+		return nil, fmt.Errorf("changeset has no associated files, cannot compact a shared changeset reader which files set to nil")
+	}
+	dir := reader.files.dir
+	newDirName := filepath.Base(dir)
+	split := strings.Split(newDirName, ".") // Split base name only, not full path
 	revision := uint32(0)
 	if len(split) == 2 {
-		dirName = split[0]
+		newDirName = split[0]
 		_, err := fmt.Sscanf(split[1], "%d", &revision)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse revision from changeset dir: %w", err)
 		}
 	}
 	revision++
-	dirName = fmt.Sprintf("%s.%d", dirName, revision)
-	newDir := filepath.Join(filepath.Dir(dir), dirName)
-
-	// Ensure absolute path
-	absNewDir, err := filepath.Abs(newDir)
+	newDirName = fmt.Sprintf("%s.%d", newDirName, revision)
+	newDirName, err := filepath.Abs(newDirName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for %s: %w", newDir, err)
-	}
-	newDir = absNewDir
-
-	err = os.MkdirAll(newDir, 0o755)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new changeset dir: %w", err)
+		return nil, fmt.Errorf("failed to get absolute path for new changeset dir: %w", err)
 	}
 
-	kvlogPath := reader.kvlogPath
-	var kvlogWriter *KVLogWriter
+	// if we're not compacting the WAL, we can reuse the existing KV log path
+	kvlogPath := reader.files.kvlogPath
+	// if we're compacting the WAL, create a new KV log path
 	if opts.CompactWAL {
-		kvlogPath = filepath.Join(newDir, "kv.log")
-		kvlogWriter, err = NewKVDataWriter(kvlogPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create KV log writer: %w", err)
-		}
+		kvlogPath = filepath.Join(newDirName, "kv.log")
 	}
 
-	leavesWriter, err := NewStructWriter[LeafLayout](filepath.Join(newDir, "leaves.dat"))
+	newFiles, err := OpenChangesetFiles(newDirName, kvlogPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create leaves writer: %w", err)
+		return nil, fmt.Errorf("failed to open new changeset files: %w", err)
 	}
 
-	branchesWriter, err := NewStructWriter[BranchLayout](filepath.Join(newDir, "branches.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create branches writer: %w", err)
-	}
-
-	versionsWriter, err := NewStructWriter[VersionInfo](filepath.Join(newDir, "versions.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create versions writer: %w", err)
+	var kvlogWriter *KVLogWriter
+	// we only need a new KV log writer if we're compacting the WAL, otherwise it should be nil
+	if opts.CompactWAL {
+		kvlogWriter = NewKVDataWriter(newFiles.kvlogFile)
 	}
 
 	c := &Compactor{
@@ -99,12 +85,11 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		criteria:             opts.RetainCriteria,
 		compactWAL:           opts.CompactWAL,
 		treeStore:            store,
-		dir:                  newDir,
-		kvlogPath:            kvlogPath,
-		leavesWriter:         leavesWriter,
-		branchesWriter:       branchesWriter,
-		versionsWriter:       versionsWriter,
+		files:                newFiles,
 		kvlogWriter:          kvlogWriter,
+		leavesWriter:         NewStructWriter[LeafLayout](newFiles.leavesFile),
+		branchesWriter:       NewStructWriter[BranchLayout](newFiles.branchesFile),
+		versionsWriter:       NewStructWriter[VersionInfo](newFiles.versionsFile),
 		keyCache:             make(map[string]uint32),
 		leafOffsetRemappings: make(map[uint32]uint32),
 	}
@@ -301,16 +286,34 @@ func (c *Compactor) Seal() (*Changeset, error) {
 		return nil, fmt.Errorf("no changesets processed")
 	}
 
-	info := ChangesetInfo{
-		StartVersion:             c.processedChangesets[0].info.StartVersion,
-		EndVersion:               c.processedChangesets[len(c.processedChangesets)-1].info.EndVersion,
-		LeafOrphans:              c.leafOrphanCount,
-		BranchOrphans:            c.branchOrphanCount,
-		LeafOrphanVersionTotal:   c.leafOrphanVersionTotal,
-		BranchOrphanVersionTotal: c.branchOrphanVersionTotal,
+	info := c.files.info
+	info.StartVersion = c.processedChangesets[0].info.StartVersion
+	info.EndVersion = c.processedChangesets[len(c.processedChangesets)-1].info.EndVersion
+	info.LeafOrphans = c.leafOrphanCount
+	info.BranchOrphans = c.branchOrphanCount
+	info.LeafOrphanVersionTotal = c.leafOrphanVersionTotal
+	info.BranchOrphanVersionTotal = c.branchOrphanVersionTotal
+
+	errs := []error{
+		c.leavesWriter.Flush(),
+		c.branchesWriter.Flush(),
+		c.versionsWriter.Flush(),
+		c.files.infoMmap.Flush(),
+	}
+	if c.kvlogWriter != nil {
+		errs = append(errs, c.kvlogWriter.Flush())
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, fmt.Errorf("failed to flush data during compaction seal: %w", err)
 	}
 
-	return c.sealWithInfo(info)
+	cs := NewChangeset(c.treeStore)
+	err := cs.InitOwned(c.files)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sealed changeset: %w", err)
+	}
+
+	return cs, nil
 }
 
 func (c *Compactor) updateNodeRef(reader *Changeset, ref NodeRef, skipped int) (NodeRef, error) {
@@ -338,67 +341,6 @@ func (c *Compactor) updateNodeRef(reader *Changeset, ref NodeRef, skipped int) (
 		newOffset := oldOffset - int64(skipped)
 		return NodeRef(NewNodeRelativePointer(false, newOffset)), nil
 	}
-}
-
-func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
-	infoWriter, err := NewStructWriter[ChangesetInfo](filepath.Join(c.dir, "info.dat"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create changeset info writer: %w", err)
-	}
-	if err := infoWriter.Append(&info); err != nil {
-		return nil, fmt.Errorf("failed to write changeset info: %w", err)
-	}
-	if infoWriter.Count() != 1 {
-		return nil, fmt.Errorf("expected info writer count to be 1, got %d", infoWriter.Count())
-	}
-	infoFile, err := infoWriter.Dispose()
-	if err != nil {
-		return nil, fmt.Errorf("failed to dispose info writer: %w", err)
-	}
-
-	leavesFile, err := c.leavesWriter.Dispose()
-	if err != nil {
-		return nil, fmt.Errorf("failed to dispose leaves writer: %w", err)
-	}
-
-	branchesFile, err := c.branchesWriter.Dispose()
-	if err != nil {
-		return nil, fmt.Errorf("failed to dispose branches writer: %w", err)
-	}
-
-	versionsFile, err := c.versionsWriter.Dispose()
-	if err != nil {
-		return nil, fmt.Errorf("failed to dispose versions writer: %w", err)
-	}
-
-	var kvDataFile *os.File
-	if c.kvlogWriter != nil {
-		kvDataFile, err = c.kvlogWriter.Dispose()
-		if err != nil {
-			return nil, fmt.Errorf("failed to dispose KV log writer: %w", err)
-		}
-	} else {
-		// Reusing existing KV log - open it
-		kvDataFile, err = os.OpenFile(c.kvlogPath, os.O_RDWR, 0o644)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open existing KV log: %w", err)
-		}
-	}
-
-	reader := NewChangeset(c.dir, c.kvlogPath, c.treeStore)
-	err = reader.Init(infoFile, kvDataFile, leavesFile, branchesFile, versionsFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize changeset reader: %w", err)
-	}
-
-	// Validate initialization
-	if reader.info == nil {
-		return nil, fmt.Errorf("BUG: compacted changeset init resulted in nil info")
-	}
-	if reader.infoReader == nil || reader.infoReader.Count() == 0 {
-		return nil, fmt.Errorf("BUG: compacted info reader not properly initialized, count=%d", reader.infoReader.Count())
-	}
-	return reader, nil
 }
 
 func (c *Compactor) TotalBytes() int {

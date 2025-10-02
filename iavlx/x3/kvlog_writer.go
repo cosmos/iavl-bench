@@ -4,20 +4,18 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 )
 
 type KVLogWriter struct {
 	*FileWriter
 }
 
-func NewKVDataWriter(filename string) (*KVLogWriter, error) {
-	file, err := NewFileWriter(filename)
-	if err != nil {
-		return nil, err
-	}
+func NewKVDataWriter(file *os.File) *KVLogWriter {
+	fw := NewFileWriter(file)
 	return &KVLogWriter{
-		FileWriter: file,
-	}, nil
+		FileWriter: fw,
+	}
 
 }
 
