@@ -275,7 +275,8 @@ func (ts *TreeStore) cleanupProc() {
 		})
 		ts.changesetsMapLock.RUnlock()
 
-		for index, entry := range entries {
+		for i := 0; i < len(entries); i++ {
+			entry := entries[i]
 			select {
 			case <-ts.closeCleanupProc:
 				return
@@ -291,13 +292,13 @@ func (ts *TreeStore) cleanupProc() {
 
 			// Safety check - skip if evicted or disposed
 			if cs.evicted.Load() || cs.disposed.Load() {
-				ts.logger.Warn("skipping evicted/disposed changeset", "index", index, "dir", cs.dir)
+				ts.logger.Warn("skipping evicted/disposed changeset", "index", i, "dir", cs.dir)
 				continue
 			}
 
 			// Safety check - ensure info is valid
 			if cs.info == nil {
-				ts.logger.Error("changeset has nil info", "index", index, "dir", cs.dir)
+				ts.logger.Error("changeset has nil info", "index", i, "dir", cs.dir)
 				continue
 			}
 
@@ -337,7 +338,27 @@ func (ts *TreeStore) cleanupProc() {
 			// Age target relative to bottom of retention window
 			ageTarget := retentionWindowBottom - compactOrphanAge
 
-			if !cs.ReadyToCompact(compactOrphanThreshold, ageTarget) {
+			// Check orphan-based trigger
+			shouldCompact := cs.ReadyToCompact(compactOrphanThreshold, ageTarget)
+
+			// Check size-based joining trigger
+			maxSize := uint64(ts.opts.ChangesetMaxTarget)
+			if maxSize == 0 {
+				maxSize = 1024 * 1024 * 1024 // 1GB default
+			}
+
+			canJoin := false
+			if !shouldCompact && i+1 < len(entries) && ts.opts.CompactWAL {
+				nextEntry := entries[i+1]
+				nextCs := nextEntry.changeset.Load()
+				if nextCs.info.StartVersion == cs.info.EndVersion+1 {
+					if uint64(cs.TotalBytes())+uint64(nextCs.TotalBytes()) <= maxSize {
+						canJoin = true
+					}
+				}
+			}
+
+			if !shouldCompact && !canJoin {
 				continue
 			}
 
@@ -364,26 +385,70 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
+			processedEntries := []*changesetEntry{entry}
+
+			// Greedily add contiguous changesets if CompactWAL enabled
+			if ts.opts.CompactWAL {
+				currentCs := cs
+				for j := i + 1; j < len(entries); j++ {
+					nextEntry := entries[j]
+					nextCs := nextEntry.changeset.Load()
+
+					// Check contiguity
+					if nextCs.info.StartVersion != currentCs.info.EndVersion+1 {
+						break
+					}
+
+					// Check size limit
+					if compactor.TotalBytes()+uint64(nextCs.TotalBytes()) > maxSize {
+						break
+					}
+
+					// Skip if pending sync
+					if nextCs.needsSync.Load() {
+						break
+					}
+
+					ts.logger.Info("adding changeset to compaction", "dir", nextCs.dir)
+					err = compactor.AddChangeset(nextCs)
+					if err != nil {
+						ts.logger.Error("failed to add changeset to compaction", "error", err)
+						break
+					}
+
+					processedEntries = append(processedEntries, nextEntry)
+					currentCs = nextCs
+					i = j // Skip this entry in outer loop
+				}
+			}
+
 			newCs, err := compactor.Seal()
 			if err != nil {
 				ts.logger.Error("failed to seal compacted changeset", "error", err)
 				continue
 			}
-			ts.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
 
-			entry.changeset.Store(newCs)
-			cs.Evict()
+			// Update all processed entries to point to new changeset
+			oldSize := uint64(0)
+			for _, procEntry := range processedEntries {
+				oldCs := procEntry.changeset.Load()
+				oldSize += uint64(oldCs.TotalBytes())
 
-			if !cs.TryDispose() {
-				toDelete[cs] = newCs.kvlogPath
-			} else {
-				ts.logger.Info("changeset disposed, deleting files", "path", cs.dir)
-				// delete all .dat files in old changeset
-				err = cs.DeleteFiles(newCs.kvlogPath)
-				if err != nil {
-					ts.logger.Error("failed to delete old changeset files", "error", err, "path", cs.dir)
+				procEntry.changeset.Store(newCs)
+				oldCs.Evict()
+
+				if !oldCs.TryDispose() {
+					toDelete[oldCs] = newCs.kvlogPath
+				} else {
+					ts.logger.Info("changeset disposed, deleting files", "path", oldCs.dir)
+					err = oldCs.DeleteFiles(newCs.kvlogPath)
+					if err != nil {
+						ts.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.dir)
+					}
 				}
 			}
+
+			ts.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(processedEntries))
 		}
 
 		for oldCs, kvlogPath := range toDelete {

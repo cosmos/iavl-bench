@@ -130,7 +130,7 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 	leavesData := reader.leavesData
 	branchesData := reader.branchesData
 
-	c.logger.Info("processing changeset for compaction", "versions", numVersions)
+	c.logger.Debug("processing changeset for compaction", "versions", numVersions)
 	for i := 0; i < numVersions; i++ {
 		c.logger.Debug("compacting version", "version", reader.info.StartVersion+uint32(i))
 		verInfo := *versionsData.UnsafeItem(uint32(i)) // copy
@@ -288,6 +288,11 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 }
 
 func (c *Compactor) AddChangeset(cs *Changeset) error {
+	// TODO: Support joining changesets when CompactWAL=false
+	// This requires copying the entire KV log and tracking cumulative offsets
+	if !c.compactWAL {
+		return fmt.Errorf("joining changesets is only supported when CompactWAL=true")
+	}
 	return c.processChangeset(cs)
 }
 
@@ -396,6 +401,10 @@ func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
 	return reader, nil
 }
 
-func (c *Compactor) Size() int {
-	return c.leavesWriter.Size() + c.branchesWriter.Size() + c.versionsWriter.Size() + c.kvlogWriter.Size()
+func (c *Compactor) TotalBytes() uint64 {
+	total := uint64(c.leavesWriter.Size() + c.branchesWriter.Size() + c.versionsWriter.Size())
+	if c.kvlogWriter != nil {
+		total += uint64(c.kvlogWriter.Size())
+	}
+	return total
 }
