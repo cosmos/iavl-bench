@@ -421,6 +421,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 		} else {
 			err = cp.sealActiveCompactor()
 			if err != nil {
+				cp.cleanupFailedCompaction()
 				return fmt.Errorf("failed to seal active compactor: %w", err)
 			}
 		}
@@ -506,7 +507,6 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 	// seal compactor and finish
 	newCs, err := cp.activeCompactor.Seal()
 	if err != nil {
-		cp.cleanupFailedCompaction()
 		return fmt.Errorf("failed to seal active compactor: %w", err)
 	}
 
@@ -534,17 +534,13 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 	cp.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(cp.beingCompacted))
 
 	// Clear compactor state after successful seal
-	cp.cleanupActiveCompactor()
+	cp.activeCompactor = nil
+	cp.beingCompacted = nil
 	return nil
 }
 
-func (cp *cleanupProc) cleanupActiveCompactor() {
-	cp.activeCompactor = nil
-	cp.beingCompacted = nil
-}
-
 func (cp *cleanupProc) cleanupFailedCompaction() {
-	// Clean up any partial compactor state and remove temporary files
+	// clean up any partial compactor state and remove temporary files
 	if cp.activeCompactor != nil && cp.activeCompactor.dir != "" {
 		cp.logger.Warn("cleaning up failed compaction", "dir", cp.activeCompactor.dir, "changesets_attempted", len(cp.beingCompacted))
 		err := os.RemoveAll(cp.activeCompactor.dir)
@@ -552,7 +548,8 @@ func (cp *cleanupProc) cleanupFailedCompaction() {
 			cp.logger.Error("failed to remove compactor directory", "error", err, "dir", cp.activeCompactor.dir)
 		}
 	}
-	cp.cleanupActiveCompactor()
+	cp.activeCompactor = nil
+	cp.beingCompacted = nil
 }
 
 func (cp *cleanupProc) processToDelete() {
