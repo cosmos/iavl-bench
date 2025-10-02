@@ -23,6 +23,7 @@ type TreeStore struct {
 
 	opts Options
 
+	closeCleanupProc chan struct{}
 	cleanupProcDone  chan struct{}
 	orphanWriteQueue []markOrphansReq
 	orphanQueueLock  sync.Mutex
@@ -54,6 +55,7 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 	}
 	ts.currentWriter = writer
 
+	ts.closeCleanupProc = make(chan struct{})
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
 
@@ -247,6 +249,7 @@ func (ts *TreeStore) syncProc() {
 }
 
 func (ts *TreeStore) cleanupProc() {
+	defer close(ts.cleanupProcDone)
 	minCompactorInterval := time.Second * time.Duration(ts.opts.MinCompactionSeconds)
 	var lastCompactorStart time.Time
 
@@ -257,7 +260,7 @@ func (ts *TreeStore) cleanupProc() {
 			sleepTime = minCompactorInterval - time.Since(lastCompactorStart)
 		}
 		select {
-		case <-ts.cleanupProcDone:
+		case <-ts.closeCleanupProc:
 			return
 		case <-time.After(sleepTime):
 		}
@@ -274,7 +277,7 @@ func (ts *TreeStore) cleanupProc() {
 
 		for index, entry := range entries {
 			select {
-			case <-ts.cleanupProcDone:
+			case <-ts.closeCleanupProc:
 				return
 			default:
 			}
@@ -298,21 +301,18 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
-			ts.logger.Info("processing changeset for cleanup", "index", index, "dir", cs.dir)
-
 			err = cs.FlushOrphans()
 			if err != nil {
 				ts.logger.Error("failed to flush orphans", "error", err)
 				continue
 			}
 
-			//if ts.opts.DisableCompaction {
-			//	continue
-			//}
+			if ts.opts.DisableCompaction {
+				continue
+			}
 
 			// Skip if still pending sync
 			if cs.needsSync.Load() {
-				ts.logger.Info("skipping changeset pending sync", "dir", cs.dir)
 				continue
 			}
 
@@ -322,7 +322,6 @@ func (ts *TreeStore) cleanupProc() {
 
 			// Skip changesets within retention window
 			if cs.info.EndVersion >= retentionWindowBottom {
-				ts.logger.Info("skipping changeset within retention window", "dir", cs.dir, "end_version", cs.info.EndVersion, "retention_window_bottom", retentionWindowBottom)
 				continue
 			}
 
@@ -338,7 +337,6 @@ func (ts *TreeStore) cleanupProc() {
 			// Age target relative to bottom of retention window
 			ageTarget := retentionWindowBottom - compactOrphanAge
 
-			ts.logger.Info("checking compaction", "dir", cs.dir, "ready", cs.ReadyToCompact(compactOrphanThreshold, ageTarget))
 			if !cs.ReadyToCompact(compactOrphanThreshold, ageTarget) {
 				continue
 			}
@@ -353,11 +351,6 @@ func (ts *TreeStore) cleanupProc() {
 					// otherwise, we can remove it
 					return false
 				}
-			}
-
-			if ts.opts.DisableCompaction {
-				ts.logger.Info("compaction disabled, skipping, but was ready", "dir", cs.dir)
-				continue
 			}
 
 			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
@@ -395,7 +388,7 @@ func (ts *TreeStore) cleanupProc() {
 
 		for oldCs, kvlogPath := range toDelete {
 			select {
-			case <-ts.cleanupProcDone:
+			case <-ts.closeCleanupProc:
 				return
 			default:
 			}
@@ -440,7 +433,8 @@ func (ts *TreeStore) doMarkOrphans() error {
 }
 
 func (ts *TreeStore) Close() error {
-	close(ts.cleanupProcDone)
+	close(ts.closeCleanupProc)
+	<-ts.cleanupProcDone
 
 	if ts.syncQueue != nil {
 		close(ts.syncQueue)
