@@ -323,16 +323,27 @@ func (cr *Changeset) FlushOrphans() error {
 	cr.Pin()
 	defer cr.Unpin()
 
+	wasDirty := false
 	if cr.dirtyLeaves.Load() {
+		wasDirty = true
 		err := cr.leavesData.Flush()
 		if err != nil {
 			return fmt.Errorf("failed to flush leaf data: %w", err)
 		}
+		cr.dirtyLeaves.Store(false)
 	}
 	if cr.dirtyBranches.Load() {
+		wasDirty = true
 		err := cr.branchesData.Flush()
 		if err != nil {
 			return fmt.Errorf("failed to flush branch data: %w", err)
+		}
+		cr.dirtyBranches.Store(false)
+	}
+	if wasDirty {
+		err := cr.infoReader.Flush()
+		if err != nil {
+			return fmt.Errorf("failed to flush changeset info: %w", err)
 		}
 	}
 	return nil
@@ -367,6 +378,7 @@ func (cr *Changeset) TryDispose() bool {
 	if cr.refCount.Load() <= 0 {
 		if cr.disposed.CompareAndSwap(false, true) {
 			_ = cr.Close()
+			cr.info = nil
 			cr.versionsData = nil
 			cr.branchesData = nil
 			cr.leavesData = nil

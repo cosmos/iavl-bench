@@ -321,5 +321,13 @@ func (cs *ChangesetWriter) seal(info ChangesetInfo) (*Changeset, error) {
 		return nil, fmt.Errorf("failed to open changeset reader: %w", err)
 	}
 
+	// Validate initialization
+	if cs.reader.info == nil {
+		return nil, fmt.Errorf("BUG: changeset init resulted in nil info")
+	}
+	if cs.reader.infoReader == nil || cs.reader.infoReader.Count() == 0 {
+		return nil, fmt.Errorf("BUG: info reader not properly initialized, count=%d", cs.reader.infoReader.Count())
+	}
+
 	return cs.reader, nil
 }

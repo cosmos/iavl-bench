@@ -23,7 +23,6 @@ type TreeStore struct {
 
 	opts Options
 
-	toDelete         map[*Changeset]string
 	cleanupProcDone  chan struct{}
 	orphanWriteQueue []markOrphansReq
 	orphanQueueLock  sync.Mutex
@@ -45,7 +44,6 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 	ts := &TreeStore{
 		dir:        dir,
 		changesets: &btree.Map[uint32, *changesetEntry]{},
-		toDelete:   map[*Changeset]string{},
 		logger:     logger,
 		opts:       options,
 	}
@@ -251,6 +249,8 @@ func (ts *TreeStore) syncProc() {
 func (ts *TreeStore) cleanupProc() {
 	minCompactorInterval := time.Second * time.Duration(ts.opts.MinCompactionSeconds)
 	var lastCompactorStart time.Time
+
+	toDelete := map[*Changeset]string{}
 	for {
 		sleepTime := time.Duration(0)
 		if time.Since(lastCompactorStart) < minCompactorInterval {
@@ -272,7 +272,7 @@ func (ts *TreeStore) cleanupProc() {
 		})
 		ts.changesetsMapLock.RUnlock()
 
-		for _, entry := range entries {
+		for index, entry := range entries {
 			select {
 			case <-ts.cleanupProcDone:
 				return
@@ -285,18 +285,34 @@ func (ts *TreeStore) cleanupProc() {
 			}
 
 			cs := entry.changeset.Load()
+
+			// Safety check - skip if evicted or disposed
+			if cs.evicted.Load() || cs.disposed.Load() {
+				ts.logger.Warn("skipping evicted/disposed changeset", "index", index, "dir", cs.dir)
+				continue
+			}
+
+			// Safety check - ensure info is valid
+			if cs.info == nil {
+				ts.logger.Error("changeset has nil info", "index", index, "dir", cs.dir)
+				continue
+			}
+
+			ts.logger.Info("processing changeset for cleanup", "index", index, "dir", cs.dir)
+
 			err = cs.FlushOrphans()
 			if err != nil {
 				ts.logger.Error("failed to flush orphans", "error", err)
 				continue
 			}
 
-			if ts.opts.DisableCompaction {
-				continue
-			}
+			//if ts.opts.DisableCompaction {
+			//	continue
+			//}
 
 			// Skip if still pending sync
 			if cs.needsSync.Load() {
+				ts.logger.Info("skipping changeset pending sync", "dir", cs.dir)
 				continue
 			}
 
@@ -306,6 +322,7 @@ func (ts *TreeStore) cleanupProc() {
 
 			// Skip changesets within retention window
 			if cs.info.EndVersion >= retentionWindowBottom {
+				ts.logger.Info("skipping changeset within retention window", "dir", cs.dir, "end_version", cs.info.EndVersion, "retention_window_bottom", retentionWindowBottom)
 				continue
 			}
 
@@ -321,6 +338,7 @@ func (ts *TreeStore) cleanupProc() {
 			// Age target relative to bottom of retention window
 			ageTarget := retentionWindowBottom - compactOrphanAge
 
+			ts.logger.Info("checking compaction", "dir", cs.dir, "ready", cs.ReadyToCompact(compactOrphanThreshold, ageTarget))
 			if !cs.ReadyToCompact(compactOrphanThreshold, ageTarget) {
 				continue
 			}
@@ -337,6 +355,13 @@ func (ts *TreeStore) cleanupProc() {
 				}
 			}
 
+			if ts.opts.DisableCompaction {
+				ts.logger.Info("compaction disabled, skipping, but was ready", "dir", cs.dir)
+				continue
+			}
+
+			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
+
 			compactor, err := NewCompacter(ts.logger, cs, CompactOptions{
 				RetainCriteria: retainCriteria,
 				CompactWAL:     ts.opts.CompactWAL,
@@ -346,10 +371,9 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
-			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
-			newCs, err := compactor.Compact()
+			newCs, err := compactor.Seal()
 			if err != nil {
-				ts.logger.Error("failed to compact changeset", "error", err)
+				ts.logger.Error("failed to seal compacted changeset", "error", err)
 				continue
 			}
 			ts.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
@@ -358,7 +382,7 @@ func (ts *TreeStore) cleanupProc() {
 			cs.Evict()
 
 			if !cs.TryDispose() {
-				ts.toDelete[cs] = newCs.kvlogPath
+				toDelete[cs] = newCs.kvlogPath
 			} else {
 				ts.logger.Info("changeset disposed, deleting files", "path", cs.dir)
 				// delete all .dat files in old changeset
@@ -369,7 +393,7 @@ func (ts *TreeStore) cleanupProc() {
 			}
 		}
 
-		for oldCs, kvlogPath := range ts.toDelete {
+		for oldCs, kvlogPath := range toDelete {
 			select {
 			case <-ts.cleanupProcDone:
 				return
@@ -386,7 +410,7 @@ func (ts *TreeStore) cleanupProc() {
 			if err != nil {
 				ts.logger.Error("failed to delete old changeset files", "error", err)
 			}
-			delete(ts.toDelete, oldCs)
+			delete(toDelete, oldCs)
 		}
 	}
 }

@@ -21,10 +21,10 @@ type Compactor struct {
 	criteria   RetainCriteria
 	compactWAL bool
 
-	reader    *Changeset
-	treeStore *TreeStore
-	dir       string
-	kvlogPath string
+	processedChangesets []*Changeset
+	treeStore           *TreeStore
+	dir                 string
+	kvlogPath           string
 
 	leavesWriter   *StructWriter[LeafLayout]
 	branchesWriter *StructWriter[BranchLayout]
@@ -33,6 +33,12 @@ type Compactor struct {
 
 	leafOffsetRemappings map[uint32]uint32
 	keyCache             map[string]uint32
+
+	// Running totals across all processed changesets
+	leafOrphanCount          uint32
+	branchOrphanCount        uint32
+	leafOrphanVersionTotal   uint64
+	branchOrphanVersionTotal uint64
 }
 
 func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, store *TreeStore) (*Compactor, error) {
@@ -94,7 +100,6 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		logger:               logger,
 		criteria:             opts.RetainCriteria,
 		compactWAL:           opts.CompactWAL,
-		reader:               reader,
 		treeStore:            store,
 		dir:                  newDir,
 		kvlogPath:            kvlogPath,
@@ -106,21 +111,30 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		leafOffsetRemappings: make(map[uint32]uint32),
 	}
 
+	// Process first changeset immediately
+	err = c.processChangeset(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process initial changeset: %w", err)
+	}
+
 	return c, nil
 }
 
-func (c *Compactor) Compact() (*Changeset, error) {
-	versionsData := c.reader.versionsData
+func (c *Compactor) processChangeset(reader *Changeset) error {
+	// Compute KV offset delta for non-CompactWAL mode
+	kvOffsetDelta := uint32(0)
+	if c.kvlogWriter != nil && !c.compactWAL {
+		kvOffsetDelta = uint32(c.kvlogWriter.Size())
+	}
+
+	versionsData := reader.versionsData
 	numVersions := versionsData.Count()
-	leavesData := c.reader.leavesData
-	branchesData := c.reader.branchesData
-	leafOrphanCount := uint32(0)
-	branchOrphanCount := uint32(0)
-	leafOrphanVersionTotal := uint64(0)
-	branchOrphanVersionTotal := uint64(0)
-	c.logger.Info("starting compaction", "versions", numVersions)
+	leavesData := reader.leavesData
+	branchesData := reader.branchesData
+
+	c.logger.Info("processing changeset for compaction", "versions", numVersions)
 	for i := 0; i < numVersions; i++ {
-		c.logger.Info("compacting version", "version", c.reader.info.StartVersion+uint32(i))
+		c.logger.Debug("compacting version", "version", reader.info.StartVersion+uint32(i))
 		verInfo := *versionsData.UnsafeItem(uint32(i)) // copy
 		newLeafStartIdx := uint32(0)
 		newLeafEndIdx := uint32(0)
@@ -139,8 +153,8 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			}
 
 			if leaf.OrphanVersion != 0 {
-				leafOrphanCount++
-				leafOrphanVersionTotal += uint64(leaf.OrphanVersion)
+				c.leafOrphanCount++
+				c.leafOrphanVersionTotal += uint64(leaf.OrphanVersion)
 			}
 
 			if newLeafStartIdx == 0 {
@@ -150,23 +164,26 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			newLeafCount++
 
 			if c.compactWAL {
-				k, v, err := c.reader.ReadKV(id, leaf.KeyOffset)
+				k, v, err := reader.ReadKV(id, leaf.KeyOffset)
 				if err != nil {
-					return nil, fmt.Errorf("failed to read KV for leaf %s: %w", id, err)
+					return fmt.Errorf("failed to read KV for leaf %s: %w", id, err)
 				}
 
 				offset, err := c.kvlogWriter.WriteKV(k, v)
 				if err != nil {
-					return nil, fmt.Errorf("failed to write KV for leaf %s: %w", id, err)
+					return fmt.Errorf("failed to write KV for leaf %s: %w", id, err)
 				}
 
 				leaf.KeyOffset = offset
 				c.keyCache[string(k)] = offset
+			} else {
+				// When not compacting WAL, add offset delta
+				leaf.KeyOffset += kvOffsetDelta
 			}
 
 			err := c.leavesWriter.Append(&leaf)
 			if err != nil {
-				return nil, fmt.Errorf("failed to append leaf %s: %w", id, err)
+				return fmt.Errorf("failed to append leaf %s: %w", id, err)
 			}
 
 			oldLeafFileIdx := leafStartOffset + j + 1 // 1-based file index
@@ -190,8 +207,8 @@ func (c *Compactor) Compact() (*Changeset, error) {
 			}
 
 			if branch.OrphanVersion != 0 {
-				branchOrphanCount++
-				branchOrphanVersionTotal += uint64(branch.OrphanVersion)
+				c.branchOrphanCount++
+				c.branchOrphanVersionTotal += uint64(branch.OrphanVersion)
 			}
 
 			if newBranchStartIdx == 0 {
@@ -202,42 +219,45 @@ func (c *Compactor) Compact() (*Changeset, error) {
 
 			var err error
 			left := branch.Left
-			branch.Left, err = c.updateNodeRef(left, skippedBranches)
+			branch.Left, err = c.updateNodeRef(reader, left, skippedBranches)
 			if err != nil {
 				c.logger.Error("failed to update left ref",
 					"branchId", id,
 					"branchOrphanVersion", branch.OrphanVersion,
 					"leftRef", left)
-				return nil, fmt.Errorf("failed to update left ref for branch %s: %w", id, err)
+				return fmt.Errorf("failed to update left ref for branch %s: %w", id, err)
 			}
 			right := branch.Right
-			branch.Right, err = c.updateNodeRef(right, skippedBranches)
+			branch.Right, err = c.updateNodeRef(reader, right, skippedBranches)
 			if err != nil {
 				c.logger.Error("failed to update right ref",
 					"branchId", id,
 					"branchOrphanVersion", branch.OrphanVersion,
 					"rightRef", right)
-				return nil, fmt.Errorf("failed to update right ref for branch %s: %w", id, err)
+				return fmt.Errorf("failed to update right ref for branch %s: %w", id, err)
 			}
 
 			if c.compactWAL {
-				k, err := c.reader.ReadK(id, branch.KeyOffset)
+				k, err := reader.ReadK(id, branch.KeyOffset)
 				if err != nil {
-					return nil, fmt.Errorf("failed to read key for branch %s: %w", id, err)
+					return fmt.Errorf("failed to read key for branch %s: %w", id, err)
 				}
 				offset, ok := c.keyCache[string(k)]
 				if !ok {
 					offset, err = c.kvlogWriter.WriteK(k)
 				}
 				if err != nil {
-					return nil, fmt.Errorf("failed to write key for branch %s: %w", id, err)
+					return fmt.Errorf("failed to write key for branch %s: %w", id, err)
 				}
 				branch.KeyOffset = offset
+			} else {
+				// When not compacting WAL, add offset delta
+				branch.KeyOffset += kvOffsetDelta
 			}
 
 			err = c.branchesWriter.Append(&branch)
 			if err != nil {
-				return nil, fmt.Errorf("failed to append branch %s: %w", id, err)
+				return fmt.Errorf("failed to append branch %s: %w", id, err)
 			}
 		}
 
@@ -259,23 +279,38 @@ func (c *Compactor) Compact() (*Changeset, error) {
 
 		err := c.versionsWriter.Append(&verInfo)
 		if err != nil {
-			return nil, fmt.Errorf("failed to append version info for versiond: %w", err)
+			return fmt.Errorf("failed to append version info for version %d: %w", reader.info.StartVersion+uint32(i), err)
 		}
 	}
 
-	info := ChangesetInfo{
-		StartVersion:             c.reader.info.StartVersion,
-		EndVersion:               c.reader.info.EndVersion,
-		LeafOrphans:              leafOrphanCount,
-		BranchOrphans:            branchOrphanCount,
-		LeafOrphanVersionTotal:   leafOrphanVersionTotal,
-		BranchOrphanVersionTotal: branchOrphanVersionTotal,
-	}
+	// Track this changeset as processed
+	c.processedChangesets = append(c.processedChangesets, reader)
 
-	return c.seal(info)
+	return nil
 }
 
-func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
+func (c *Compactor) AddChangeset(cs *Changeset) error {
+	return c.processChangeset(cs)
+}
+
+func (c *Compactor) Seal() (*Changeset, error) {
+	if len(c.processedChangesets) == 0 {
+		return nil, fmt.Errorf("no changesets processed")
+	}
+
+	info := ChangesetInfo{
+		StartVersion:             c.processedChangesets[0].info.StartVersion,
+		EndVersion:               c.processedChangesets[len(c.processedChangesets)-1].info.EndVersion,
+		LeafOrphans:              c.leafOrphanCount,
+		BranchOrphans:            c.branchOrphanCount,
+		LeafOrphanVersionTotal:   c.leafOrphanVersionTotal,
+		BranchOrphanVersionTotal: c.branchOrphanVersionTotal,
+	}
+
+	return c.sealWithInfo(info)
+}
+
+func (c *Compactor) updateNodeRef(reader *Changeset, ref NodeRef, skipped int) (NodeRef, error) {
 	if ref.IsNodeID() {
 		return ref, nil
 	}
@@ -285,7 +320,7 @@ func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 		newOffset, ok := c.leafOffsetRemappings[uint32(oldOffset)]
 		if !ok {
 			// Debug: look up the orphaned leaf
-			oldLeaf := c.reader.leavesData.UnsafeItem(uint32(oldOffset) - 1)
+			oldLeaf := reader.leavesData.UnsafeItem(uint32(oldOffset) - 1)
 			c.logger.Error("leaf remapping failed - orphaned leaf still referenced",
 				"leafOffset", oldOffset,
 				"leafId", oldLeaf.Id,
@@ -302,7 +337,7 @@ func (c *Compactor) updateNodeRef(ref NodeRef, skipped int) (NodeRef, error) {
 	}
 }
 
-func (c *Compactor) seal(info ChangesetInfo) (*Changeset, error) {
+func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
 	infoWriter, err := NewStructWriter[ChangesetInfo](filepath.Join(c.dir, "info.dat"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create changeset info writer: %w", err)
@@ -352,6 +387,15 @@ func (c *Compactor) seal(info ChangesetInfo) (*Changeset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize changeset reader: %w", err)
 	}
+
+	// Validate initialization
+	if reader.info == nil {
+		return nil, fmt.Errorf("BUG: compacted changeset init resulted in nil info")
+	}
+	if reader.infoReader == nil || reader.infoReader.Count() == 0 {
+		return nil, fmt.Errorf("BUG: compacted info reader not properly initialized, count=%d", reader.infoReader.Count())
+	}
+	c.logger.Info("sealed compacted changeset", "startVersion", reader.info.StartVersion, "endVersion", reader.info.EndVersion)
 
 	return reader, nil
 }
