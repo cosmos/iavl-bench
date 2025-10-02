@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -23,18 +24,19 @@ type TreeStore struct {
 
 	opts Options
 
-	closeCleanupProc chan struct{}
-	cleanupProcDone  chan struct{}
-	orphanWriteQueue []markOrphansReq
-	orphanQueueLock  sync.Mutex
-
 	syncQueue chan *Changeset
 	syncDone  chan error
+
+	cleanupProc *cleanupProc
 }
 
 type markOrphansReq struct {
 	version uint32
 	orphans [][]NodeID
+}
+
+type deleteInfo struct {
+	retainKvlogPath string
 }
 
 type changesetEntry struct {
@@ -55,9 +57,7 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 	}
 	ts.currentWriter = writer
 
-	ts.closeCleanupProc = make(chan struct{})
-	ts.cleanupProcDone = make(chan struct{})
-	go ts.cleanupProc()
+	ts.cleanupProc = newCleanupProc(ts)
 
 	if options.WriteWAL && options.WalSyncBuffer >= 0 {
 		bufferSize := options.WalSyncBuffer
@@ -226,15 +226,7 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 }
 
 func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
-	req := markOrphansReq{
-		version: version,
-		orphans: nodeIds,
-	}
-
-	ts.orphanQueueLock.Lock()
-	defer ts.orphanQueueLock.Unlock()
-
-	ts.orphanWriteQueue = append(ts.orphanWriteQueue, req)
+	ts.cleanupProc.markOrphans(version, nodeIds)
 }
 
 func (ts *TreeStore) syncProc() {
@@ -248,258 +240,8 @@ func (ts *TreeStore) syncProc() {
 	}
 }
 
-func (ts *TreeStore) cleanupProc() {
-	defer close(ts.cleanupProcDone)
-	minCompactorInterval := time.Second * time.Duration(ts.opts.MinCompactionSeconds)
-	var lastCompactorStart time.Time
-
-	toDelete := map[*Changeset]string{}
-	for {
-		sleepTime := time.Duration(0)
-		if time.Since(lastCompactorStart) < minCompactorInterval {
-			sleepTime = minCompactorInterval - time.Since(lastCompactorStart)
-		}
-		select {
-		case <-ts.closeCleanupProc:
-			return
-		case <-time.After(sleepTime):
-		}
-
-		lastCompactorStart = time.Now()
-
-		ts.changesetsMapLock.RLock()
-		var entries []*changesetEntry
-		ts.changesets.Scan(func(version uint32, entry *changesetEntry) bool {
-			entries = append(entries, entry)
-			return true
-		})
-		ts.changesetsMapLock.RUnlock()
-
-		for i := 0; i < len(entries); i++ {
-			entry := entries[i]
-			select {
-			case <-ts.closeCleanupProc:
-				return
-			default:
-			}
-
-			err := ts.doMarkOrphans()
-			if err != nil {
-				ts.logger.Error("failed to mark orphans", "error", err)
-			}
-
-			cs := entry.changeset.Load()
-
-			// Safety check - skip if evicted or disposed
-			if cs.evicted.Load() || cs.disposed.Load() {
-				ts.logger.Warn("skipping evicted/disposed changeset", "index", i, "dir", cs.dir)
-				continue
-			}
-
-			// Safety check - ensure info is valid
-			if cs.info == nil {
-				ts.logger.Error("changeset has nil info", "index", i, "dir", cs.dir)
-				continue
-			}
-
-			err = cs.FlushOrphans()
-			if err != nil {
-				ts.logger.Error("failed to flush orphans", "error", err)
-				continue
-			}
-
-			if ts.opts.DisableCompaction {
-				continue
-			}
-
-			// Skip if still pending sync
-			if cs.needsSync.Load() {
-				continue
-			}
-
-			savedVersion := ts.savedVersion.Load()
-			retainVersions := ts.opts.RetainVersions
-			retentionWindowBottom := savedVersion - retainVersions
-
-			// Skip changesets within retention window
-			if cs.info.EndVersion >= retentionWindowBottom {
-				continue
-			}
-
-			compactOrphanAge := ts.opts.CompactionOrphanAge
-			if compactOrphanAge == 0 {
-				compactOrphanAge = 10
-			}
-			compactOrphanThreshold := ts.opts.CompactionOrphanRatio
-			if compactOrphanThreshold <= 0 {
-				compactOrphanThreshold = 0.6
-			}
-
-			// Age target relative to bottom of retention window
-			ageTarget := retentionWindowBottom - compactOrphanAge
-
-			// Check orphan-based trigger
-			shouldCompact := cs.ReadyToCompact(compactOrphanThreshold, ageTarget)
-
-			// Check size-based joining trigger
-			maxSize := uint64(ts.opts.ChangesetMaxTarget)
-			if maxSize == 0 {
-				maxSize = 1024 * 1024 * 1024 // 1GB default
-			}
-
-			canJoin := false
-			if !shouldCompact && i+1 < len(entries) && ts.opts.CompactWAL {
-				nextEntry := entries[i+1]
-				nextCs := nextEntry.changeset.Load()
-				if nextCs.info.StartVersion == cs.info.EndVersion+1 {
-					if uint64(cs.TotalBytes())+uint64(nextCs.TotalBytes()) <= maxSize {
-						canJoin = true
-					}
-				}
-			}
-
-			if !shouldCompact && !canJoin {
-				continue
-			}
-
-			retainVersion := retentionWindowBottom
-			retainCriteria := func(createVersion, orphanVersion uint32) bool {
-				// orphanVersion should be non-zero
-				if orphanVersion >= retainVersion {
-					// keep the orphan if it's in the retain window
-					return true
-				} else {
-					// otherwise, we can remove it
-					return false
-				}
-			}
-
-			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
-
-			compactor, err := NewCompacter(ts.logger, cs, CompactOptions{
-				RetainCriteria: retainCriteria,
-				CompactWAL:     ts.opts.CompactWAL,
-			}, ts)
-			if err != nil {
-				ts.logger.Error("failed to create compactor", "error", err)
-				continue
-			}
-
-			processedEntries := []*changesetEntry{entry}
-
-			// Greedily add contiguous changesets if CompactWAL enabled
-			if ts.opts.CompactWAL {
-				currentCs := cs
-				for j := i + 1; j < len(entries); j++ {
-					nextEntry := entries[j]
-					nextCs := nextEntry.changeset.Load()
-
-					// Check contiguity
-					if nextCs.info.StartVersion != currentCs.info.EndVersion+1 {
-						break
-					}
-
-					// Check size limit
-					if compactor.TotalBytes()+uint64(nextCs.TotalBytes()) > maxSize {
-						break
-					}
-
-					// Skip if pending sync
-					if nextCs.needsSync.Load() {
-						break
-					}
-
-					ts.logger.Info("adding changeset to compaction", "dir", nextCs.dir)
-					err = compactor.AddChangeset(nextCs)
-					if err != nil {
-						ts.logger.Error("failed to add changeset to compaction", "error", err)
-						break
-					}
-
-					processedEntries = append(processedEntries, nextEntry)
-					currentCs = nextCs
-					i = j // Skip this entry in outer loop
-				}
-			}
-
-			newCs, err := compactor.Seal()
-			if err != nil {
-				ts.logger.Error("failed to seal compacted changeset", "error", err)
-				continue
-			}
-
-			// Update all processed entries to point to new changeset
-			oldSize := uint64(0)
-			for _, procEntry := range processedEntries {
-				oldCs := procEntry.changeset.Load()
-				oldSize += uint64(oldCs.TotalBytes())
-
-				procEntry.changeset.Store(newCs)
-				oldCs.Evict()
-
-				if !oldCs.TryDispose() {
-					toDelete[oldCs] = newCs.kvlogPath
-				} else {
-					ts.logger.Info("changeset disposed, deleting files", "path", oldCs.dir)
-					err = oldCs.DeleteFiles(newCs.kvlogPath)
-					if err != nil {
-						ts.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.dir)
-					}
-				}
-			}
-
-			ts.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(processedEntries))
-		}
-
-		for oldCs, kvlogPath := range toDelete {
-			select {
-			case <-ts.closeCleanupProc:
-				return
-			default:
-			}
-
-			if !oldCs.TryDispose() {
-				ts.logger.Warn("old changeset not disposed, skipping delete", "path", oldCs.dir)
-				continue
-			}
-
-			ts.logger.Info("deleting old changeset files", "path", oldCs.dir)
-			err := oldCs.DeleteFiles(kvlogPath)
-			if err != nil {
-				ts.logger.Error("failed to delete old changeset files", "error", err)
-			}
-			delete(toDelete, oldCs)
-		}
-	}
-}
-
-// doMarkOrphans must only be called from the cleanupProc
-func (ts *TreeStore) doMarkOrphans() error {
-	var orphanQueue []markOrphansReq
-	ts.orphanQueueLock.Lock()
-	orphanQueue, ts.orphanWriteQueue = ts.orphanWriteQueue, nil
-	ts.orphanQueueLock.Unlock()
-
-	for _, req := range orphanQueue {
-		for _, nodeSet := range req.orphans {
-			for _, nodeId := range nodeSet {
-				ce := ts.getChangesetEntryForVersion(uint32(nodeId.Version()))
-				if ce == nil {
-					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
-				}
-				err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
 func (ts *TreeStore) Close() error {
-	close(ts.closeCleanupProc)
-	<-ts.cleanupProcDone
+	ts.cleanupProc.shutdown()
 
 	if ts.syncQueue != nil {
 		close(ts.syncQueue)
@@ -517,4 +259,325 @@ func (ts *TreeStore) Close() error {
 		return true
 	})
 	return errors.Join(errs...)
+}
+
+type cleanupProc struct {
+	*TreeStore
+	closeCleanupProc chan struct{}
+	cleanupProcDone  chan struct{}
+	orphanWriteQueue []markOrphansReq
+	orphanQueueLock  sync.Mutex
+	toDelete         map[*Changeset]deleteInfo
+	activeCompactor  *Compactor
+	beingCompacted   []compactionEntry
+}
+
+type compactionEntry struct {
+	entry *changesetEntry
+	cs    *Changeset
+}
+
+func newCleanupProc(treeStore *TreeStore) *cleanupProc {
+	cp := &cleanupProc{
+		TreeStore:        treeStore,
+		closeCleanupProc: make(chan struct{}),
+		cleanupProcDone:  make(chan struct{}),
+		toDelete:         make(map[*Changeset]deleteInfo),
+	}
+	go cp.run()
+	return cp
+}
+
+func (cp *cleanupProc) run() {
+	defer close(cp.cleanupProcDone)
+	minCompactorInterval := time.Second * time.Duration(cp.opts.MinCompactionSeconds)
+	var lastCompactorStart time.Time
+
+	for {
+		sleepTime := time.Duration(0)
+		if time.Since(lastCompactorStart) < minCompactorInterval {
+			sleepTime = minCompactorInterval - time.Since(lastCompactorStart)
+		}
+		select {
+		case <-cp.closeCleanupProc:
+			return
+		case <-time.After(sleepTime):
+		}
+
+		lastCompactorStart = time.Now()
+
+		// process any pending orphans at the start of each cycle
+		err := cp.doMarkOrphans()
+		if err != nil {
+			cp.logger.Error("failed to mark orphans at start of cycle", "error", err)
+		}
+
+		// collect current entries
+		cp.changesetsMapLock.RLock()
+		var entries []*changesetEntry
+		cp.changesets.Scan(func(version uint32, entry *changesetEntry) bool {
+			entries = append(entries, entry)
+			return true
+		})
+		cp.changesetsMapLock.RUnlock()
+
+		for i := 0; i < len(entries); i++ {
+			entry := entries[i]
+			var nextEntry *changesetEntry
+			if i+1 < len(entries) {
+				nextEntry = entries[i+1]
+			}
+			err := cp.processEntry(entry, nextEntry)
+			if err != nil {
+				cp.logger.Error("failed to process changeset entry", "error", err)
+				// on error, clean up any failed compaction and stop processing further entries this round
+				cp.cleanupFailedCompaction()
+				break
+			}
+		}
+		if cp.activeCompactor != nil {
+			err := cp.sealActiveCompactor()
+			if err != nil {
+				cp.logger.Error("failed to seal active compactor", "error", err)
+			}
+		}
+
+		cp.processToDelete()
+	}
+}
+
+func (cp *cleanupProc) markOrphans(version uint32, nodeIds [][]NodeID) {
+	req := markOrphansReq{
+		version: version,
+		orphans: nodeIds,
+	}
+
+	cp.orphanQueueLock.Lock()
+	defer cp.orphanQueueLock.Unlock()
+
+	cp.orphanWriteQueue = append(cp.orphanWriteQueue, req)
+}
+
+// doMarkOrphans must only be called from the cleanupProc
+func (cp *cleanupProc) doMarkOrphans() error {
+	var orphanQueue []markOrphansReq
+	cp.orphanQueueLock.Lock()
+	orphanQueue, cp.orphanWriteQueue = cp.orphanWriteQueue, nil
+	cp.orphanQueueLock.Unlock()
+
+	for _, req := range orphanQueue {
+		for _, nodeSet := range req.orphans {
+			for _, nodeId := range nodeSet {
+				ce := cp.getChangesetEntryForVersion(uint32(nodeId.Version()))
+				if ce == nil {
+					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
+				}
+				err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
+	cs := entry.changeset.Load()
+
+	// safety check - skip if evicted or disposed
+	if cs.evicted.Load() || cs.disposed.Load() {
+		return fmt.Errorf("evicted/disposed changeset: %s found in queue", cs.dir)
+	}
+
+	// safety check - ensure info is valid
+	if cs.info == nil {
+		return fmt.Errorf("changeset has nil info: %s found in queue", cs.dir)
+	}
+
+	err := cs.FlushOrphans()
+	if err != nil {
+		return fmt.Errorf("failed to flush orphans for changeset %s: %w", cs.dir, err)
+	}
+
+	if cp.opts.DisableCompaction {
+		return nil
+	}
+
+	// skip if still pending sync
+	if cs.needsSync.Load() {
+		return nil
+	}
+
+	if cp.activeCompactor != nil {
+		if cp.opts.CompactWAL &&
+			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.ChangesetMaxTarget) {
+			// add to active compactor
+			err = cp.activeCompactor.AddChangeset(cs)
+			if err != nil {
+				return fmt.Errorf("failed to add changeset to active compactor: %w", err)
+			}
+			cp.beingCompacted = append(cp.beingCompacted, compactionEntry{entry: entry, cs: cs})
+		} else {
+			err = cp.sealActiveCompactor()
+			if err != nil {
+				return fmt.Errorf("failed to seal active compactor: %w", err)
+			}
+		}
+	}
+
+	// mark any pending orphans here when we don't have an active compactor
+	err = cp.doMarkOrphans()
+	if err != nil {
+		cp.logger.Error("failed to mark orphans", "error", err)
+	}
+
+	// check if other triggers apply for a new compaction
+	savedVersion := cp.savedVersion.Load()
+	retainVersions := cp.opts.RetainVersions
+	retentionWindowBottom := savedVersion - retainVersions
+
+	// Skip changesets within retention window
+	if cs.info.EndVersion >= retentionWindowBottom {
+		return nil
+	}
+
+	compactOrphanAge := cp.opts.CompactionOrphanAge
+	if compactOrphanAge == 0 {
+		compactOrphanAge = 10
+	}
+	compactOrphanThreshold := cp.opts.CompactionOrphanRatio
+	if compactOrphanThreshold <= 0 {
+		compactOrphanThreshold = 0.6
+	}
+
+	// Age target relative to bottom of retention window
+	ageTarget := retentionWindowBottom - compactOrphanAge
+
+	// Check orphan-based trigger
+	shouldCompact := cs.ReadyToCompact(compactOrphanThreshold, ageTarget)
+
+	// Check size-based joining trigger
+	maxSize := uint64(cp.opts.ChangesetMaxTarget)
+	if maxSize == 0 {
+		maxSize = 1024 * 1024 * 1024 // 1GB default
+	}
+
+	canJoin := false
+	if !shouldCompact && nextEntry != nil && cp.opts.CompactWAL {
+		nextCs := nextEntry.changeset.Load()
+		if nextCs.info.StartVersion == cs.info.EndVersion+1 {
+			if uint64(cs.TotalBytes())+uint64(nextCs.TotalBytes()) <= maxSize {
+				canJoin = true
+			}
+		}
+	}
+
+	if !shouldCompact && !canJoin {
+		return nil
+	}
+
+	retainVersion := retentionWindowBottom
+	retainCriteria := func(createVersion, orphanVersion uint32) bool {
+		// orphanVersion should be non-zero
+		if orphanVersion >= retainVersion {
+			// keep the orphan if it's in the retain window
+			return true
+		} else {
+			// otherwise, we can remove it
+			return false
+		}
+	}
+
+	cp.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
+
+	cp.activeCompactor, err = NewCompacter(cp.logger, cs, CompactOptions{
+		RetainCriteria: retainCriteria,
+		CompactWAL:     cp.opts.CompactWAL,
+	}, cp.TreeStore)
+	if err != nil {
+		return fmt.Errorf("failed to create compactor: %w", err)
+	}
+	cp.beingCompacted = []compactionEntry{{entry: entry, cs: cs}}
+	return nil
+}
+
+func (cp *cleanupProc) sealActiveCompactor() error {
+	// seal compactor and finish
+	newCs, err := cp.activeCompactor.Seal()
+	if err != nil {
+		cp.cleanupFailedCompaction()
+		return fmt.Errorf("failed to seal active compactor: %w", err)
+	}
+
+	// update all processed entries to point to new changeset
+	oldSize := uint64(0)
+	for _, procEntry := range cp.beingCompacted {
+		oldCs := procEntry.cs
+		oldSize += uint64(oldCs.TotalBytes())
+
+		procEntry.entry.changeset.Store(newCs)
+		oldCs.Evict()
+
+		// try to delete now or schedule for later
+		if !oldCs.TryDispose() {
+			cp.toDelete[oldCs] = deleteInfo{newCs.kvlogPath}
+		} else {
+			cp.logger.Info("changeset disposed, deleting files", "path", oldCs.dir)
+			err = oldCs.DeleteFiles(newCs.kvlogPath)
+			if err != nil {
+				cp.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.dir)
+			}
+		}
+	}
+
+	cp.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(cp.beingCompacted))
+
+	// Clear compactor state after successful seal
+	cp.cleanupActiveCompactor()
+	return nil
+}
+
+func (cp *cleanupProc) cleanupActiveCompactor() {
+	cp.activeCompactor = nil
+	cp.beingCompacted = nil
+}
+
+func (cp *cleanupProc) cleanupFailedCompaction() {
+	// Clean up any partial compactor state and remove temporary files
+	if cp.activeCompactor != nil && cp.activeCompactor.dir != "" {
+		cp.logger.Warn("cleaning up failed compaction", "dir", cp.activeCompactor.dir, "changesets_attempted", len(cp.beingCompacted))
+		err := os.RemoveAll(cp.activeCompactor.dir)
+		if err != nil {
+			cp.logger.Error("failed to remove compactor directory", "error", err, "dir", cp.activeCompactor.dir)
+		}
+	}
+	cp.cleanupActiveCompactor()
+}
+
+func (cp *cleanupProc) processToDelete() {
+	for oldCs, info := range cp.toDelete {
+		select {
+		case <-cp.closeCleanupProc:
+			return
+		default:
+		}
+
+		if !oldCs.TryDispose() {
+			cp.logger.Warn("old changeset not disposed, skipping delete", "path", oldCs.dir)
+			continue
+		}
+
+		cp.logger.Info("deleting old changeset files", "path", oldCs.dir)
+		err := oldCs.DeleteFiles(info.retainKvlogPath)
+		if err != nil {
+			cp.logger.Error("failed to delete old changeset files", "error", err)
+		}
+		delete(cp.toDelete, oldCs)
+	}
+}
+
+func (cp *cleanupProc) shutdown() {
+	close(cp.closeCleanupProc)
+	<-cp.cleanupProcDone
 }

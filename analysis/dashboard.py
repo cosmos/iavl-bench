@@ -80,15 +80,23 @@ with tab2:
     mem_data = {}
     for d in data:
         if not d.mem_df.is_empty():
-            mem_data[d.name] = (d.mem_df.select(mem_field).to_series() / 1_000_000_000)  # Convert to GB
+            # Select version and memory field, convert to GB
+            mem_data[d.name] = d.mem_df.select(
+                pl.col('version'),
+                (pl.col(mem_field) / 1_000_000_000).alias(d.name)
+            )
 
     if mem_data:
-        # Truncate to shortest
-        min_len = min(len(v) for v in mem_data.values())
-        mem_data = {k: v.head(min_len) for k, v in mem_data.items()}
+        # Merge all dataframes on version
+        mem_df = None
+        for name, df in mem_data.items():
+            if mem_df is None:
+                mem_df = df
+            else:
+                mem_df = mem_df.join(df, on='version', how='outer')
 
-        mem_df = pl.DataFrame(mem_data)
-        st.line_chart(mem_df, x_label='sample', y_label='mem (GB)')
+        mem_df = mem_df.sort('version')
+        st.line_chart(mem_df, x='version', y_label='mem (GB)')
     else:
         st.warning('No memory data available')
 
@@ -96,15 +104,23 @@ with tab3:
     disk_data = {}
     for d in data:
         if not d.disk_df.is_empty():
-            disk_data[d.name] = (d.disk_df.select('size').to_series() / 1_000_000_000)  # Convert to GB
+            # Select version and size, convert to GB
+            disk_data[d.name] = d.disk_df.select(
+                pl.col('version'),
+                (pl.col('size') / 1_000_000_000).alias(d.name)
+            )
 
     if disk_data:
-        # Truncate to shortest
-        min_len = min(len(v) for v in disk_data.values())
-        disk_data = {k: v.head(min_len) for k, v in disk_data.items()}
+        # Merge all dataframes on version
+        disk_df = None
+        for name, df in disk_data.items():
+            if disk_df is None:
+                disk_df = df
+            else:
+                disk_df = disk_df.join(df, on='version', how='outer')
 
-        disk_df = pl.DataFrame(disk_data)
-        st.line_chart(disk_df, x_label='sample', y_label='disk (GB)')
+        disk_df = disk_df.sort('version')
+        st.line_chart(disk_df, x='version', y_label='disk (GB)')
     else:
         st.warning('No disk data available')
 

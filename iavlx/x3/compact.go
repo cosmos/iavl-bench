@@ -401,10 +401,10 @@ func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
 	return reader, nil
 }
 
-func (c *Compactor) TotalBytes() uint64 {
-	total := uint64(c.leavesWriter.Size() + c.branchesWriter.Size() + c.versionsWriter.Size())
+func (c *Compactor) TotalBytes() int {
+	total := c.leavesWriter.Size() + c.branchesWriter.Size() + c.versionsWriter.Size()
 	if c.kvlogWriter != nil {
-		total += uint64(c.kvlogWriter.Size())
+		total += c.kvlogWriter.Size()
 	}
 	return total
 }
