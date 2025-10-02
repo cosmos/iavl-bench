@@ -402,7 +402,7 @@ func (cr *Changeset) DeleteFiles(saveKVLogPath string) error {
 	return errors.Join(errs...)
 }
 
-func (cr *Changeset) TotalBytes() any {
+func (cr *Changeset) TotalBytes() int {
 	return cr.leavesData.TotalBytes() +
 		cr.branchesData.TotalBytes() +
 		cr.kvlogReader.TotalBytes() +

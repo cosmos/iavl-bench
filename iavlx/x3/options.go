@@ -25,4 +25,6 @@ type Options struct {
 	RetainVersions uint32 `json:"retain_versions"`
 	// MinCompactionSeconds is the minimum interval between compaction runs
 	MinCompactionSeconds uint32 `json:"min_compaction_seconds"`
+	// ChangesetMaxTarget is the maximum size of a changeset file when joining changesets.
+	ChangesetMaxTarget uint32 `json:"changeset_max_target"`
 }

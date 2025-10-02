@@ -399,3 +399,7 @@ func (c *Compactor) sealWithInfo(info ChangesetInfo) (*Changeset, error) {
 
 	return reader, nil
 }
+
+func (c *Compactor) Size() int {
+	return c.leavesWriter.Size() + c.branchesWriter.Size() + c.versionsWriter.Size() + c.kvlogWriter.Size()
+}
