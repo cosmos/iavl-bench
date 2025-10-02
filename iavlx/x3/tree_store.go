@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -29,7 +28,7 @@ type TreeStore struct {
 	orphanWriteQueue []markOrphansReq
 	orphanQueueLock  sync.Mutex
 
-	syncQueue chan *os.File
+	syncQueue chan *Changeset
 	syncDone  chan error
 }
 
@@ -40,7 +39,6 @@ type markOrphansReq struct {
 
 type changesetEntry struct {
 	changeset atomic.Pointer[Changeset]
-	compactor atomic.Pointer[Compactor]
 }
 
 func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore, error) {
@@ -61,9 +59,15 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 	ts.cleanupProcDone = make(chan struct{})
 	go ts.cleanupProc()
 
-	ts.syncQueue = make(chan *os.File, 128)
-	ts.syncDone = make(chan error)
-	go ts.syncProc()
+	if options.WriteWAL && options.WalSyncBuffer >= 0 {
+		bufferSize := options.WalSyncBuffer
+		if bufferSize == 0 {
+			bufferSize = 1 // Almost synchronous
+		}
+		ts.syncQueue = make(chan *Changeset, bufferSize)
+		ts.syncDone = make(chan error)
+		go ts.syncProc()
+	}
 
 	return ts, nil
 }
@@ -192,8 +196,8 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 
 	ts.savedVersion.Store(version)
 
-	// Queue WAL file for async sync if enabled
-	if ts.opts.WriteWAL {
+	// Queue changeset for async WAL sync if enabled
+	if ts.syncQueue != nil {
 		select {
 		case err := <-ts.syncDone:
 			if err != nil {
@@ -201,7 +205,14 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 			}
 		default:
 		}
-		ts.syncQueue <- reader.kvlogReader.file
+		reader.needsSync.Store(true)
+		ts.syncQueue <- reader
+	} else {
+		// Otherwise, sync immediately
+		err := reader.kvlogReader.file.Sync()
+		if err != nil {
+			return fmt.Errorf("failed to sync WAL file: %w", err)
+		}
 	}
 
 	nextVersion := version + 1
@@ -228,11 +239,12 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 
 func (ts *TreeStore) syncProc() {
 	defer close(ts.syncDone)
-	for file := range ts.syncQueue {
-		if err := file.Sync(); err != nil {
-			ts.syncDone <- fmt.Errorf("failed to sync WAL file %s: %w", file.Name(), err)
+	for cs := range ts.syncQueue {
+		if err := cs.kvlogReader.file.Sync(); err != nil {
+			ts.syncDone <- fmt.Errorf("failed to sync WAL file: %w", err)
 			return
 		}
+		cs.needsSync.Store(false)
 	}
 }
 
@@ -283,22 +295,37 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
+			// Skip if still pending sync
+			if cs.needsSync.Load() {
+				continue
+			}
+
 			savedVersion := ts.savedVersion.Load()
+			retainVersions := ts.opts.RetainVersions
+			retentionWindowBottom := savedVersion - retainVersions
+
+			// Skip changesets within retention window
+			if cs.info.EndVersion >= retentionWindowBottom {
+				continue
+			}
+
 			compactOrphanAge := ts.opts.CompactionOrphanAge
-			if compactOrphanAge <= 0 {
-				compactOrphanAge = 3
+			if compactOrphanAge == 0 {
+				compactOrphanAge = 10
 			}
 			compactOrphanThreshold := ts.opts.CompactionOrphanRatio
 			if compactOrphanThreshold <= 0 {
 				compactOrphanThreshold = 0.6
 			}
-			ageTarget := float64(savedVersion) - compactOrphanAge
+
+			// Age target relative to bottom of retention window
+			ageTarget := retentionWindowBottom - compactOrphanAge
+
 			if !cs.ReadyToCompact(compactOrphanThreshold, ageTarget) {
 				continue
 			}
 
-			retainVersions := ts.opts.RetainVersions
-			retainVersion := savedVersion - retainVersions
+			retainVersion := retentionWindowBottom
 			retainCriteria := func(createVersion, orphanVersion uint32) bool {
 				// orphanVersion should be non-zero
 				if orphanVersion >= retainVersion {
@@ -319,25 +346,21 @@ func (ts *TreeStore) cleanupProc() {
 				continue
 			}
 
-			entry.compactor.Store(compactor)
-
 			ts.logger.Info("compacting changeset", "info", cs.info, "size", cs.TotalBytes())
 			newCs, err := compactor.Compact()
 			if err != nil {
 				ts.logger.Error("failed to compact changeset", "error", err)
-				entry.compactor.Store(nil)
 				continue
 			}
-			ts.logger.Info("compacted changeset", "info", newCs.info, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
+			ts.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", cs.TotalBytes())
 
 			entry.changeset.Store(newCs)
 			cs.Evict()
-			entry.compactor.Store(nil)
 
 			if !cs.TryDispose() {
 				ts.toDelete[cs] = newCs.kvlogPath
 			} else {
-				ts.logger.Info("old changeset already disposed, deleting files", "path", cs.dir)
+				ts.logger.Info("changeset disposed, deleting files", "path", cs.dir)
 				// delete all .dat files in old changeset
 				err = cs.DeleteFiles(newCs.kvlogPath)
 				if err != nil {
@@ -394,10 +417,13 @@ func (ts *TreeStore) doMarkOrphans() error {
 
 func (ts *TreeStore) Close() error {
 	close(ts.cleanupProcDone)
-	close(ts.syncQueue)
-	err := <-ts.syncDone
-	if err != nil {
-		return err
+
+	if ts.syncQueue != nil {
+		close(ts.syncQueue)
+		err := <-ts.syncDone
+		if err != nil {
+			return err
+		}
 	}
 
 	ts.changesetsMapLock.Lock()

@@ -28,6 +28,7 @@ type Changeset struct {
 	disposed      atomic.Bool
 	dirtyBranches atomic.Bool
 	dirtyLeaves   atomic.Bool
+	needsSync     atomic.Bool
 }
 
 func NewChangeset(dir, kvlogPath string, treeStore *TreeStore) *Changeset {
@@ -295,20 +296,24 @@ func (cr *Changeset) MarkOrphan(version uint32, nodeId NodeID) error {
 	return nil
 }
 
-func (cr *Changeset) ReadyToCompact(orphanPercentTarget, orphanAgeTarget float64) bool {
-	leafOrphanCount := float64(cr.info.LeafOrphans)
-	leafOrphanPercent := leafOrphanCount / float64(cr.leavesData.Count())
-	leafOrphanAge := float64(cr.info.LeafOrphanVersionTotal) / leafOrphanCount
+func (cr *Changeset) ReadyToCompact(orphanPercentTarget float64, orphanAgeTarget uint32) bool {
+	leafOrphanCount := cr.info.LeafOrphans
+	if leafOrphanCount > 0 {
+		leafOrphanPercent := float64(leafOrphanCount) / float64(cr.leavesData.Count())
+		leafOrphanAge := uint32(cr.info.LeafOrphanVersionTotal / uint64(cr.info.LeafOrphans))
 
-	if leafOrphanPercent >= orphanPercentTarget && leafOrphanAge <= orphanAgeTarget {
-		return true
+		if leafOrphanPercent >= orphanPercentTarget && leafOrphanAge <= orphanAgeTarget {
+			return true
+		}
 	}
 
-	branchOrphanCount := float64(cr.info.BranchOrphans)
-	branchOrphanPercent := branchOrphanCount / float64(cr.branchesData.Count())
-	branchOrphanAge := float64(cr.info.BranchOrphanVersionTotal) / branchOrphanCount
-	if branchOrphanPercent >= orphanPercentTarget && branchOrphanAge <= orphanAgeTarget {
-		return true
+	branchOrphanCount := cr.info.BranchOrphans
+	if branchOrphanCount > 0 {
+		branchOrphanPercent := float64(branchOrphanCount) / float64(cr.branchesData.Count())
+		branchOrphanAge := uint32(cr.info.BranchOrphanVersionTotal / uint64(cr.info.BranchOrphans))
+		if branchOrphanPercent >= orphanPercentTarget && branchOrphanAge <= orphanAgeTarget {
+			return true
+		}
 	}
 
 	return false
