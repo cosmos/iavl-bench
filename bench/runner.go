@@ -137,21 +137,33 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		var handler slog.Handler
 		switch logHandlerType {
 		case "text":
-			handler = slog.NewTextHandler(logOut, nil)
+			handler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
 		case "json":
-			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true})
+			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
 		default:
 			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
 		}
 
-		logger := slog.New(handler)
+		// Create a separate handler for tree logger at info level
+		var treeHandler slog.Handler
+		switch logHandlerType {
+		case "text":
+			treeHandler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo})
+		case "json":
+			treeHandler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true})
+		default:
+			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
+		}
+
+		logger := slog.New(handler).With("module", "runner")
+		treeLogger := slog.New(treeHandler)
 		logger.Info("Starting benchmark run, loading tree")
 
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: opts,
 			StoreNames:  changesetInfo.StoreNames,
-			Logger:      logger.With("module", treeType),
+			Logger:      treeLogger.With("module", treeType),
 		}
 
 		tree, err := cfg.TreeLoader(loaderParams)
