@@ -360,11 +360,13 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, version i
 func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
 	doneChan := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
+		fastTicker := time.NewTicker(1 * time.Second)
+		slowTicker := time.NewTicker(10 * time.Second)
+		defer fastTicker.Stop()
+		defer slowTicker.Stop()
 		for {
 			select {
-			case <-ticker.C:
+			case <-fastTicker.C:
 				// capture mem stats
 				var memStats runtime.MemStats
 				runtime.ReadMemStats(&memStats)
@@ -395,16 +397,18 @@ func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, p
 				}
 				logger.Info("cpu usage", "version", currentVersion.Load(), "cpu_percents", cpuPercents, "cpu_times", cpuTimes)
 
-				// get disk usage and io stats
+				// get disk io stats
 				diskIOCounters, err := disk.IOCounters()
 				if err != nil {
 					logger.Warn("could not read disk io counters", "error", err)
 				}
 				logger.Info("disk io counters", "version", currentVersion.Load(), "disk_io_counters", diskIOCounters)
 
-				// capture disk usage
+			case <-slowTicker.C:
+				// capture disk usage (expensive operation)
 				size := getDirSize(logger, path)
 				logger.Info("disk usage", "version", currentVersion.Load(), "size", humanize.Bytes(size))
+
 			case <-closeCh:
 				close(doneChan)
 				return
