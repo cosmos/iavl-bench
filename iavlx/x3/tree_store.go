@@ -567,6 +567,7 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 	oldSize := uint64(0)
 	for _, procEntry := range cp.beingCompacted {
 		oldCs := procEntry.cs
+		oldDir := oldCs.files.dir
 		oldSize += uint64(oldCs.TotalBytes())
 
 		procEntry.entry.changeset.Store(newCs)
@@ -576,10 +577,10 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 		if !oldCs.TryDispose() {
 			cp.toDelete[oldCs] = ChangesetDeleteArgs{newCs.files.kvlogPath}
 		} else {
-			cp.logger.Info("changeset disposed, deleting files", "path", oldCs.files.dir)
+			cp.logger.Info("changeset disposed, deleting files", "path", oldDir)
 			err = oldCs.files.DeleteFiles(ChangesetDeleteArgs{SaveKVLogPath: newCs.files.kvlogPath})
 			if err != nil {
-				cp.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.files.dir)
+				cp.logger.Error("failed to delete old changeset files", "error", err, "path", oldDir)
 			}
 		}
 	}

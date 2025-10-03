@@ -17,6 +17,7 @@ type ChangesetFiles struct {
 	infoFile     *os.File
 	info         *ChangesetInfo
 	infoMmap     *StructMmap[ChangesetInfo]
+	closed       bool
 }
 
 func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
@@ -109,12 +110,18 @@ type ChangesetDeleteArgs struct {
 }
 
 func (cr *ChangesetFiles) Close() error {
+	if cr.closed {
+		return nil
+	}
+	cr.closed = true
+	cr.info = nil
 	return errors.Join(
 		cr.kvlogFile.Close(),
 		cr.branchesFile.Close(),
 		cr.leavesFile.Close(),
 		cr.versionsFile.Close(),
 		cr.infoFile.Close(),
+		cr.infoMmap.Close(),
 	)
 }
 
@@ -128,5 +135,11 @@ func (cr *ChangesetFiles) DeleteFiles(args ChangesetDeleteArgs) error {
 	if cr.kvlogPath != args.SaveKVLogPath {
 		errs = append(errs, os.Remove(cr.kvlogPath))
 	}
-	return errors.Join(errs...)
+	err := errors.Join(errs...)
+	if err != nil {
+		return fmt.Errorf("failed to delete changeset files: %w", err)
+	}
+	// delete dir if empty
+	_ = os.Remove(cr.dir)
+	return nil
 }
