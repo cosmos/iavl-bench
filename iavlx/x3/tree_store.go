@@ -195,9 +195,9 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 	if uint64(currentSize) < maxSize {
 		// Continue batching in the same changeset
 		// Create an updated reader with new mmap for the increased size
-		reader, err := ts.createUpdatedReader()
+		reader, err := ts.currentWriter.CreatedSharedReader()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create updated changeset reader: %w", err)
 		}
 
 		if ts.currentChangesetEntry == nil {
@@ -290,19 +290,6 @@ func (ts *TreeStore) syncProc() {
 		}
 		cs.needsSync.Store(false)
 	}
-}
-
-func (ts *TreeStore) createUpdatedReader() (*Changeset, error) {
-	// Create a new reader that will re-mmap the files with their current size
-	reader := NewChangeset(ts)
-
-	// Initialize the reader - it will read version info and mmap the files at their current size
-	err := reader.InitShared(ts.currentWriter.files)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize updated changeset reader: %w", err)
-	}
-
-	return reader, nil
 }
 
 func (ts *TreeStore) Close() error {

@@ -43,7 +43,7 @@ func NewStructReader[T any](file *os.File) (*StructMmap[T], error) {
 
 	size := df.size
 	if len(buf)%size != 0 {
-		return nil, fmt.Errorf("input buffer size is not a multiple of leaf size: %d %% %d != 0", len(buf), size)
+		return nil, fmt.Errorf("input buffer size is not a multiple of struct size: %d %% %d != 0", len(buf), size)
 	}
 	data := unsafe.Slice((*T)(p), len(buf)/size)
 	df.items = data
