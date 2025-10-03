@@ -262,7 +262,7 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		ts.syncQueue <- reader
 	} else {
 		// Otherwise, sync immediately
-		err := reader.kvLog.file.Sync()
+		err := reader.files.kvlogFile.Sync()
 		if err != nil {
 			return fmt.Errorf("failed to sync WAL file: %w", err)
 		}
@@ -284,7 +284,7 @@ func (ts *TreeStore) MarkOrphans(version uint32, nodeIds [][]NodeID) {
 func (ts *TreeStore) syncProc() {
 	defer close(ts.syncDone)
 	for cs := range ts.syncQueue {
-		if err := cs.kvLog.file.Sync(); err != nil {
+		if err := cs.files.kvlogFile.Sync(); err != nil {
 			ts.syncDone <- fmt.Errorf("failed to sync WAL file: %w", err)
 			return
 		}

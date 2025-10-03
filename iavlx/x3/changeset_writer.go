@@ -101,18 +101,6 @@ func (cs *ChangesetWriter) CreatedSharedReader() (*Changeset, error) {
 		return nil, fmt.Errorf("failed to flush data before creating shared reader: %w", err)
 	}
 
-	// Sync files to ensure mmap sees correct file sizes
-	err = errors.Join(
-		cs.files.kvlogFile.Sync(),
-		cs.files.leavesFile.Sync(),
-		cs.files.branchesFile.Sync(),
-		cs.files.versionsFile.Sync(),
-		cs.files.infoFile.Sync(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sync files before creating shared reader: %w", err)
-	}
-
 	err = cs.reader.InitShared(cs.files)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize shared changeset reader: %w", err)

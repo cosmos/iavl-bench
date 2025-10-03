@@ -1,7 +1,6 @@
 package x3
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 )
 
 type MmapFile struct {
-	file   *os.File
 	handle mmap.MMap
 }
 
@@ -22,9 +20,7 @@ func NewMmapFile(file *os.File) (*MmapFile, error) {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	res := &MmapFile{
-		file: file,
-	}
+	res := &MmapFile{}
 
 	// Empty files are valid - just don't mmap them
 	if fi.Size() == 0 {
@@ -76,16 +72,12 @@ func (m *MmapFile) Flush() error {
 }
 
 func (m *MmapFile) Close() error {
-	var unmapErr, closeErr error
 	if m.handle != nil {
-		unmapErr = m.handle.Unmap()
+		handle := m.handle
 		m.handle = nil
+		return handle.Unmap()
 	}
-	if m.file != nil {
-		closeErr = m.file.Close()
-		m.file = nil
-	}
-	return errors.Join(unmapErr, closeErr)
+	return nil
 }
 
 func (m *MmapFile) TotalBytes() int {
