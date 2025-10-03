@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 )
 
 type ChangesetFiles struct {
@@ -13,14 +14,18 @@ type ChangesetFiles struct {
 	startVersion uint32
 	compactedAt  uint32
 	kvlogPath    string
+
 	kvlogFile    *os.File
 	branchesFile *os.File
 	leavesFile   *os.File
 	versionsFile *os.File
 	infoFile     *os.File
-	info         *ChangesetInfo
-	infoMmap     *StructMmap[ChangesetInfo]
-	closed       bool
+
+	info     *ChangesetInfo
+	infoMmap *StructMmap[ChangesetInfo]
+
+	closed    bool
+	needsSync atomic.Bool
 }
 
 func OpenChangesetFiles(treeDir string, startVersion, compactedAt uint32, kvlogPath string) (*ChangesetFiles, error) {

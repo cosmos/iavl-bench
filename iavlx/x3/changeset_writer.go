@@ -257,3 +257,7 @@ func (cs *ChangesetWriter) Seal() (*Changeset, error) {
 
 	return reader, nil
 }
+
+func (cs *ChangesetWriter) StartVersion() uint32 {
+	return cs.files.StartVersion()
+}
