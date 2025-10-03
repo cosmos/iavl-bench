@@ -428,6 +428,8 @@ func (cp *cleanupProc) doMarkOrphans() error {
 				if ce == nil {
 					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
 				}
+				// this somewhat awkward retry loop is needed to handle a race condition where
+				// we have disposed of a changeset between getting the entry and marking the orphan
 				retries := 0
 				for {
 					err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
