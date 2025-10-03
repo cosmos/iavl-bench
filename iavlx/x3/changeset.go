@@ -249,7 +249,13 @@ func (cr *Changeset) Resolve(nodeId NodeID, fileIdx uint32) (Node, error) {
 	}
 }
 
+var ErrDisposed = errors.New("changeset disposed")
+
 func (cr *Changeset) MarkOrphan(version uint32, nodeId NodeID) error {
+	if cr.evicted.Load() {
+		cr.TryDispose()
+		return ErrDisposed
+	}
 	cr.Pin()
 	defer cr.Unpin()
 

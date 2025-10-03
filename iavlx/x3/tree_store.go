@@ -428,9 +428,19 @@ func (cp *cleanupProc) doMarkOrphans() error {
 				if ce == nil {
 					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
 				}
-				err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
-				if err != nil {
-					return err
+				retries := 0
+				for {
+					err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
+					if errors.Is(err, ErrDisposed) {
+						if retries > 3 {
+							return fmt.Errorf("changeset for version %d disposed while marking orphan %s", nodeId.Version(), nodeId.String())
+						}
+						retries++
+						continue
+					} else if err != nil {
+						return err
+					}
+					break
 				}
 			}
 		}
