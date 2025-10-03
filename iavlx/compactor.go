@@ -53,7 +53,7 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 	}
 
 	// if we're not compacting the WAL, we can reuse the existing KV log path
-	kvlogPath := reader.files.kvlogPath
+	kvlogPath := reader.files.KVLogPath()
 	// if we're compacting the WAL, create a new KV log path
 	if opts.CompactWAL {
 		kvlogPath = ""
@@ -76,7 +76,7 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		compactWAL:           opts.CompactWAL,
 		treeStore:            store,
 		files:                newFiles,
-		originalKvLogPath:    reader.files.kvlogPath,
+		originalKvLogPath:    reader.files.KVLogPath(),
 		kvlogWriter:          kvlogWriter,
 		leavesWriter:         NewStructWriter[LeafLayout](newFiles.leavesFile),
 		branchesWriter:       NewStructWriter[BranchLayout](newFiles.branchesFile),
