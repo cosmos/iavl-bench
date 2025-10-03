@@ -253,7 +253,6 @@ var ErrDisposed = errors.New("changeset disposed")
 
 func (cr *Changeset) MarkOrphan(version uint32, nodeId NodeID) error {
 	if cr.evicted.Load() {
-		cr.TryDispose()
 		return ErrDisposed
 	}
 	cr.Pin()
@@ -398,4 +397,8 @@ func (cr *Changeset) TotalBytes() int {
 		cr.branchesData.TotalBytes() +
 		cr.kvLog.TotalBytes() +
 		cr.versionsData.TotalBytes()
+}
+
+func (cr *Changeset) HasOrphans() bool {
+	return cr.info.LeafOrphans > 0 || cr.info.BranchOrphans > 0
 }

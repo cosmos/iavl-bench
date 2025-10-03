@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
-	"strings"
 )
 
 type CompactOptions struct {
 	RetainCriteria RetainCriteria
 	CompactWAL     bool
+	CompactedAt    uint32 // version at which compaction is done
 }
 
 type RetainCriteria func(createVersion, orphanVersion uint32) bool
@@ -45,31 +44,22 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 	if reader.files == nil {
 		return nil, fmt.Errorf("changeset has no associated files, cannot compact a shared changeset reader which files set to nil")
 	}
-	dir := reader.files.dir
-	parentDir := filepath.Dir(dir)
-	baseName := filepath.Base(dir)
-
-	split := strings.Split(baseName, ".") // Split base name only, not full path
-	revision := uint32(0)
-	if len(split) == 2 {
-		baseName = split[0]
-		_, err := fmt.Sscanf(split[1], "%d", &revision)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse revision from changeset dir: %w", err)
-		}
+	files := reader.files
+	startingVersion := files.StartVersion()
+	lastCompactedAt := files.CompactedAtVersion()
+	if lastCompactedAt >= opts.CompactedAt {
+		return nil, fmt.Errorf("cannot compact changeset starting at version %d which was last compacted at %d to an earlier or same version %d",
+			startingVersion, lastCompactedAt, opts.CompactedAt)
 	}
-	revision++
-	newDirName := fmt.Sprintf("%s.%d", baseName, revision)
-	newDirName = filepath.Join(parentDir, newDirName)
 
 	// if we're not compacting the WAL, we can reuse the existing KV log path
 	kvlogPath := reader.files.kvlogPath
 	// if we're compacting the WAL, create a new KV log path
 	if opts.CompactWAL {
-		kvlogPath = filepath.Join(newDirName, "kv.log")
+		kvlogPath = ""
 	}
 
-	newFiles, err := OpenChangesetFiles(newDirName, kvlogPath)
+	newFiles, err := OpenChangesetFiles(files.TreeDir(), files.StartVersion(), opts.CompactedAt, kvlogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open new changeset files: %w", err)
 	}

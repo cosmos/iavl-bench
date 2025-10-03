@@ -9,6 +9,9 @@ import (
 
 type ChangesetFiles struct {
 	dir          string
+	treeDir      string
+	startVersion uint32
+	compactedAt  uint32
 	kvlogPath    string
 	kvlogFile    *os.File
 	branchesFile *os.File
@@ -20,13 +23,19 @@ type ChangesetFiles struct {
 	closed       bool
 }
 
-func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
+func OpenChangesetFiles(treeDir string, startVersion, compactedAt uint32, kvlogPath string) (*ChangesetFiles, error) {
 	// ensure absolute path
-	absDir, err := filepath.Abs(dir)
+	var err error
+	treeDir, err = filepath.Abs(treeDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
+		return nil, fmt.Errorf("failed to get absolute path for %s: %w", treeDir, err)
 	}
-	dir = absDir
+
+	dirName := fmt.Sprintf("%d", startVersion)
+	if compactedAt > 0 {
+		dirName = fmt.Sprintf("%d.%d", startVersion, compactedAt)
+	}
+	dir := filepath.Join(treeDir, dirName)
 
 	err = os.MkdirAll(dir, 0o755)
 	if err != nil {
@@ -94,6 +103,9 @@ func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
 
 	return &ChangesetFiles{
 		dir:          dir,
+		treeDir:      treeDir,
+		startVersion: startVersion,
+		compactedAt:  compactedAt,
 		kvlogPath:    kvlogPath,
 		kvlogFile:    kvlogFile,
 		branchesFile: branchesFile,
@@ -105,6 +117,18 @@ func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
 	}, nil
 }
 
+func (cr *ChangesetFiles) TreeDir() string {
+	return cr.treeDir
+}
+
+func (cr *ChangesetFiles) StartVersion() uint32 {
+	return cr.startVersion
+}
+
+func (cr *ChangesetFiles) CompactedAtVersion() uint32 {
+	return cr.compactedAt
+}
+
 type ChangesetDeleteArgs struct {
 	SaveKVLogPath string
 }
@@ -113,6 +137,7 @@ func (cr *ChangesetFiles) Close() error {
 	if cr.closed {
 		return nil
 	}
+
 	cr.closed = true
 	cr.info = nil
 	return errors.Join(

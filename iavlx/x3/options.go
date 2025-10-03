@@ -27,6 +27,8 @@ type Options struct {
 	MinCompactionSeconds uint32 `json:"min_compaction_seconds"`
 	// ChangesetMaxTarget is the maximum size of a changeset file when batching or joining changesets
 	ChangesetMaxTarget uint32 `json:"changeset_max_target"`
+	// CompactAfterVersions is the number of versions after which a full compaction is forced whenever there are orphans
+	CompactAfterVersions uint32 `json:"compact_after_versions"`
 }
 
 // GetWalSyncBufferSize returns the actual buffer size to use (handling 0 = 1 case)
@@ -59,4 +61,11 @@ func (o Options) GetChangesetMaxTarget() uint64 {
 		return 512 * 1024 * 1024 // 512MB default
 	}
 	return uint64(o.ChangesetMaxTarget)
+}
+
+func (o Options) GetCompactAfterVersions() uint32 {
+	if o.CompactAfterVersions == 0 {
+		return 500 // default to 500 versions
+	}
+	return o.CompactAfterVersions
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,8 +65,7 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 
 func (ts *TreeStore) initNewWriter() error {
 	stagedVersion := ts.savedVersion.Load() + 1
-	dirName := filepath.Join(ts.dir, fmt.Sprintf("%d", stagedVersion))
-	writer, err := NewChangesetWriter(dirName, stagedVersion, ts)
+	writer, err := NewChangesetWriter(ts.dir, stagedVersion, ts)
 	if err != nil {
 		return fmt.Errorf("failed to create changeset writer: %w", err)
 	}
@@ -524,6 +522,12 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 
 	// Check orphan-based trigger
 	shouldCompact := cs.ReadyToCompact(compactOrphanThreshold, ageTarget)
+	if !shouldCompact {
+		lastCompactedAt := cs.files.CompactedAtVersion()
+		if savedVersion-lastCompactedAt >= cp.opts.GetCompactAfterVersions() {
+			shouldCompact = cs.HasOrphans()
+		}
+	}
 
 	// Check size-based joining trigger
 	maxSize := cp.opts.GetChangesetMaxTarget()
@@ -560,6 +564,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 	cp.activeCompactor, err = NewCompacter(cp.logger, cs, CompactOptions{
 		RetainCriteria: retainCriteria,
 		CompactWAL:     cp.opts.CompactWAL,
+		CompactedAt:    savedVersion,
 	}, cp.TreeStore)
 	if err != nil {
 		return fmt.Errorf("failed to create compactor: %w", err)
