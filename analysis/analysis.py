@@ -6,6 +6,8 @@ from datetime import datetime
 
 def total_ops_per_sec(run: BenchmarkData) -> float:
     """Calculate total ops/sec across all versions."""
+    if run.versions_df.is_empty():
+        return 0.0
     count = run.versions_df['count'].sum()
     total_duration = run.versions_df['duration'].sum() / 1_000_000_000  # convert from nanoseconds
     return count / total_duration
@@ -101,6 +103,8 @@ def plot_ops_per_sec(dataset, run_names: list[str] = None, batch_size=100):
     fig = go.Figure()
     for name in run_names:
         run = dataset[name]
+        if run.versions_df.is_empty():
+            continue
         df = calculate_batch_ops_per_sec(run.versions_df, batch_size)
 
         fig.add_trace(go.Scatter(
@@ -138,7 +142,7 @@ def plot_mem(dataset, run_names: list[str] = None, mem_field: str = 'alloc'):
         fig.add_trace(go.Scatter(
             x=run.mem_df['version'],
             y=run.mem_df[mem_field] / 1_000_000_000,  # Convert to GB
-            mode='lines+markers',
+            mode='lines',
             name=name
         ))
 
@@ -164,7 +168,7 @@ def plot_disk_usage(dataset, run_names: list[str] = None):
         fig.add_trace(go.Scatter(
             x=run.disk_df['version'],
             y=run.disk_df['size'] / 1_000_000_000,  # Convert to GB
-            mode='lines+markers',
+            mode='lines',
             name=name
         ))
 

@@ -58,6 +58,13 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                 'count': row['count'],
                 'ops_per_sec': row['ops_per_sec'],
             })
+            # Old format: disk usage included in committed version message
+            if 'disk_usage' in row:
+                disk_rows.append({
+                    'version': row['version'],
+                    'timestamp': timestamp,
+                    'size': humanfriendly.parse_size(row['disk_usage']),
+                })
         elif msg == 'mem stats':
             mem_rows.append({
                 'version': row['version'],
@@ -81,6 +88,27 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                 'timestamp': timestamp,
                 'size': humanfriendly.parse_size(row['size']),
             })
+        elif msg == 'full post-commit stats':
+            # Old format that bundles mem stats in a single message
+            version = row.get('version')
+            if 'mem_stats' in row:
+                ms = row['mem_stats']
+                mem_rows.append({
+                    'version': version,
+                    'timestamp': timestamp,
+                    'alloc': ms['Alloc'],
+                    'total_alloc': ms['TotalAlloc'],
+                    'sys': ms['Sys'],
+                    'num_gc': ms['NumGC'],
+                    'gc_sys': ms['GCSys'],
+                    'heap_sys': ms['HeapSys'],
+                    'heap_idle': ms['HeapIdle'],
+                    'heap_inuse': ms['HeapInuse'],
+                    'heap_released': ms['HeapReleased'],
+                    'heap_objects': ms['HeapObjects'],
+                    'gc_pause_total': ms['PauseTotalNs'],
+                    'gc_cpu_fraction': ms['GCCPUFraction'],
+                })
         elif module == 'memiavl':
             capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
 
