@@ -19,7 +19,8 @@ type TreeStore struct {
 	currentChangesetEntry *changesetEntry // Entry for the current batch being written
 	changesets            *btree.Map[uint32, *changesetEntry]
 	changesetsMapLock     sync.RWMutex
-	savedVersion          atomic.Uint32
+	savedVersion          atomic.Uint32 // Last version with a readable changeset
+	stagedVersion         uint32        // Latest written version (may not be readable yet)
 
 	opts Options
 
@@ -183,10 +184,11 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		return err
 	}
 
-	ts.savedVersion.Store(version)
+	ts.stagedVersion = version
 
 	currentSize := ts.currentWriter.TotalBytes()
 	maxSize := ts.opts.GetChangesetMaxTarget()
+	readerInterval := ts.opts.GetReaderUpdateInterval()
 
 	ts.logger.Debug("saved root", "version", version, "changeset_size", currentSize, "max_size", maxSize, "start_version", ts.currentWriter.StartVersion())
 
@@ -211,34 +213,53 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		}
 	}
 
-	// Check if we should continue batching or seal
-	if uint64(currentSize) < maxSize {
-		// Continue batching in the same changeset
-		// Create an updated reader with new mmap for the increased size
-		reader, err := ts.currentWriter.CreatedSharedReader()
-		if err != nil {
-			return fmt.Errorf("failed to create updated changeset reader: %w", err)
+	// Determine if we should create a reader
+	shouldCreateReader := false
+	shouldSeal := uint64(currentSize) >= maxSize
+
+	if shouldSeal {
+		shouldCreateReader = true
+	} else if readerInterval > 0 {
+		// Create reader periodically based on interval
+		startVersion := ts.currentWriter.StartVersion()
+		versions := version - startVersion + 1
+		if versions%readerInterval == 0 {
+			shouldCreateReader = true
 		}
+	}
 
-		ts.setActiveReader(version, reader)
-
+	if !shouldCreateReader {
+		// Just continue batching without creating reader
 		return nil
 	}
 
-	// Size limit reached - seal the current batch
-	reader, err := ts.currentWriter.Seal()
-	if err != nil {
-		return fmt.Errorf("failed to seal changeset for version %d: %w", version, err)
+	// Create reader (either shared or sealed)
+	var reader *Changeset
+	if shouldSeal {
+		// Size limit reached - seal the current batch
+		reader, err = ts.currentWriter.Seal()
+		if err != nil {
+			return fmt.Errorf("failed to seal changeset for version %d: %w", version, err)
+		}
+	} else {
+		// Create shared reader for periodic update
+		reader, err = ts.currentWriter.CreatedSharedReader()
+		if err != nil {
+			return fmt.Errorf("failed to create updated changeset reader: %w", err)
+		}
 	}
 
 	ts.setActiveReader(version, reader)
+	ts.savedVersion.Store(version)
 
-	ts.currentChangesetEntry = nil // Reset for next batch
+	if shouldSeal {
+		ts.currentChangesetEntry = nil // Reset for next batch
 
-	// Create new writer for next batch
-	err = ts.initNewWriter()
-	if err != nil {
-		return fmt.Errorf("failed to initialize new writer after sealing version %d: %w", version, err)
+		// Create new writer for next batch
+		err = ts.initNewWriter()
+		if err != nil {
+			return fmt.Errorf("failed to initialize new writer after sealing version %d: %w", version, err)
+		}
 	}
 
 	return nil
@@ -306,11 +327,15 @@ type cleanupProc struct {
 	*TreeStore
 	closeCleanupProc chan struct{}
 	cleanupProcDone  chan struct{}
-	orphanWriteQueue []markOrphansReq
-	orphanQueueLock  sync.Mutex
-	toDelete         map[*Changeset]ChangesetDeleteArgs
-	activeCompactor  *Compactor
-	beingCompacted   []compactionEntry
+
+	// Split orphan queues based on whether versions are readable
+	orphanWriteQueue  []markOrphansReq // For versions <= savedVersion (can process immediately)
+	stagedOrphanQueue []markOrphansReq // For versions > savedVersion (need to wait)
+	orphanQueueLock   sync.Mutex
+
+	toDelete        map[*Changeset]ChangesetDeleteArgs
+	activeCompactor *Compactor
+	beingCompacted  []compactionEntry
 
 	// Disposal queue for evicted changesets awaiting refcount=0
 	disposalQueue sync.Map // *Changeset -> struct{}
@@ -410,12 +435,26 @@ func (cp *cleanupProc) doMarkOrphans() error {
 	orphanQueue, cp.orphanWriteQueue = cp.orphanWriteQueue, nil
 	cp.orphanQueueLock.Unlock()
 
+	orphanQueue = append(orphanQueue, cp.stagedOrphanQueue...)
+
+	savedVersion := cp.savedVersion.Load()
+	var newStagedOrphans []markOrphansReq
+
 	for _, req := range orphanQueue {
 		for _, nodeSet := range req.orphans {
+			var stagedNodes []NodeID
 			for _, nodeId := range nodeSet {
-				ce := cp.getChangesetEntryForVersion(uint32(nodeId.Version()))
+				nodeVersion := uint32(nodeId.Version())
+
+				// Route to staged queue if version not yet readable
+				if nodeVersion > savedVersion {
+					stagedNodes = append(stagedNodes, nodeId)
+					continue
+				}
+
+				ce := cp.getChangesetEntryForVersion(nodeVersion)
 				if ce == nil {
-					return fmt.Errorf("no changeset found for version %d", nodeId.Version())
+					return fmt.Errorf("no changeset found for version %d", nodeVersion)
 				}
 				// this somewhat awkward retry loop is needed to handle a race condition where
 				// we have disposed of a changeset between getting the entry and marking the orphan
@@ -424,7 +463,7 @@ func (cp *cleanupProc) doMarkOrphans() error {
 					err := ce.changeset.Load().MarkOrphan(req.version, nodeId)
 					if errors.Is(err, ErrDisposed) {
 						if retries > 3 {
-							return fmt.Errorf("changeset for version %d disposed while marking orphan %s", nodeId.Version(), nodeId.String())
+							return fmt.Errorf("changeset for version %d disposed while marking orphan %s", nodeVersion, nodeId.String())
 						}
 						retries++
 						continue
@@ -434,8 +473,18 @@ func (cp *cleanupProc) doMarkOrphans() error {
 					break
 				}
 			}
+			// Add any staged nodes back to the staged queue
+			if len(stagedNodes) > 0 {
+				newStagedOrphans = append(newStagedOrphans, markOrphansReq{
+					version: req.version,
+					orphans: [][]NodeID{stagedNodes},
+				})
+			}
 		}
 	}
+
+	cp.stagedOrphanQueue = newStagedOrphans
+
 	return nil
 }
 

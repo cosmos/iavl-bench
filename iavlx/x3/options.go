@@ -29,6 +29,10 @@ type Options struct {
 	ChangesetMaxTarget uint32 `json:"changeset_max_target"`
 	// CompactAfterVersions is the number of versions after which a full compaction is forced whenever there are orphans
 	CompactAfterVersions uint32 `json:"compact_after_versions"`
+	// ReaderUpdateInterval controls how often we create new mmap readers during batching (in versions)
+	// Setting to 0 means create reader every version (high mmap churn)
+	// Higher values reduce mmap overhead but delay when data becomes readable
+	ReaderUpdateInterval uint32 `json:"reader_update_interval"`
 }
 
 // GetWalSyncBufferSize returns the actual buffer size to use (handling 0 = 1 case)
@@ -68,4 +72,12 @@ func (o Options) GetCompactAfterVersions() uint32 {
 		return 500 // default to 500 versions
 	}
 	return o.CompactAfterVersions
+}
+
+// GetReaderUpdateInterval returns the interval for creating readers with default
+func (o Options) GetReaderUpdateInterval() uint32 {
+	if o.ReaderUpdateInterval == 0 {
+		return 100 // Default to updating reader every 100 versions
+	}
+	return o.ReaderUpdateInterval
 }

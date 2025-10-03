@@ -117,6 +117,7 @@ func testIAVLXSims(t *rapid.T) {
 		MinCompactionSeconds:  0,
 		ChangesetMaxTarget:    1,
 		CompactAfterVersions:  0,
+		ReaderUpdateInterval:  1,
 	}, slog.Default())
 	require.NoError(t, err, "failed to create iavlx tree")
 	simMachine := &SimMachine{
