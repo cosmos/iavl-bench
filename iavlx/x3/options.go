@@ -25,8 +25,10 @@ type Options struct {
 	RetainVersions uint32 `json:"retain_versions"`
 	// MinCompactionSeconds is the minimum interval between compaction runs
 	MinCompactionSeconds uint32 `json:"min_compaction_seconds"`
-	// ChangesetMaxTarget is the maximum size of a changeset file when batching or joining changesets
+	// ChangesetMaxTarget is the maximum size of a changeset file when batching new versions
 	ChangesetMaxTarget uint32 `json:"changeset_max_target"`
+	// CompactionMaxTarget is the maximum size when joining/compacting old changesets
+	CompactionMaxTarget uint32 `json:"compaction_max_target"`
 	// CompactAfterVersions is the number of versions after which a full compaction is forced whenever there are orphans
 	CompactAfterVersions uint32 `json:"compact_after_versions"`
 	// ReaderUpdateInterval controls how often we create new mmap readers during batching (in versions)
@@ -62,9 +64,17 @@ func (o Options) GetCompactionOrphanRatio() float64 {
 // GetChangesetMaxTarget returns the max changeset size with default
 func (o Options) GetChangesetMaxTarget() uint64 {
 	if o.ChangesetMaxTarget == 0 {
-		return 512 * 1024 * 1024 // 512MB default
+		return 128 * 1024 * 1024 // 128MB default for changesets
 	}
 	return uint64(o.ChangesetMaxTarget)
+}
+
+// GetCompactionMaxTarget returns the max size for compaction with default
+func (o Options) GetCompactionMaxTarget() uint64 {
+	if o.CompactionMaxTarget == 0 {
+		return 1024 * 1024 * 1024 // 1GB default for compaction
+	}
+	return uint64(o.CompactionMaxTarget)
 }
 
 func (o Options) GetCompactAfterVersions() uint32 {

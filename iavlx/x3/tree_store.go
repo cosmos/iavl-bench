@@ -522,7 +522,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 
 	if cp.activeCompactor != nil {
 		if cp.opts.CompactWAL &&
-			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.GetChangesetMaxTarget()) {
+			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.GetCompactionMaxTarget()) {
 			// add to active compactor
 			cp.logger.Debug("joining changeset to active compactor", "info", cs.info, "size", cs.TotalBytes(), "dir", cs.files.dir,
 				"newDir", cp.activeCompactor.files.dir)
@@ -573,7 +573,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 	}
 
 	// Check size-based joining trigger
-	maxSize := cp.opts.GetChangesetMaxTarget()
+	maxSize := cp.opts.GetCompactionMaxTarget()
 
 	canJoin := false
 	if !shouldCompact && cp.opts.CompactWAL && nextEntry != nil {
