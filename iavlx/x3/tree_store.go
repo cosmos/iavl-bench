@@ -475,7 +475,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 		if cp.opts.CompactWAL &&
 			cs.TotalBytes()+cp.activeCompactor.TotalBytes() <= int(cp.opts.GetChangesetMaxTarget()) {
 			// add to active compactor
-			cp.logger.Info("joining changeset to active compactor", "info", cs.info, "size", cs.TotalBytes(), "dir", cs.files.dir,
+			cp.logger.Debug("joining changeset to active compactor", "info", cs.info, "size", cs.TotalBytes(), "dir", cs.files.dir,
 				"newDir", cp.activeCompactor.files.dir)
 			err = cp.activeCompactor.AddChangeset(cs)
 			if err != nil {
@@ -577,7 +577,7 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 	// update all processed entries to point to new changeset
 	oldSize := uint64(0)
 	for i, procEntry := range cp.beingCompacted {
-		cp.logger.Info("updating changeset entry to compacted changeset and trying to delete",
+		cp.logger.Debug("updating changeset entry to compacted changeset and trying to delete",
 			"old_dir", procEntry.cs.files.dir, "new_dir", newCs.files.dir)
 
 		oldCs := procEntry.cs
@@ -595,7 +595,7 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 
 		// try to delete now or schedule for later
 		if !oldCs.TryDispose() {
-			cp.logger.Info("changeset has active references, scheduling for deletion", "path", oldDir, "refcount", oldCs.refCount.Load())
+			cp.logger.Debug("changeset has active references, scheduling for deletion", "path", oldDir, "refcount", oldCs.refCount.Load())
 			cp.toDelete[oldCs] = ChangesetDeleteArgs{newCs.files.kvlogPath}
 		} else {
 			cp.logger.Info("changeset disposed, deleting files", "path", oldDir)
@@ -629,7 +629,7 @@ func (cp *cleanupProc) cleanupFailedCompaction() {
 
 func (cp *cleanupProc) processToDelete() {
 	if len(cp.toDelete) > 0 {
-		cp.logger.Info("processing delete queue", "size", len(cp.toDelete))
+		cp.logger.Debug("processing delete queue", "size", len(cp.toDelete))
 	}
 
 	for oldCs, args := range cp.toDelete {
@@ -672,16 +672,16 @@ func (cp *cleanupProc) processDisposalQueue() {
 	})
 
 	if disposalCount > 0 {
-		cp.logger.Info("processing disposal queue", "size", disposalCount)
+		cp.logger.Debug("processing disposal queue", "size", disposalCount)
 	}
 
 	cp.disposalQueue.Range(func(key, value interface{}) bool {
 		cs := key.(*Changeset)
 		if cs.TryDispose() {
 			cp.disposalQueue.Delete(cs)
-			cp.logger.Info("disposed shared changeset from queue")
+			cp.logger.Debug("disposed shared changeset from queue")
 		} else {
-			cp.logger.Info("shared changeset still has references", "refcount", cs.refCount.Load())
+			cp.logger.Debug("shared changeset still has references", "refcount", cs.refCount.Load())
 		}
 		return true
 	})
