@@ -380,7 +380,7 @@ func (cr *Changeset) TryDispose() bool {
 			cr.files = nil
 			cr.info = nil
 			cr.infoMmap = nil
-			cr.treeStore = nil
+			// DO NOT set treeStore to nil, as deposed changesets should still forward calls to the main tree store
 			return true
 		}
 	}
