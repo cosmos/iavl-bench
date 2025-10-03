@@ -13,7 +13,6 @@ type ChangesetFiles struct {
 	treeDir      string
 	startVersion uint32
 	compactedAt  uint32
-	kvlogPath    string
 
 	kvlogFile    *os.File
 	branchesFile *os.File
@@ -111,7 +110,6 @@ func OpenChangesetFiles(treeDir string, startVersion, compactedAt uint32, kvlogP
 		treeDir:      treeDir,
 		startVersion: startVersion,
 		compactedAt:  compactedAt,
-		kvlogPath:    kvlogPath,
 		kvlogFile:    kvlogFile,
 		branchesFile: branchesFile,
 		leavesFile:   leavesFile,
@@ -124,6 +122,10 @@ func OpenChangesetFiles(treeDir string, startVersion, compactedAt uint32, kvlogP
 
 func (cr *ChangesetFiles) TreeDir() string {
 	return cr.treeDir
+}
+
+func (cr *ChangesetFiles) KVLogPath() string {
+	return cr.kvlogFile.Name()
 }
 
 func (cr *ChangesetFiles) StartVersion() uint32 {
@@ -162,8 +164,8 @@ func (cr *ChangesetFiles) DeleteFiles(args ChangesetDeleteArgs) error {
 		os.Remove(cr.branchesFile.Name()),
 		os.Remove(cr.versionsFile.Name()),
 	}
-	if cr.kvlogPath != args.SaveKVLogPath {
-		errs = append(errs, os.Remove(cr.kvlogPath))
+	if cr.kvlogFile.Name() != args.SaveKVLogPath {
+		errs = append(errs, os.Remove(cr.kvlogFile.Name()))
 	}
 	err := errors.Join(errs...)
 	if err != nil {

@@ -1,7 +1,9 @@
 package iavlx
 
 type Options struct {
+	// ZeroCopy attempts to reduce copying of buffers, but this isn't really implemented yet and may not even be safe to implement.
 	ZeroCopy bool `json:"zero_copy"`
+
 	// EvictDepth defines the depth at which eviction occurs. 255 means no eviction.
 	EvictDepth uint8 `json:"evict_depth"`
 
