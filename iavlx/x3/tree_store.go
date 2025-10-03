@@ -576,12 +576,21 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 
 	// update all processed entries to point to new changeset
 	oldSize := uint64(0)
-	for _, procEntry := range cp.beingCompacted {
+	for i, procEntry := range cp.beingCompacted {
+		cp.logger.Info("updating changeset entry to compacted changeset and trying to delete",
+			"old_dir", procEntry.cs.files.dir, "new_dir", newCs.files.dir)
+
 		oldCs := procEntry.cs
 		oldDir := oldCs.files.dir
 		oldSize += uint64(oldCs.TotalBytes())
 
-		procEntry.entry.changeset.Store(newCs)
+		if i == 0 {
+			procEntry.entry.changeset.Store(newCs)
+		} else {
+			cp.changesetsMapLock.Lock()
+			cp.changesets.Delete(oldCs.files.StartVersion())
+			cp.changesetsMapLock.Unlock()
+		}
 		oldCs.Evict()
 
 		// try to delete now or schedule for later
