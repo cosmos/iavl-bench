@@ -139,9 +139,11 @@ func (c *CommitTree) Commit() ([]byte, error) {
 	}
 
 	var hash []byte
+	savedVersion := c.store.SavedVersion()
+	stagedVersion := c.stagedVersion()
 	commitCtx := &commitContext{
-		version:      c.stagedVersion(),
-		savedVersion: c.store.SavedVersion(),
+		version:      stagedVersion,
+		savedVersion: savedVersion,
 	}
 	if c.root == nil {
 		hash = emptyHash
@@ -161,7 +163,7 @@ func (c *CommitTree) Commit() ([]byte, error) {
 			return nil, err
 		}
 
-		err = c.store.WriteWALCommit(c.stagedVersion())
+		err = c.store.WriteWALCommit(stagedVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -169,16 +171,16 @@ func (c *CommitTree) Commit() ([]byte, error) {
 		c.reinitWalProc()
 	}
 
-	err := c.store.SaveRoot(c.stagedVersion(), c.root, commitCtx.leafNodeIdx, commitCtx.branchNodeIdx)
+	err := c.store.SaveRoot(stagedVersion, c.root, commitCtx.leafNodeIdx, commitCtx.branchNodeIdx)
 	if err != nil {
 		return nil, err
 	}
 
-	c.store.MarkOrphans(c.stagedVersion(), c.pendingOrphans)
+	c.store.MarkOrphans(stagedVersion, c.pendingOrphans)
 	c.pendingOrphans = nil
 
 	// start eviction if needed
-	c.startEvict(c.stagedVersion())
+	c.startEvict(savedVersion)
 
 	// cache the committed tree as the latest version
 	c.latest.Store(c.root)
