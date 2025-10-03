@@ -217,11 +217,11 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 	shouldCreateReader := false
 	shouldSeal := uint64(currentSize) >= maxSize
 
+	startVersion := ts.currentWriter.StartVersion()
 	if shouldSeal {
 		shouldCreateReader = true
 	} else if readerInterval > 0 {
 		// Create reader periodically based on interval
-		startVersion := ts.currentWriter.StartVersion()
 		versions := version - startVersion + 1
 		if versions%readerInterval == 0 {
 			shouldCreateReader = true
@@ -249,7 +249,7 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 		}
 	}
 
-	ts.setActiveReader(version, reader)
+	ts.setActiveReader(startVersion, reader)
 	ts.savedVersion.Store(version)
 
 	if shouldSeal {
