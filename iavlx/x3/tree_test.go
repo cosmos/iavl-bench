@@ -104,7 +104,20 @@ func testIAVLXSims(t *rapid.T) {
 	tempDir, err := os.MkdirTemp("", "iavlx")
 	require.NoError(t, err, "failed to create temp directory")
 	defer os.RemoveAll(tempDir)
-	treeV2, err := NewCommitTree(tempDir, Options{WriteWAL: true, DisableCompaction: true}, slog.Default())
+	treeV2, err := NewCommitTree(tempDir, Options{
+		WriteWAL:              true,
+		CompactWAL:            true,
+		DisableCompaction:     false,
+		ZeroCopy:              false,
+		EvictDepth:            0,
+		WalSyncBuffer:         0,
+		CompactionOrphanRatio: 0,
+		CompactionOrphanAge:   0,
+		RetainVersions:        0,
+		MinCompactionSeconds:  0,
+		ChangesetMaxTarget:    1,
+		CompactAfterVersions:  0,
+	}, slog.Default())
 	require.NoError(t, err, "failed to create iavlx tree")
 	simMachine := &SimMachine{
 		treeV1:       treeV1,

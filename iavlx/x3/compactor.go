@@ -105,6 +105,7 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 	numVersions := versionsData.Count()
 	leavesData := reader.leavesData
 	branchesData := reader.branchesData
+	skippedBranches := 0
 
 	c.logger.Debug("processing changeset for compaction", "versions", numVersions)
 	for i := 0; i < numVersions; i++ {
@@ -160,7 +161,7 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 				return fmt.Errorf("failed to append leaf %s: %w", id, err)
 			}
 
-			oldLeafFileIdx := leafStartOffset + j + 1 // 1-based file index
+			oldLeafFileIdx := leafStartOffset + j
 			c.leafOffsetRemappings[oldLeafFileIdx] = uint32(c.leavesWriter.Count())
 		}
 
@@ -170,7 +171,6 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 		branchCount := verInfo.Branches.Count
 		newBranchStartOffset := uint32(c.branchesWriter.Count())
 		newBranchCount := uint32(0)
-		skippedBranches := 0
 		for j := uint32(0); j < branchCount; j++ {
 			branch := *branchesData.UnsafeItem(branchStartOffset + j) // copy
 			id := branch.Id

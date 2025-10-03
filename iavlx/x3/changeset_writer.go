@@ -216,17 +216,19 @@ func (cs *ChangesetWriter) writeLeaf(np *NodePointer, node *MemNode) error {
 }
 
 func (cs *ChangesetWriter) createNodeRef(parentIdx int64, np *NodePointer) NodeRef {
-	//if np.store == cs.reader {
-	//	if np.id.IsLeaf() {
-	//		return NodeRef(NewNodeRelativePointer(true, int64(np.fileIdx)))
-	//	} else {
-	//		// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
-	//		relOffset := int64(np.fileIdx) - parentIdx
-	//		return NodeRef(NewNodeRelativePointer(false, relOffset))
-	//	}
-	//} else {
-	return NodeRef(np.id)
-	//}
+	if np.store == cs.reader {
+		if np.id.IsLeaf() {
+			return NodeRef(np.id)
+			//return NodeRef(NewNodeRelativePointer(true, int64(np.fileIdx)))
+		} else {
+			return NodeRef(np.id)
+			//// for branch nodes the relative offset is the difference between the parent ID index and the branch ID index
+			//relOffset := int64(np.fileIdx) - parentIdx
+			//return NodeRef(NewNodeRelativePointer(false, relOffset))
+		}
+	} else {
+		return NodeRef(np.id)
+	}
 }
 
 func (cs *ChangesetWriter) TotalBytes() int {
