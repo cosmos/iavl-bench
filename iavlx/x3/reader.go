@@ -84,7 +84,7 @@ func NewNodeReader[T NodeLayout](file *os.File) (*NodeMmap[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	return &NodeMmap[T]{StructReader: sf}, nil
+	return &NodeMmap[T]{StructMmap: sf}, nil
 }
 
 func (nf *NodeMmap[T]) FindByID(id NodeID, info *NodeSetInfo) (*T, error) {

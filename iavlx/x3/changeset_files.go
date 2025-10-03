@@ -64,17 +64,30 @@ func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
 		return nil, fmt.Errorf("failed to create changeset info file: %w", err)
 	}
 
-	infoMmap, err := NewStructReader[ChangesetInfo](infoFile)
+	// check file size to see if we need to initialize
+	stat, err := infoFile.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open changeset info: %w", err)
+		return nil, fmt.Errorf("failed to stat info file: %w", err)
 	}
-	if infoMmap.Count() == 0 {
-		// initialize empty info
+
+	if stat.Size() == 0 {
+		// file is empty, initialize it
 		infoWriter := NewStructWriter[ChangesetInfo](infoFile)
 		if err := infoWriter.Append(&ChangesetInfo{}); err != nil {
 			return nil, fmt.Errorf("failed to write initial changeset info: %w", err)
 		}
-	} else if infoMmap.Count() > 1 {
+		if err := infoWriter.Flush(); err != nil {
+			return nil, fmt.Errorf("failed to flush initial changeset info: %w", err)
+		}
+	}
+
+	// now create the mmap reader
+	infoMmap, err := NewStructReader[ChangesetInfo](infoFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open changeset info: %w", err)
+	}
+
+	if infoMmap.Count() != 1 {
 		return nil, fmt.Errorf("changeset info file has unexpected item count: %d", infoMmap.Count())
 	}
 
@@ -91,7 +104,7 @@ func OpenChangesetFiles(dir, kvlogPath string) (*ChangesetFiles, error) {
 	}, nil
 }
 
-type ChangesetFilesDeleteArgs struct {
+type ChangesetDeleteArgs struct {
 	SaveKVLogPath string
 }
 
@@ -105,7 +118,7 @@ func (cr *ChangesetFiles) Close() error {
 	)
 }
 
-func (cr *ChangesetFiles) DeleteFiles(args ChangesetFilesDeleteArgs) error {
+func (cr *ChangesetFiles) DeleteFiles(args ChangesetDeleteArgs) error {
 	errs := []error{
 		os.Remove(cr.infoFile.Name()),
 		os.Remove(cr.leavesFile.Name()),

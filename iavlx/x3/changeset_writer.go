@@ -20,9 +20,15 @@ type ChangesetWriter struct {
 	keyCache map[string]uint32
 }
 
-func NewChangesetWriter(files *ChangesetFiles, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
+func NewChangesetWriter(dir string, startVersion uint32, treeStore *TreeStore) (*ChangesetWriter, error) {
+	files, err := OpenChangesetFiles(dir, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open changeset files: %w", err)
+	}
+
 	cs := &ChangesetWriter{
 		stagedVersion: startVersion,
+		files:         files,
 		kvlog:         NewKVDataWriter(files.kvlogFile),
 		branchesData:  NewStructWriter[BranchLayout](files.branchesFile),
 		leavesData:    NewStructWriter[LeafLayout](files.leavesFile),
@@ -93,6 +99,18 @@ func (cs *ChangesetWriter) CreatedSharedReader() (*Changeset, error) {
 	err := cs.Flush()
 	if err != nil {
 		return nil, fmt.Errorf("failed to flush data before creating shared reader: %w", err)
+	}
+
+	// Sync files to ensure mmap sees correct file sizes
+	err = errors.Join(
+		cs.files.kvlogFile.Sync(),
+		cs.files.leavesFile.Sync(),
+		cs.files.branchesFile.Sync(),
+		cs.files.versionsFile.Sync(),
+		cs.files.infoFile.Sync(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync files before creating shared reader: %w", err)
 	}
 
 	err = cs.reader.InitShared(cs.files)

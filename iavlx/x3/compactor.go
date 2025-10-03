@@ -24,11 +24,12 @@ type Compactor struct {
 	processedChangesets []*Changeset
 	treeStore           *TreeStore
 
-	files          *ChangesetFiles
-	leavesWriter   *StructWriter[LeafLayout]
-	branchesWriter *StructWriter[BranchLayout]
-	versionsWriter *StructWriter[VersionInfo]
-	kvlogWriter    *KVLogWriter
+	originalKvLogPath string
+	files             *ChangesetFiles
+	leavesWriter      *StructWriter[LeafLayout]
+	branchesWriter    *StructWriter[BranchLayout]
+	versionsWriter    *StructWriter[VersionInfo]
+	kvlogWriter       *KVLogWriter
 
 	leafOffsetRemappings map[uint32]uint32
 	keyCache             map[string]uint32
@@ -45,22 +46,21 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		return nil, fmt.Errorf("changeset has no associated files, cannot compact a shared changeset reader which files set to nil")
 	}
 	dir := reader.files.dir
-	newDirName := filepath.Base(dir)
-	split := strings.Split(newDirName, ".") // Split base name only, not full path
+	parentDir := filepath.Dir(dir)
+	baseName := filepath.Base(dir)
+
+	split := strings.Split(baseName, ".") // Split base name only, not full path
 	revision := uint32(0)
 	if len(split) == 2 {
-		newDirName = split[0]
+		baseName = split[0]
 		_, err := fmt.Sscanf(split[1], "%d", &revision)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse revision from changeset dir: %w", err)
 		}
 	}
 	revision++
-	newDirName = fmt.Sprintf("%s.%d", newDirName, revision)
-	newDirName, err := filepath.Abs(newDirName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for new changeset dir: %w", err)
-	}
+	newDirName := fmt.Sprintf("%s.%d", baseName, revision)
+	newDirName = filepath.Join(parentDir, newDirName)
 
 	// if we're not compacting the WAL, we can reuse the existing KV log path
 	kvlogPath := reader.files.kvlogPath
@@ -86,6 +86,7 @@ func NewCompacter(logger *slog.Logger, reader *Changeset, opts CompactOptions, s
 		compactWAL:           opts.CompactWAL,
 		treeStore:            store,
 		files:                newFiles,
+		originalKvLogPath:    reader.files.kvlogPath,
 		kvlogWriter:          kvlogWriter,
 		leavesWriter:         NewStructWriter[LeafLayout](newFiles.leavesFile),
 		branchesWriter:       NewStructWriter[BranchLayout](newFiles.branchesFile),
@@ -341,6 +342,16 @@ func (c *Compactor) updateNodeRef(reader *Changeset, ref NodeRef, skipped int) (
 		newOffset := oldOffset - int64(skipped)
 		return NodeRef(NewNodeRelativePointer(false, newOffset)), nil
 	}
+}
+
+func (c *Compactor) Abort() error {
+	err := c.files.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close compactor files during cleanup: %w", err)
+	}
+	return c.files.DeleteFiles(ChangesetDeleteArgs{
+		SaveKVLogPath: c.originalKvLogPath,
+	})
 }
 
 func (c *Compactor) TotalBytes() int {

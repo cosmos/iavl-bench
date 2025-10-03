@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -34,10 +33,6 @@ type TreeStore struct {
 type markOrphansReq struct {
 	version uint32
 	orphans [][]NodeID
-}
-
-type deleteInfo struct {
-	retainKvlogPath string
 }
 
 type changesetEntry struct {
@@ -71,13 +66,8 @@ func NewTreeStore(dir string, options Options, logger *slog.Logger) (*TreeStore,
 
 func (ts *TreeStore) initNewWriter() error {
 	stagedVersion := ts.savedVersion.Load() + 1
-	dirName := filepath.Join(ts.dir, fmt.Sprintf("%d", stagedVersion)
-	files, err := OpenChangesetFiles(dirName, "")
-	if err != nil {
-		return fmt.Errorf("failed to open changeset files: %w in %s", err, dirName)
-	}
-
-	writer, err := NewChangesetWriter(files, stagedVersion, ts)
+	dirName := filepath.Join(ts.dir, fmt.Sprintf("%d", stagedVersion))
+	writer, err := NewChangesetWriter(dirName, stagedVersion, ts)
 	if err != nil {
 		return fmt.Errorf("failed to create changeset writer: %w", err)
 	}
@@ -197,7 +187,7 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 
 	currentSize := ts.currentWriter.TotalBytes()
 	maxSize := ts.opts.GetChangesetMaxTarget()
-	startVersion := ts.currentWriter.startVersion
+	startVersion := ts.savedVersion.Load() + 1
 
 	ts.logger.Debug("saved root", "version", version, "changeset_size", currentSize, "max_size", maxSize, "start_version", startVersion)
 
@@ -205,7 +195,10 @@ func (ts *TreeStore) SaveRoot(version uint32, root *NodePointer, totalLeaves, to
 	if uint64(currentSize) < maxSize {
 		// Continue batching in the same changeset
 		// Create an updated reader with new mmap for the increased size
-		reader := ts.createUpdatedReader()
+		reader, err := ts.createUpdatedReader()
+		if err != nil {
+			return err
+		}
 
 		if ts.currentChangesetEntry == nil {
 			// First time we're creating an entry for this batch
@@ -299,18 +292,17 @@ func (ts *TreeStore) syncProc() {
 	}
 }
 
-func (ts *TreeStore) createUpdatedReader() *Changeset {
+func (ts *TreeStore) createUpdatedReader() (*Changeset, error) {
 	// Create a new reader that will re-mmap the files with their current size
 	reader := NewChangeset(ts)
 
 	// Initialize the reader - it will read version info and mmap the files at their current size
 	err := reader.InitShared(ts.currentWriter.files)
 	if err != nil {
-		ts.logger.Error("failed to initialize updated reader", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to initialize updated changeset reader: %w", err)
 	}
 
-	return reader
+	return reader, nil
 }
 
 func (ts *TreeStore) Close() error {
@@ -340,7 +332,7 @@ type cleanupProc struct {
 	cleanupProcDone  chan struct{}
 	orphanWriteQueue []markOrphansReq
 	orphanQueueLock  sync.Mutex
-	toDelete         map[*Changeset]deleteInfo
+	toDelete         map[*Changeset]ChangesetDeleteArgs
 	activeCompactor  *Compactor
 	beingCompacted   []compactionEntry
 
@@ -358,7 +350,7 @@ func newCleanupProc(treeStore *TreeStore) *cleanupProc {
 		TreeStore:        treeStore,
 		closeCleanupProc: make(chan struct{}),
 		cleanupProcDone:  make(chan struct{}),
-		toDelete:         make(map[*Changeset]deleteInfo),
+		toDelete:         make(map[*Changeset]ChangesetDeleteArgs),
 	}
 	go cp.run()
 	return cp
@@ -479,7 +471,7 @@ func (cp *cleanupProc) processEntry(entry, nextEntry *changesetEntry) error {
 
 	err := cs.FlushOrphans()
 	if err != nil {
-		return fmt.Errorf("failed to flush orphans for changeset %s: %w", cs.dir, err)
+		return fmt.Errorf("failed to flush orphans for changeset %s: %w", cs.files.dir, err)
 	}
 
 	if cp.opts.DisableCompaction {
@@ -595,17 +587,17 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 
 		// try to delete now or schedule for later
 		if !oldCs.TryDispose() {
-			cp.toDelete[oldCs] = deleteInfo{newCs.kvlogPath}
+			cp.toDelete[oldCs] = ChangesetDeleteArgs{newCs.files.kvlogPath}
 		} else {
-			cp.logger.Info("changeset disposed, deleting files", "path", oldCs.dir)
-			err = oldCs.DeleteFiles(newCs.kvlogPath)
+			cp.logger.Info("changeset disposed, deleting files", "path", oldCs.files.dir)
+			err = oldCs.files.DeleteFiles(ChangesetDeleteArgs{SaveKVLogPath: newCs.files.kvlogPath})
 			if err != nil {
-				cp.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.dir)
+				cp.logger.Error("failed to delete old changeset files", "error", err, "path", oldCs.files.dir)
 			}
 		}
 	}
 
-	cp.logger.Info("compacted changeset", "dir", newCs.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(cp.beingCompacted))
+	cp.logger.Info("compacted changeset", "dir", newCs.files.dir, "new_size", newCs.TotalBytes(), "old_size", oldSize, "joined", len(cp.beingCompacted))
 
 	// Clear compactor state after successful seal
 	cp.activeCompactor = nil
@@ -615,11 +607,11 @@ func (cp *cleanupProc) sealActiveCompactor() error {
 
 func (cp *cleanupProc) cleanupFailedCompaction() {
 	// clean up any partial compactor state and remove temporary files
-	if cp.activeCompactor != nil && cp.activeCompactor.dir != "" {
-		cp.logger.Warn("cleaning up failed compaction", "dir", cp.activeCompactor.dir, "changesets_attempted", len(cp.beingCompacted))
-		err := os.RemoveAll(cp.activeCompactor.dir)
+	if cp.activeCompactor != nil && cp.activeCompactor.files != nil {
+		cp.logger.Warn("cleaning up failed compaction", "dir", cp.activeCompactor.files.dir, "changesets_attempted", len(cp.beingCompacted))
+		err := cp.activeCompactor.Abort()
 		if err != nil {
-			cp.logger.Error("failed to remove compactor directory", "error", err, "dir", cp.activeCompactor.dir)
+			cp.logger.Error("failed to abort active compactor", "error", err)
 		}
 	}
 	cp.activeCompactor = nil
@@ -627,7 +619,7 @@ func (cp *cleanupProc) cleanupFailedCompaction() {
 }
 
 func (cp *cleanupProc) processToDelete() {
-	for oldCs, info := range cp.toDelete {
+	for oldCs, args := range cp.toDelete {
 		select {
 		case <-cp.closeCleanupProc:
 			return
@@ -635,12 +627,12 @@ func (cp *cleanupProc) processToDelete() {
 		}
 
 		if !oldCs.TryDispose() {
-			cp.logger.Warn("old changeset not disposed, skipping delete", "path", oldCs.dir)
+			cp.logger.Warn("old changeset not disposed, skipping delete", "path", oldCs.files.dir)
 			continue
 		}
 
-		cp.logger.Info("deleting old changeset files", "path", oldCs.dir)
-		err := oldCs.DeleteFiles(info.retainKvlogPath)
+		cp.logger.Info("deleting old changeset files", "path", oldCs.files.dir)
+		err := oldCs.files.DeleteFiles(args)
 		if err != nil {
 			cp.logger.Error("failed to delete old changeset files", "error", err)
 		}
@@ -666,7 +658,6 @@ func (cp *cleanupProc) processDisposalQueue() {
 		cs := key.(*Changeset)
 		if cs.TryDispose() {
 			cp.disposalQueue.Delete(cs)
-			cp.logger.Debug("disposed evicted changeset", "dir", cs.dir)
 		}
 		return true
 	})
