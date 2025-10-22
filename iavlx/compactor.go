@@ -162,7 +162,7 @@ func (c *Compactor) processChangeset(reader *Changeset) error {
 			}
 
 			oldLeafFileIdx := leafStartOffset + j
-			c.leafOffsetRemappings[oldLeafFileIdx] = uint32(c.leavesWriter.Count())
+			c.leafOffsetRemappings[oldLeafFileIdx] = uint32(c.leavesWriter.Count()) - 1
 		}
 
 		newBranchStartIdx := uint32(0)

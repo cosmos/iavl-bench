@@ -20,7 +20,6 @@ type BranchLayout struct {
 	Left          NodeRef
 	Right         NodeRef
 	KeyOffset     uint32
-	KeyLoc        uint8
 	Height        uint8
 	Size          uint32 // TODO 5 bytes?
 	OrphanVersion uint32 // TODO 5 bytes?

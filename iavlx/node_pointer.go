@@ -7,8 +7,8 @@ import (
 
 type NodePointer struct {
 	mem     atomic.Pointer[MemNode]
-	fileIdx uint32
 	store   *Changeset
+	fileIdx uint32 // absolute index in file, 1-based, zero means we don't have an offset
 	id      NodeID
 }
 

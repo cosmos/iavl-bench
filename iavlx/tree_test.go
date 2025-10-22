@@ -107,7 +107,7 @@ func testIAVLXSims(t *rapid.T) {
 	treeV2, err := NewCommitTree(tempDir, Options{
 		WriteWAL:              true,
 		CompactWAL:            true,
-		DisableCompaction:     false,
+		DisableCompaction:     true,
 		ZeroCopy:              false,
 		EvictDepth:            0,
 		WalSyncBuffer:         0,
@@ -363,4 +363,40 @@ func compareIteratorsAtVersion(t *rapid.T, iterV1 corestore.Iterator, iterV2 cor
 		iterV1.Next()
 		iterV2.Next()
 	}
+}
+
+func TestSimpleOperations(t *testing.T) {
+	batch := &KVUpdateBatch{Version: 1}
+	tree := NewTree(nil, batch, false)
+	require.NoError(t, tree.Set([]byte{1}, []byte{1}))
+	renderTree(t, tree)
+	batch.Version = 2
+	require.NoError(t, tree.Set([]byte{2}, []byte{2}))
+	renderTree(t, tree)
+	batch.Version = 3
+	require.NoError(t, tree.Set([]byte{1}, []byte{2}))
+	renderTree(t, tree)
+	batch.Version = 4
+	require.NoError(t, tree.Set([]byte{3}, []byte{3}))
+	renderTree(t, tree)
+}
+
+func TestEx1(t *testing.T) {
+	batch := &KVUpdateBatch{Version: 1}
+	tree := NewTree(nil, batch, false)
+	require.NoError(t, tree.Set([]byte{1}, []byte{1}))
+	require.NoError(t, tree.Set([]byte{2}, []byte{2}))
+	require.NoError(t, tree.Set([]byte{3}, []byte{3}))
+	require.NoError(t, tree.Set([]byte{1}, []byte{2}))
+	require.NoError(t, tree.Set([]byte{3}, []byte{4}))
+	renderTree(t, tree)
+}
+
+func TestEx2(t *testing.T) {
+	batch := &KVUpdateBatch{Version: 1}
+	tree := NewTree(nil, batch, false)
+	require.NoError(t, tree.Set([]byte{3}, []byte{4}))
+	require.NoError(t, tree.Set([]byte{2}, []byte{2}))
+	require.NoError(t, tree.Set([]byte{1}, []byte{2}))
+	renderTree(t, tree)
 }

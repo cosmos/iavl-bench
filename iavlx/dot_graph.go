@@ -5,20 +5,19 @@ import (
 	"io"
 )
 
-func DebugTraverse(nodePtr *NodePointer, onNode func(node Node, selfId, parent NodeID, direction string) error) error {
+func DebugTraverse(nodePtr *NodePointer, onNode func(node Node, parent Node, direction string) error) error {
 	if nodePtr == nil {
 		return nil
 	}
 
-	var traverse func(np *NodePointer, parent NodeID, direction string) error
-	traverse = func(np *NodePointer, parent NodeID, direction string) error {
+	var traverse func(np *NodePointer, parent Node, direction string) error
+	traverse = func(np *NodePointer, parent Node, direction string) error {
 		node, err := np.Resolve()
 		if err != nil {
 			return err
 		}
 
-		nodeId := np.id
-		if err := onNode(node, nodeId, parent, direction); err != nil {
+		if err := onNode(node, parent, direction); err != nil {
 			return err
 		}
 
@@ -26,18 +25,18 @@ func DebugTraverse(nodePtr *NodePointer, onNode func(node Node, selfId, parent N
 			return nil
 		}
 
-		err = traverse(node.Left(), nodeId, "l")
+		err = traverse(node.Left(), node, "l")
 		if err != nil {
 			return err
 		}
-		err = traverse(node.Right(), nodeId, "r")
+		err = traverse(node.Right(), node, "r")
 		if err != nil {
 			return err
 		}
 		return nil
 	}
 
-	return traverse(nodePtr, 0, "")
+	return traverse(nodePtr, nil, "")
 }
 
 func RenderDotGraph(writer io.Writer, nodePtr *NodePointer) error {
@@ -53,16 +52,15 @@ func RenderDotGraph(writer io.Writer, nodePtr *NodePointer) error {
 		return finishGraph()
 	}
 
-	err = DebugTraverse(nodePtr, func(node Node, nodeId, parent NodeID, direction string) error {
+	err = DebugTraverse(nodePtr, func(node Node, parent Node, direction string) error {
 		key, err := node.Key()
 		if err != nil {
 			return err
 		}
 
 		version := node.Version()
-		idx := nodeId.Index()
 
-		label := fmt.Sprintf("ver: %d idx %d key:0x%x ", version, idx, key)
+		label := fmt.Sprintf("ver: %d key:0x%x ", version, key)
 		if node.IsLeaf() {
 			value, err := node.Value()
 			if err != nil {
@@ -74,14 +72,14 @@ func RenderDotGraph(writer io.Writer, nodePtr *NodePointer) error {
 			label += fmt.Sprintf("ht:%d sz:%d", node.Height(), node.Size())
 		}
 
-		nodeName := fmt.Sprintf("n%d", nodeId)
+		nodeName := fmt.Sprintf("n%p", node)
 
 		_, err = fmt.Fprintf(writer, "%s [label=\"%s\"];\n", nodeName, label)
 		if err != nil {
 			return err
 		}
-		if parent != 0 {
-			parentName := fmt.Sprintf("n%d", parent)
+		if parent != nil {
+			parentName := fmt.Sprintf("n%p", parent)
 			_, err = fmt.Fprintf(writer, "%s -> %s [label=\"%s\"];\n", parentName, nodeName, direction)
 			if err != nil {
 				return err

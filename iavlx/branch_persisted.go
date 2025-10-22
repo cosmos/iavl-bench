@@ -37,30 +37,6 @@ func (node *BranchPersisted) Value() ([]byte, error) {
 	return nil, nil
 }
 
-func (node *BranchPersisted) makeNodePointer(ref NodeRef, maybeId NodeID) *NodePointer {
-	if ref.IsNodeID() {
-		return &NodePointer{
-			id:    ref.AsNodeID(),
-			store: node.store,
-		}
-	} else {
-		relPtr := ref.AsRelativePointer()
-		if relPtr.IsLeaf() {
-			return &NodePointer{
-				id:      maybeId,
-				store:   node.store,
-				fileIdx: uint32(relPtr.Offset()) + 1, // +1 because offset is 1-based
-			}
-		} else {
-			return &NodePointer{
-				id:      maybeId,
-				store:   node.store,
-				fileIdx: uint32(int64(node.selfIdx) + relPtr.Offset()),
-			}
-		}
-	}
-}
-
 func (node *BranchPersisted) Left() *NodePointer {
 	return node.leftPtr
 }
