@@ -5,40 +5,44 @@ import humanfriendly
 import polars as pl
 import streamlit as st
 import pandas
-from read_logs import load_benchmark_dir
+from read_logs import load_benchmark_dir_dict
+from analysis import summary, calculate_batch_ops_per_sec
 
 # get benchmark dir from env var BENCHMARK_RESULTS or panic
 benchmark_dir = os.getenv('BENCHMARK_RESULTS')
 if not benchmark_dir:
     raise ValueError('BENCHMARK_RESULTS environment variable not set')
 
-all_data = load_benchmark_dir(benchmark_dir)
-all_names = [d.name for d in all_data]
+all_data_dict = load_benchmark_dir_dict(benchmark_dir)
+all_data = list(all_data_dict.values())
+all_names = list(all_data_dict.keys())
 
 st.title('Benchmark Results Visualization')
 
-summaries = [d.summary for d in all_data if d.summary is not None]
-if len(summaries) != 0:
-    # Show table and bar charts of all summary data
-    st.header('Summary Data')
+# Show summary statistics
+st.header('Summary Data')
 
-    summary_df = pandas.DataFrame(summaries)
-    summary_df.index = [d.name for d in all_data if d.summary is not None]
-    tab1, tab2, tab3, tab4 = st.tabs(['Summary', 'Ops/sec', 'Max Mem (GB)', 'Max Disk (GB)'])
+summary_df = summary(all_data_dict)
+summary_pandas = summary_df.to_pandas().set_index('name')
 
-    with tab1:
-        st.dataframe(summary_df)
+tab1, tab2, tab3, tab4, tab5 = st.tabs(['Summary', 'Ops/sec', 'Max Mem (GB)', 'Max Disk (GB)', 'Time (min)'])
 
-    with tab2:
-        st.bar_chart(summary_df, y='ops_per_sec', stack=False)
+with tab1:
+    st.dataframe(summary_pandas)
 
-    with tab3:
-        st.bar_chart(summary_df, y='max_mem_gb', stack=False)
+with tab2:
+    st.bar_chart(summary_pandas, y='ops_per_sec', stack=False)
 
-    with tab4:
-        st.bar_chart(summary_df, y='max_disk_gb', stack=False)
+with tab3:
+    st.bar_chart(summary_pandas, y='max_mem_gb', stack=False)
 
-# Show line charts for ops_per_sec, mem_sys, disk_usage over versions for each benchmark
+with tab4:
+    st.bar_chart(summary_pandas, y='max_disk_gb', stack=False)
+
+with tab5:
+    st.bar_chart(summary_pandas, y='elapsed_time_minutes', stack=False)
+
+# Show line charts for ops_per_sec, mem, disk_usage over versions for each benchmark
 st.header('Performance Over Time')
 
 names = st.segmented_control("Benchmark Runs", all_names, selection_mode="multi", default=all_names)
@@ -47,30 +51,78 @@ if len(names) == 0:
     st.warning('Please select at least one benchmark run to display')
     st.stop()
 
-data = [d for d in all_data if d.name in names]
+data = [all_data_dict[name] for name in names]
 
 # For now truncate all data to the shortest length
-min_versions = min(len(d.versions) for d in data)
+min_versions = min(len(d.versions_df) for d in data)
 for d in data:
     d.versions_df = d.versions_df.head(min_versions)
 
 tab1, tab2, tab3 = st.tabs(['Ops/sec', 'Memory', 'Disk Usage'])
 
 with tab1:
-    ops_per_sec_df = pl.DataFrame({d.name: d.versions_df.select('ops_per_sec').to_series() for d in data})
-    st.line_chart(ops_per_sec_df, x_label='version', y_label='ops/sec')
+    # Calculate batched ops/sec for smoother visualization
+    batch_size = st.slider('Batch size (versions)', 1, 500, 100)
+    ops_data = {}
+    for d in data:
+        batched = calculate_batch_ops_per_sec(d.versions_df, batch_size)
+        ops_data[d.name] = batched.select('ops_per_sec').to_series()
+
+    # Truncate to shortest
+    min_len = min(len(v) for v in ops_data.values())
+    ops_data = {k: v.head(min_len) for k, v in ops_data.items()}
+
+    ops_per_sec_df = pl.DataFrame(ops_data)
+    st.line_chart(ops_per_sec_df, x_label='version batch', y_label='ops/sec')
 
 with tab2:
-    mem_df = pl.DataFrame({d.name: d.versions_df.select('mem_gb').to_series() for d in data})
-    st.line_chart(mem_df, x_label='version', y_label='mem (GB)')
+    mem_field = st.selectbox('Memory field', ['alloc', 'sys', 'heap_inuse', 'heap_idle', 'heap_released'], index=0)
+    mem_dfs = []
+    for d in data:
+        if not d.mem_df.is_empty():
+            # Select version and memory field, convert to GB, add name column
+            mem_df = d.mem_df.select(
+                pl.col('version'),
+                (pl.col(mem_field) / 1_000_000_000).alias('mem_gb')
+            ).with_columns(
+                pl.lit(d.name).alias('benchmark')
+            )
+            mem_dfs.append(mem_df)
+
+    if mem_dfs:
+        # Concatenate all data
+        mem_df = pl.concat(mem_dfs)
+        mem_pandas = mem_df.to_pandas()
+
+        # Pivot to wide format for line chart (use pivot_table to handle duplicates)
+        mem_wide = mem_pandas.pivot_table(index='version', columns='benchmark', values='mem_gb', aggfunc='mean')
+        st.line_chart(mem_wide, y_label='mem (GB)')
+    else:
+        st.warning('No memory data available')
 
 with tab3:
-    disk_df = pl.DataFrame({d.name: d.versions_df.select('disk_usage_gb').to_series() for d in data})
-    st.line_chart(disk_df, x_label='version', y_label='disk (GB)')
+    disk_dfs = []
+    for d in data:
+        if not d.disk_df.is_empty():
+            # Select version and size, convert to GB, add name column
+            disk_df = d.disk_df.select(
+                pl.col('version'),
+                (pl.col('size') / 1_000_000_000).alias('disk_gb')
+            ).with_columns(
+                pl.lit(d.name).alias('benchmark')
+            )
+            disk_dfs.append(disk_df)
 
-# with tab4:
-#     disk_io_df = pl.DataFrame({d.name: d.versions_df.select('disk_io').to_series() for d in data})
-#     st.line_chart(disk_io_df, x_label='version')
+    if disk_dfs:
+        # Concatenate all data
+        disk_df = pl.concat(disk_dfs)
+        disk_pandas = disk_df.to_pandas()
+
+        # Pivot to wide format for line chart (use pivot_table to handle duplicates)
+        disk_wide = disk_pandas.pivot_table(index='version', columns='benchmark', values='disk_gb', aggfunc='mean')
+        st.line_chart(disk_wide, y_label='disk (GB)')
+    else:
+        st.warning('No disk data available')
 
 st.text(f'Showing data from {len(all_data)} benchmark logs in {Path(benchmark_dir).absolute()}')
 
@@ -89,7 +141,7 @@ for store in changeset_info0.get('store_params'):
 
 for d in all_data:
     st.markdown(f'## {d.name}')
-    st.markdown(f'`{len(d.versions)}` Versions Successfully Committed')
+    st.markdown(f'`{len(d.versions_df)}` Versions Successfully Committed')
     if d.init_data:
         if 'changeset_dir' in d.init_data:
             changeset_dir = d.init_data['changeset_dir']

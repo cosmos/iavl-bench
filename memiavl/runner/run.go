@@ -11,11 +11,15 @@ type DBWrapper struct {
 	db *memiavl.DB
 }
 
-func (d DBWrapper) Version() int64 {
+func (d *DBWrapper) Close() error {
+	return d.db.Close()
+}
+
+func (d *DBWrapper) Version() int64 {
 	return d.db.Version()
 }
 
-func (d DBWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
+func (d *DBWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	changeSet := memiavl.ChangeSet{
 		Pairs: []*memiavl.KVPair{
 			{
@@ -28,7 +32,7 @@ func (d DBWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) 
 	return d.db.ApplyChangeSet(storeKey, changeSet)
 }
 
-func (d DBWrapper) Commit() error {
+func (d *DBWrapper) Commit() error {
 	_, err := d.db.Commit()
 	return err
 }
@@ -71,7 +75,7 @@ func Runner() bench.Runner {
 			if err != nil {
 				return nil, err
 			}
-			return DBWrapper{db: db}, nil
+			return &DBWrapper{db: db}, nil
 		},
 	})
 }

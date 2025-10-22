@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
@@ -32,6 +33,7 @@ type Tree interface {
 	ApplyUpdate(storeKey string, key, value []byte, delete bool) error
 	// Commit should persist all changes made since the last commit and return the new version's hash.
 	Commit() error
+	io.Closer
 }
 
 type LoaderParams struct {
@@ -135,21 +137,33 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		var handler slog.Handler
 		switch logHandlerType {
 		case "text":
-			handler = slog.NewTextHandler(logOut, nil)
+			handler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
 		case "json":
-			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true})
+			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
 		default:
 			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
 		}
 
-		logger := slog.New(handler)
+		// Create a separate handler for tree logger at info level
+		var treeHandler slog.Handler
+		switch logHandlerType {
+		case "text":
+			treeHandler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo})
+		case "json":
+			treeHandler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true})
+		default:
+			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
+		}
+
+		logger := slog.New(handler).With("module", "runner")
+		treeLogger := slog.New(treeHandler)
 		logger.Info("Starting benchmark run, loading tree")
 
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: opts,
 			StoreNames:  changesetInfo.StoreNames,
-			Logger:      logger.With("module", treeType),
+			Logger:      treeLogger.With("module", treeType),
 		}
 
 		tree, err := cfg.TreeLoader(loaderParams)
@@ -204,27 +218,35 @@ func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params run
 
 	captureSystemInfo(logger)
 
-	stats := &totalStats{}
+	closeCh := make(chan struct{})
+	currentVersion := atomic.Int64{}
+	currentVersion.Store(version)
+	doneCh := measureBackgroundStats(logger, &currentVersion, params.LoaderParams.TreeDir, closeCh)
+
 	i := 0
 	for version < target {
 		version++
-		err := applyVersion(logger, tree, changesetDir, params.LoaderParams.TreeDir, version, stats)
+		currentVersion.Store(version)
+		err := applyVersion(logger, tree, changesetDir, version)
 		if err != nil {
 			return fmt.Errorf("error applying version %d: %w", version, err)
 		}
 		i++
 	}
 
-	opsPerSec := float64(stats.totalOps) / stats.totalTime.Seconds()
+	err := tree.Close()
+	if err != nil {
+		return fmt.Errorf("error closing tree: %w", err)
+	}
+	logger.Info("closed tree")
+
 	logger.Info(
 		"benchmark run complete",
 		"versions_applied", i,
-		"total_ops", stats.totalOps,
-		"total_time", stats.totalTime,
-		"ops_per_sec", opsPerSec,
-		"max_mem_sys", humanize.Bytes(stats.maxSys),
-		"max_disk_usage", humanize.Bytes(stats.maxDiskUsage),
 	)
+
+	close(closeCh)
+	<-doneCh
 
 	return nil
 }
@@ -283,14 +305,7 @@ func captureSystemInfo(logger *slog.Logger) {
 	_, _ = cpu.Percent(0, true)
 }
 
-type totalStats struct {
-	totalOps     uint64
-	totalTime    time.Duration
-	maxSys       uint64
-	maxDiskUsage uint64
-}
-
-func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir string, version int64, stats *totalStats) error {
+func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, version int64) error {
 	dataFilename := changesetDataFilename(changesetDir, version)
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
@@ -342,26 +357,6 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 	opsPerSec := float64(i) / duration.Seconds()
 
 	// get mem stats
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
-
-	// get cpu utilization data
-	cpuPercents, err := cpu.Percent(0, true)
-	if err != nil {
-		logger.Warn("could not read cpu percent", "error", err)
-	}
-
-	cpuTimes, err := cpu.Times(true)
-	if err != nil {
-		logger.Warn("could not read cpu times", "error", err)
-	}
-
-	// get disk usage and io stats
-	dirSize := getDirSize(logger, dbDir)
-	diskIOCounters, err := disk.IOCounters()
-	if err != nil {
-		logger.Warn("could not read disk io counters", "error", err)
-	}
 
 	logger.Info(
 		"committed version",
@@ -369,30 +364,70 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, dbDir str
 		"duration", duration,
 		"count", i,
 		"ops_per_sec", opsPerSec,
-		"mem_allocs", humanize.Bytes(memStats.Alloc),
-		"mem_sys", humanize.Bytes(memStats.Sys),
-		"mem_heap_in_use", humanize.Bytes(memStats.HeapInuse),
-		"mem_num_gc", memStats.NumGC,
-		"disk_usage", humanize.Bytes(dirSize),
 	)
-	logger.Debug("full post-commit stats",
-		"mem_stats", memStats,
-		"cpu_percents", cpuPercents,
-		"cpu_times", cpuTimes,
-		"disk_io_counters", diskIOCounters,
-		"version", version,
-	)
-
-	stats.totalOps += uint64(i)
-	stats.totalTime += duration
-	if memStats.Sys > stats.maxSys {
-		stats.maxSys = memStats.Sys
-	}
-	if dirSize > stats.maxDiskUsage {
-		stats.maxDiskUsage = dirSize
-	}
 
 	return nil
+}
+
+func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
+	doneChan := make(chan struct{})
+	go func() {
+		fastTicker := time.NewTicker(1 * time.Second)
+		slowTicker := time.NewTicker(10 * time.Second)
+		defer fastTicker.Stop()
+		defer slowTicker.Stop()
+		for {
+			select {
+			case <-fastTicker.C:
+				// capture mem stats
+				var memStats runtime.MemStats
+				runtime.ReadMemStats(&memStats)
+				logger.Info("mem stats", "version", currentVersion.Load(),
+					"alloc", humanize.Bytes(memStats.Alloc),
+					"total_alloc", humanize.Bytes(memStats.TotalAlloc),
+					"sys", humanize.Bytes(memStats.Sys),
+					"num_gc", memStats.NumGC,
+					"gc_sys", humanize.Bytes(memStats.GCSys),
+					"heap_sys", humanize.Bytes(memStats.HeapSys),
+					"heap_idle", humanize.Bytes(memStats.HeapIdle),
+					"heap_inuse", humanize.Bytes(memStats.HeapInuse),
+					"heap_released", humanize.Bytes(memStats.HeapReleased),
+					"heap_objects", memStats.HeapObjects,
+					"gc_pause_total", memStats.PauseTotalNs,
+					"gc_cpu_fraction", memStats.GCCPUFraction,
+				)
+
+				// get cpu utilization data
+				cpuPercents, err := cpu.Percent(0, true)
+				if err != nil {
+					logger.Warn("could not read cpu percent", "error", err)
+				}
+
+				cpuTimes, err := cpu.Times(true)
+				if err != nil {
+					logger.Warn("could not read cpu times", "error", err)
+				}
+				logger.Info("cpu usage", "version", currentVersion.Load(), "cpu_percents", cpuPercents, "cpu_times", cpuTimes)
+
+				// get disk io stats
+				diskIOCounters, err := disk.IOCounters()
+				if err != nil {
+					logger.Warn("could not read disk io counters", "error", err)
+				}
+				logger.Info("disk io counters", "version", currentVersion.Load(), "disk_io_counters", diskIOCounters)
+
+			case <-slowTicker.C:
+				// capture disk usage (expensive operation)
+				size := getDirSize(logger, path)
+				logger.Info("disk usage", "version", currentVersion.Load(), "size", humanize.Bytes(size))
+
+			case <-closeCh:
+				close(doneChan)
+				return
+			}
+		}
+	}()
+	return doneChan
 }
 
 func getDirSize(logger *slog.Logger, path string) uint64 {

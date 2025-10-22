@@ -17,6 +17,11 @@ type MultiTreeWrapper struct {
 	trees   map[string]*iavl.MutableTree
 }
 
+func (m *MultiTreeWrapper) Close() error {
+	// TODO
+	return nil
+}
+
 func (m *MultiTreeWrapper) Version() int64 {
 	return m.version
 }
