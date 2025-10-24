@@ -17,7 +17,12 @@ type MultiTreeWrapper struct {
 }
 
 func (m *MultiTreeWrapper) Close() error {
-	// TODO
+	for _, tree := range m.trees {
+		err := tree.Close()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
