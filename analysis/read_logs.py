@@ -7,81 +7,21 @@ from typing import Optional, Generator
 import humanfriendly
 import os
 
-import polars
-import pydantic
+import polars as pl
 
 from memiavl_snapshots import capture_memiavl_snapshot_log
 
 
 @dataclass
-class BenchmarkSummary:
-    ops_per_sec: float
-    max_mem_gb: float
-    max_disk_gb: float
-
-    @staticmethod
-    def from_dict(d: dict) -> 'BenchmarkSummary':
-        return BenchmarkSummary(
-            ops_per_sec=d['ops_per_sec'],
-            max_mem_gb=humanfriendly.parse_size(d['max_mem_sys']) / 1_000_000_000,
-            max_disk_gb=humanfriendly.parse_size(d['max_disk_usage']) / 1_000_000_000,
-        )
-
-
-class FullVersionStats(pydantic.BaseModel):
-    mem_stats: dict
-    cpu_times: list[dict]
-    cpu_percents: list[float]
-    disk_io_counters: dict
-
-
-@dataclass
-class VersionLog:
-    version: int
-    duration: float
-    count: int
-    ops_per_sec: float
-    mem_allocs: int
-    mem_sys: int
-    mem_heap_in_use: int
-    mem_num_gc: int
-    disk_usage: int
-    full_stats: Optional[FullVersionStats]
-
-    @staticmethod
-    def from_dict(d: dict) -> 'VersionLog':
-        return VersionLog(
-            version=d['version'],
-            duration=d['duration'],
-            count=d['count'],
-            ops_per_sec=d['ops_per_sec'],
-            mem_allocs=humanfriendly.parse_size(d['mem_allocs']),
-            mem_sys=humanfriendly.parse_size(d['mem_sys']),
-            mem_heap_in_use=humanfriendly.parse_size(d['mem_heap_in_use']),
-            mem_num_gc=d['mem_num_gc'],
-            disk_usage=humanfriendly.parse_size(d['disk_usage']),
-            full_stats=None,
-        )
-
-    def to_data_row(self) -> dict:
-        return {
-            'version': self.version,
-            'duration': self.duration,
-            'count': self.count,
-            'ops_per_sec': self.ops_per_sec,
-            'disk_usage_gb': self.disk_usage / 1_000_000_000,
-            'mem_gb': self.full_stats.mem_stats.get('HeapAlloc') / 1_000_000_000 if self.full_stats else None,
-        }
-
-
-@dataclass
 class BenchmarkData:
+    """Container for raw time-series benchmark data."""
     name: str
     init_data: Optional[dict]
-    summary: Optional[BenchmarkSummary]
-    versions: list[VersionLog]
-    versions_df: polars.DataFrame
-    memiavl_snapshots: Optional[polars.DataFrame]
+    run_complete_time: Optional[str]
+    versions_df: pl.DataFrame
+    mem_df: pl.DataFrame
+    disk_df: pl.DataFrame
+    memiavl_snapshots: Optional[pl.DataFrame]
 
 
 def row_iterator(path: str) -> Generator[dict, None, None]:
@@ -91,47 +31,110 @@ def row_iterator(path: str) -> Generator[dict, None, None]:
 
 
 def load_benchmark_log(path: str) -> BenchmarkData:
+    """Parse benchmark log and extract raw time-series data."""
     name = os.path.basename(path).removesuffix('.jsonl')
-    data = BenchmarkData(name=name, summary=None, versions=[], init_data=None, versions_df=polars.DataFrame(),
-                         memiavl_snapshots=None)
+
+    init_data = None
+    run_complete_time = None
+    version_rows = []
+    mem_rows = []
+    disk_rows = []
     memiavl_snapshot_data = []
+
     for row in row_iterator(path):
         msg = row.get('msg')
         module = row.get('module')
+        timestamp = row.get('time')
+
         if msg == 'starting run':
-            data.init_data = row
+            init_data = row
+        elif msg == 'benchmark run complete':
+            run_complete_time = timestamp
         elif msg == 'committed version':
-            data.versions.append(VersionLog.from_dict(row))
+            version_rows.append({
+                'version': row['version'],
+                'timestamp': timestamp,
+                'duration': row['duration'],
+                'count': row['count'],
+                'ops_per_sec': row['ops_per_sec'],
+            })
+            # Old format: disk usage included in committed version message
+            if 'disk_usage' in row:
+                disk_rows.append({
+                    'version': row['version'],
+                    'timestamp': timestamp,
+                    'size': humanfriendly.parse_size(row['disk_usage']),
+                })
+        elif msg == 'mem stats':
+            mem_rows.append({
+                'version': row['version'],
+                'timestamp': timestamp,
+                'alloc': humanfriendly.parse_size(row['alloc']),
+                'total_alloc': humanfriendly.parse_size(row['total_alloc']),
+                'sys': humanfriendly.parse_size(row['sys']),
+                'num_gc': row['num_gc'],
+                'gc_sys': humanfriendly.parse_size(row['gc_sys']),
+                'heap_sys': humanfriendly.parse_size(row['heap_sys']),
+                'heap_idle': humanfriendly.parse_size(row['heap_idle']),
+                'heap_inuse': humanfriendly.parse_size(row['heap_inuse']),
+                'heap_released': humanfriendly.parse_size(row['heap_released']),
+                'heap_objects': row['heap_objects'],
+                'gc_pause_total': row['gc_pause_total'],
+                'gc_cpu_fraction': row['gc_cpu_fraction'],
+            })
+        elif msg == 'disk usage':
+            disk_rows.append({
+                'version': row['version'],
+                'timestamp': timestamp,
+                'size': humanfriendly.parse_size(row['size']),
+            })
         elif msg == 'full post-commit stats':
-            version = row['version']
-            if len(data.versions) < version:
-                raise ValueError(f'Full stats for version {version} found before version log')
-            full_stats = FullVersionStats.model_validate(row)
-            data.versions[version - 1].full_stats = full_stats
+            # Old format that bundles mem stats in a single message
+            version = row.get('version')
+            if 'mem_stats' in row:
+                ms = row['mem_stats']
+                mem_rows.append({
+                    'version': version,
+                    'timestamp': timestamp,
+                    'alloc': ms['Alloc'],
+                    'total_alloc': ms['TotalAlloc'],
+                    'sys': ms['Sys'],
+                    'num_gc': ms['NumGC'],
+                    'gc_sys': ms['GCSys'],
+                    'heap_sys': ms['HeapSys'],
+                    'heap_idle': ms['HeapIdle'],
+                    'heap_inuse': ms['HeapInuse'],
+                    'heap_released': ms['HeapReleased'],
+                    'heap_objects': ms['HeapObjects'],
+                    'gc_pause_total': ms['PauseTotalNs'],
+                    'gc_cpu_fraction': ms['GCCPUFraction'],
+                })
         elif module == 'memiavl':
             capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
-    data.versions_df = polars.DataFrame([v.to_data_row() for v in data.versions])
-    total_op_count = sum(v.count for v in data.versions)
-    total_duration = sum(v.duration for v in data.versions) / 1_000_000_000  # convert from nanoseconds
-    total_ops_per_sec = total_op_count / total_duration
-    max_mem = max(v.mem_heap_in_use for v in data.versions)
-    max_disk = max(v.disk_usage for v in data.versions)
-    data.summary = BenchmarkSummary(
-        ops_per_sec=total_ops_per_sec,
-        max_mem_gb=max_mem / 1_000_000_000,
-        max_disk_gb=max_disk / 1_000_000_000,
+
+    # Create dataframes
+    versions_df = pl.DataFrame(version_rows) if version_rows else pl.DataFrame()
+    mem_df = pl.DataFrame(mem_rows) if mem_rows else pl.DataFrame()
+    disk_df = pl.DataFrame(disk_rows) if disk_rows else pl.DataFrame()
+    memiavl_snapshots = pl.DataFrame(memiavl_snapshot_data) if memiavl_snapshot_data else None
+
+    return BenchmarkData(
+        name=name,
+        init_data=init_data,
+        run_complete_time=run_complete_time,
+        versions_df=versions_df,
+        mem_df=mem_df,
+        disk_df=disk_df,
+        memiavl_snapshots=memiavl_snapshots,
     )
-    if len(memiavl_snapshot_data) > 0:
-        data.memiavl_snapshots = polars.DataFrame(memiavl_snapshot_data)
-    return data
 
 
 def load_benchmark_dir(path: str) -> list[BenchmarkData]:
+    """Load all benchmark logs from a directory containing .jsonl files."""
     path = Path(path)
     if path.is_file():
         return [load_benchmark_log(str(path))]
 
-    """ Load all benchmark logs from a directory containing .jsonl files. """
     res = []
     for filename in os.listdir(path):
         if filename.endswith('.jsonl'):
@@ -141,5 +144,6 @@ def load_benchmark_dir(path: str) -> list[BenchmarkData]:
 
 
 def load_benchmark_dir_dict(path: str) -> dict[str, BenchmarkData]:
+    """Load all benchmark logs and return as a dict keyed by benchmark name."""
     data = load_benchmark_dir(path)
     return {d.name: d for d in data}

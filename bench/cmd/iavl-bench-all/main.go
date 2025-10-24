@@ -27,6 +27,7 @@ func main() {
 	var dryRun bool
 	var changesetDir string
 	var versions int64
+	var outDir string
 	cmd := &cobra.Command{
 		Use:   "bench-all [plan-file]",
 		Short: "Run all benchmarks in the given JSON/JSONC plan file.",
@@ -35,6 +36,7 @@ func main() {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
 	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing changesets.")
 	cmd.Flags().Int64Var(&versions, "target-version", 0, "If non-zero, the target version to run the benchmarks against.")
+	cmd.Flags().StringVar(&outDir, "out-dir", "", "If set, the directory to write results to. Defaults to a timestamped directory next to the plan file.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		planFile := args[0]
 		bz, err := os.ReadFile(planFile)
@@ -50,22 +52,24 @@ func main() {
 
 		logger := slog.Default()
 
-		resultDir := filepath.Join(filepath.Dir(planFile), fmt.Sprintf("run-%s", time.Now().Format("20060102_150405")))
-		resultDir, err = filepath.Abs(resultDir)
-		if err != nil {
-			return fmt.Errorf("error getting absolute path of result dir: %w", err)
+		if outDir == "" {
+			outDir = filepath.Join(filepath.Dir(planFile), fmt.Sprintf("run-%s", time.Now().Format("20060102_150405")))
+			outDir, err = filepath.Abs(outDir)
+			if err != nil {
+				return fmt.Errorf("error getting absolute path of result dir: %w", err)
+			}
+			logger.Info(fmt.Sprintf("writing results to %s", outDir))
 		}
-		logger.Info(fmt.Sprintf("writing results to %s", resultDir))
 
 		if !dryRun {
-			err = os.MkdirAll(resultDir, 0755)
+			err = os.MkdirAll(outDir, 0755)
 			if err != nil {
 				return fmt.Errorf("error creating result dir: %w", err)
 			}
 		}
 
 		for _, run := range plan.Runs {
-			runOne(logger, run, changesetDir, versions, resultDir, dryRun)
+			runOne(logger, run, changesetDir, versions, outDir, dryRun)
 		}
 
 		return nil

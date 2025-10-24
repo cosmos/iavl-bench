@@ -16,6 +16,16 @@ type MultiTreeWrapper struct {
 	trees   map[string]*iavl.Tree
 }
 
+func (m *MultiTreeWrapper) Close() error {
+	for _, tree := range m.trees {
+		err := tree.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MultiTreeWrapper) Version() int64 {
 	return m.version
 }
