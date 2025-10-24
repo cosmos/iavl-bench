@@ -18,7 +18,7 @@ type MultiTreeWrapper struct {
 }
 
 func (m *MultiTreeWrapper) Close() error {
-	// TODO
+	// no official close method for iavl trees
 	return nil
 }
 

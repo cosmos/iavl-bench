@@ -2,6 +2,7 @@ package store_v1
 
 import (
 	"fmt"
+	"io"
 
 	"cosmossdk.io/store/types"
 
@@ -14,7 +15,9 @@ type CommitMultiStoreWrapper struct {
 }
 
 func (s *CommitMultiStoreWrapper) Close() error {
-	// TODO
+	if closer, ok := s.store.(io.Closer); ok {
+		return closer.Close()
+	}
 	return nil
 }
 
