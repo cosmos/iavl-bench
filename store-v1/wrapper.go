@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"cosmossdk.io/store/types"
+	protoio "github.com/cosmos/gogoproto/io"
 
 	"github.com/cosmos/iavl-bench/bench"
 )
@@ -11,11 +12,6 @@ import (
 type CommitMultiStoreWrapper struct {
 	storeKeys map[string]types.StoreKey
 	store     types.CommitMultiStore
-}
-
-func (s *CommitMultiStoreWrapper) Close() error {
-	// TODO
-	return nil
 }
 
 func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeNames []string) (*CommitMultiStoreWrapper, error) {
@@ -40,6 +36,15 @@ func (s *CommitMultiStoreWrapper) Version() int64 {
 	return s.store.LatestVersion()
 }
 
+func (s *CommitMultiStoreWrapper) Read(storeKey string, key []byte) ([]byte, error) {
+	sk, ok := s.storeKeys[storeKey]
+	if !ok {
+		return nil, fmt.Errorf("store key %s not found", storeKey)
+	}
+	store := s.store.GetKVStore(sk)
+	return store.Get(key), nil
+}
+
 func (s *CommitMultiStoreWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
 	sk, ok := s.storeKeys[storeKey]
 	if !ok {
@@ -59,4 +64,15 @@ func (s *CommitMultiStoreWrapper) Commit() error {
 	return nil
 }
 
+func (s *CommitMultiStoreWrapper) RestoreSnapshot(height uint64, protoReader protoio.Reader) error {
+	_, err := s.store.Restore(height, 0, protoReader)
+	return err
+}
+
+func (s *CommitMultiStoreWrapper) Close() error {
+	// TODO
+	return nil
+}
+
 var _ bench.Tree = &CommitMultiStoreWrapper{}
+var _ bench.RestorableTree = &CommitMultiStoreWrapper{}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
+	protoio "github.com/cosmos/gogoproto/io"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -29,11 +30,20 @@ import (
 type Tree interface {
 	// Version should return the last committed version. If no version has been committed, it should return 0.
 	Version() int64
+	// Read should read a single key from the tree.
+	Read(storeKey string, key []byte) ([]byte, error)
 	// ApplyUpdate should apply a single set or delete to the tree.
 	ApplyUpdate(storeKey string, key, value []byte, delete bool) error
 	// Commit should persist all changes made since the last commit and return the new version's hash.
 	Commit() error
 	io.Closer
+}
+
+type RestorableTree interface {
+	Tree
+
+	// RestoreSnapshot restores the tree to the provided height using the Cosmos SDK's state snapshot format.
+	RestoreSnapshot(height uint64, protoReader protoio.Reader) error
 }
 
 type LoaderParams struct {
