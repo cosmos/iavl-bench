@@ -3,6 +3,7 @@ module bench-iavlx
 go 1.25.0
 
 require (
+	cosmossdk.io/log v1.6.1
 	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20251021224702-eb32c2d3053e
 	github.com/cosmos/iavl-bench/bench v0.0.4
 	github.com/cosmos/iavl-bench/store-v1 v0.0.0-00010101000000-000000000000
@@ -12,7 +13,6 @@ require (
 	cosmossdk.io/api v0.9.2 // indirect
 	cosmossdk.io/core v0.11.3 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
-	cosmossdk.io/log v1.6.1 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	cosmossdk.io/store v1.1.2 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
