@@ -21,6 +21,8 @@ class BenchmarkData:
     versions_df: pl.DataFrame
     mem_df: pl.DataFrame
     disk_df: pl.DataFrame
+    disk_io_df: pl.DataFrame  # disk I/O counters from gopsutil
+    cpu_df: pl.DataFrame  # CPU usage from gopsutil
     memiavl_snapshots: Optional[pl.DataFrame]
 
 
@@ -39,6 +41,8 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     version_rows = []
     mem_rows = []
     disk_rows = []
+    disk_io_rows = []
+    cpu_rows = []
     memiavl_snapshot_data = []
 
     for row in row_iterator(path):
@@ -109,6 +113,38 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                     'gc_pause_total': ms['PauseTotalNs'],
                     'gc_cpu_fraction': ms['GCCPUFraction'],
                 })
+        elif msg == 'disk io counters' or msg == 'initial disk io counters':
+            counters = row.get('disk_io_counters', {})
+            # Pick the disk with most I/O activity (exclude loop devices)
+            main_disk = max(
+                (d for name, d in counters.items() if not name.startswith('loop')),
+                key=lambda d: d.get('readBytes', 0) + d.get('writeBytes', 0),
+                default=None
+            )
+            if main_disk:
+                main_disk = main_disk.copy()
+                main_disk['version'] = row.get('version', 0)
+                main_disk['timestamp'] = timestamp
+                disk_io_rows.append(main_disk)
+        elif msg == 'cpu usage':
+            cpu_percents = row.get('cpu_percents', [])
+            cpu_times = row.get('cpu_times', [])
+            if cpu_percents:
+                cpu_rows.append({
+                    'version': row.get('version', 0),
+                    'timestamp': timestamp,
+                    'avg_cpu_pct': sum(cpu_percents) / len(cpu_percents),
+                    'total_cpu_pct': sum(cpu_percents),
+                    'max_cpu_pct': max(cpu_percents),
+                    'num_cpus': len(cpu_percents),
+                    # Cumulative times (seconds) summed across CPUs - use diff() to get rates
+                    'user': sum(t.get('user', 0) for t in cpu_times),
+                    'system': sum(t.get('system', 0) for t in cpu_times),
+                    'idle': sum(t.get('idle', 0) for t in cpu_times),
+                    'iowait': sum(t.get('iowait', 0) for t in cpu_times),
+                    # Max iowait from any single CPU (to detect single-threaded I/O bottleneck)
+                    'iowait_max': max((t.get('iowait', 0) for t in cpu_times), default=0),
+                })
         elif module == 'memiavl':
             capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
 
@@ -116,6 +152,8 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     versions_df = pl.DataFrame(version_rows) if version_rows else pl.DataFrame()
     mem_df = pl.DataFrame(mem_rows) if mem_rows else pl.DataFrame()
     disk_df = pl.DataFrame(disk_rows) if disk_rows else pl.DataFrame()
+    disk_io_df = pl.DataFrame(disk_io_rows) if disk_io_rows else pl.DataFrame()
+    cpu_df = pl.DataFrame(cpu_rows) if cpu_rows else pl.DataFrame()
     memiavl_snapshots = pl.DataFrame(memiavl_snapshot_data) if memiavl_snapshot_data else None
 
     return BenchmarkData(
@@ -125,6 +163,8 @@ def load_benchmark_log(path: str) -> BenchmarkData:
         versions_df=versions_df,
         mem_df=mem_df,
         disk_df=disk_df,
+        disk_io_df=disk_io_df,
+        cpu_df=cpu_df,
         memiavl_snapshots=memiavl_snapshots,
     )
 
