@@ -157,13 +157,14 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 
 		logger := slog.New(handler).With("module", "runner")
 		treeLogger := slog.New(treeHandler)
+		slog.SetDefault(treeLogger)
 		logger.Info("Starting benchmark run, loading tree")
 
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: opts,
 			StoreNames:  changesetInfo.StoreNames,
-			Logger:      treeLogger.With("module", treeType),
+			Logger:      treeLogger.With("module", "tree"),
 		}
 
 		tree, err := cfg.TreeLoader(loaderParams)
