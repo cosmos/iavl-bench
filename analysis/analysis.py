@@ -445,3 +445,141 @@ def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
     fig.add_hline(y=100, line_dash="dash", line_color="red", row=1, col=1)
 
     return fig
+
+
+def plot_write_cost(dataset, run_names: list[str] = None, window_size: int = 500):
+    """Plot write cost over time: KB written per operation.
+
+    Uses cumulative bytes written / cumulative ops to show how the cost per
+    operation grows as the tree gets larger. This measures data structure
+    overhead - how much I/O is needed per logical tree operation.
+
+    Args:
+        window_size: Rolling window for smoothing instantaneous rates (bottom plot)
+    """
+    if run_names is None:
+        run_names = list(dataset.keys())
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        subplot_titles=('Cumulative Write Cost (KB/op)', 'Rolling Write Cost (KB/op)'),
+                        vertical_spacing=0.1)
+
+    for name in run_names:
+        run = dataset[name]
+        if run.disk_io_df.is_empty() or run.versions_df.is_empty():
+            continue
+
+        io_df = run.disk_io_df.sort('version')
+        versions_df = run.versions_df.sort('version')
+
+        if io_df.is_empty() or versions_df.is_empty():
+            continue
+
+        # Get initial values for cumulative calculation
+        initial_bytes = io_df['writeBytes'][0]
+
+        # Compute cumulative metrics
+        io_cumulative = io_df.with_columns([
+            ((pl.col('writeBytes') - initial_bytes) / 1024).alias('cumulative_write_kb'),
+        ])
+
+        versions_cumulative = versions_df.with_columns([
+            pl.col('count').cum_sum().alias('cumulative_ops'),
+        ])
+
+        # Merge on version
+        merged = versions_cumulative.join(io_cumulative.select(['version', 'cumulative_write_kb']),
+                                          on='version', how='inner')
+
+        # Cumulative cost: total KB written / total ops
+        merged = merged.with_columns([
+            (pl.col('cumulative_write_kb') / pl.col('cumulative_ops')).alias('cumulative_kb_per_op'),
+        ])
+
+        # Rolling cost: use diff over window
+        merged = merged.with_columns([
+            (pl.col('cumulative_write_kb').diff(window_size) /
+             pl.col('cumulative_ops').diff(window_size)).alias('rolling_kb_per_op'),
+        ])
+
+        fig.add_trace(go.Scatter(
+            x=merged['version'],
+            y=merged['cumulative_kb_per_op'],
+            mode='lines',
+            name=name,
+            legendgroup=name,
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=merged['version'],
+            y=merged['rolling_kb_per_op'],
+            mode='lines',
+            name=name,
+            legendgroup=name,
+            showlegend=False,
+        ), row=2, col=1)
+
+    fig.update_layout(
+        height=600,
+        hovermode='x unified'
+    )
+    fig.update_yaxes(title_text="KB / op (cumulative)", row=1, col=1)
+    fig.update_yaxes(title_text="KB / op (rolling)", row=2, col=1)
+    fig.update_xaxes(title_text="Version", row=2, col=1)
+    return fig
+
+
+# Keep old name as alias for compatibility
+def plot_write_amplification(dataset, run_names: list[str] = None, batch_size: int = 100):
+    """Deprecated: Use plot_write_cost instead."""
+    return plot_write_cost(dataset, run_names, window_size=batch_size * 5)
+
+
+def plot_efficiency_analysis(dataset, run_names: list[str] = None, batch_size: int = 100):
+    """Plot ops/sec vs write cost (MB per 1k ops) to visualize efficiency.
+
+    Points moving right (higher write cost) and down (fewer ops/sec) indicate
+    data structure overhead is hurting performance as the tree grows.
+    """
+    if run_names is None:
+        run_names = list(dataset.keys())
+
+    fig = go.Figure()
+
+    for name in run_names:
+        run = dataset[name]
+        if run.disk_io_df.is_empty() or run.versions_df.is_empty():
+            continue
+
+        io_df = calculate_disk_io_rates(run.disk_io_df)
+        ops_df = calculate_batch_ops_per_sec(run.versions_df, batch_size)
+
+        if io_df.is_empty() or ops_df.is_empty():
+            continue
+
+        io_sampled = io_df.select(['version', 'write_mb_s']).group_by(
+            (pl.col('version') / batch_size).ceil() * batch_size
+        ).agg([
+            pl.col('write_mb_s').mean().alias('write_mb_s'),
+        ]).rename({'version': 'version_batch'})
+
+        merged = ops_df.join(io_sampled, left_on='version', right_on='version_batch', how='inner')
+        merged = merged.with_columns([
+            (pl.col('write_mb_s') / pl.col('ops_per_sec') * 1000).alias('mb_per_1k_ops')
+        ])
+
+        fig.add_trace(go.Scatter(
+            x=merged['mb_per_1k_ops'],
+            y=merged['ops_per_sec'],
+            mode='markers',
+            name=name,
+            text=merged['version'],
+            hovertemplate='Version: %{text}<br>MB/1k ops: %{x:.1f}<br>ops/sec: %{y:,.0f}<extra></extra>'
+        ))
+
+    fig.update_layout(
+        xaxis_title="Write Cost (MB per 1k ops)",
+        yaxis_title="ops/sec",
+        hovermode='closest'
+    )
+    return fig
