@@ -375,7 +375,7 @@ def plot_cpu_breakdown(dataset, run_names: list[str] = None):
     return fig
 
 
-def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
+def plot_bottleneck_analysis(dataset, run_names: list[str] = None, batch_size: int = 100):
     """Plot combined I/O utilization and CPU metrics to identify bottlenecks.
 
     Shows:
@@ -387,6 +387,9 @@ def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
     - High I/O util + high iowait + low CPU active = I/O bound
     - Low I/O util + low iowait + high CPU active = CPU bound
     - Low everything = neither bound (possibly memory or other)
+
+    Args:
+        batch_size: Number of versions to average together for smoothing (default 100)
     """
     if run_names is None:
         run_names = list(dataset.keys())
@@ -402,9 +405,16 @@ def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
         if not run.disk_io_df.is_empty():
             io_df = calculate_disk_io_rates(run.disk_io_df)
             if not io_df.is_empty():
+                # Batch average for smoothing
+                io_batched = io_df.with_columns([
+                    ((pl.col('version') / batch_size).floor() * batch_size).alias('version_batch')
+                ]).group_by('version_batch').agg([
+                    pl.col('io_util_pct').mean()
+                ]).sort('version_batch')
+
                 fig.add_trace(go.Scatter(
-                    x=io_df['version'],
-                    y=io_df['io_util_pct'],
+                    x=io_batched['version_batch'],
+                    y=io_batched['io_util_pct'],
                     mode='lines',
                     name=f'{name}',
                     legendgroup=name,
@@ -414,9 +424,18 @@ def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
         if not run.cpu_df.is_empty():
             cpu_df = calculate_cpu_rates(run.cpu_df)
             if not cpu_df.is_empty():
+                # Batch average for smoothing
+                cpu_batched = cpu_df.with_columns([
+                    ((pl.col('version') / batch_size).floor() * batch_size).alias('version_batch'),
+                    (pl.col('user_pct') + pl.col('system_pct')).alias('active_pct')
+                ]).group_by('version_batch').agg([
+                    pl.col('iowait_pct').mean(),
+                    pl.col('active_pct').mean()
+                ]).sort('version_batch')
+
                 fig.add_trace(go.Scatter(
-                    x=cpu_df['version'],
-                    y=cpu_df['iowait_pct'],
+                    x=cpu_batched['version_batch'],
+                    y=cpu_batched['iowait_pct'],
                     mode='lines',
                     name=f'{name}',
                     legendgroup=name,
@@ -424,8 +443,8 @@ def plot_bottleneck_analysis(dataset, run_names: list[str] = None):
                 ), row=2, col=1)
 
                 fig.add_trace(go.Scatter(
-                    x=cpu_df['version'],
-                    y=cpu_df['user_pct'] + cpu_df['system_pct'],
+                    x=cpu_batched['version_batch'],
+                    y=cpu_batched['active_pct'],
                     mode='lines',
                     name=f'{name}',
                     legendgroup=name,
