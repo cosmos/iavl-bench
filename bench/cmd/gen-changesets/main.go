@@ -54,10 +54,10 @@ func main() {
 			gens = MixedGenerators(versions, scale)
 		case "osmo":
 			gens = bench.OsmoLikeGenerators(scale)
-		case "bank1m":
-			gens = BankV2(1_000_000)
-		case "bank10m":
-			gens = BankV2(10_000_000)
+		case "bank":
+
+			accounts := 10_000_000 * scale
+			gens = BankV2(int(accounts))
 		default:
 			return fmt.Errorf("unknown generator profile: %s", profile)
 		}
