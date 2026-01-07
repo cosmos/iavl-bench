@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 
+	logslog "log/slog"
+
 	"github.com/cosmos/cosmos-sdk/iavlx"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/samber/slog-multi"
-	"go.openteleme
-ry.io/contrib/bridges/otelslog"
-	logslog "log/s
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 
 	"github.com/cosmos/iavl-bench/bench"
