@@ -131,5 +131,3 @@ require (
 replace github.com/cosmos/iavl-bench/store-v1 => ../store-v1
 
 replace github.com/cosmos/iavl-bench/bench => ../bench
-
-replace github.com/cosmos/cosmos-sdk => ../../../cosmos-sdk
