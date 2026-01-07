@@ -56,6 +56,8 @@ func main() {
 			gens = bench.OsmoLikeGenerators(scale)
 		case "bank1m":
 			gens = BankV2(1_000_000)
+		case "bank10m":
+			gens = BankV2(10_000_000)
 		default:
 			return fmt.Errorf("unknown generator profile: %s", profile)
 		}
