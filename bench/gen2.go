@@ -5,14 +5,15 @@ import (
 	"math/rand/v2"
 )
 
-type Update struct {
+type Update = struct {
 	Key, Value []byte
 	Delete     bool
 }
 
 type GenParams struct {
-	StoreParams []KVParams        `json:"store_params"`
-	Phases      []MultiStorePhase `json:"phases"`
+	Name   string            `json:"name"`
+	Stores []KVParams        `json:"stores"`
+	Phases []MultiStorePhase `json:"phases"`
 }
 
 type MultiStorePhase struct {
@@ -27,7 +28,7 @@ type StorePhase struct {
 }
 
 type KVParams struct {
-	StoreName      string  `json:"store_name"`
+	Name           string  `json:"name"`
 	KeyLenMean     float64 `json:"key_len_mean"`
 	KeyLenStdDev   float64 `json:"key_len_stddev"`
 	ValueLenMean   float64 `json:"value_len_mean"`
@@ -52,10 +53,11 @@ func GenMultiStoreUpdates(params GenParams) iter.Seq2[uint32, MultiStoreUpdates]
 	generator := &MultiStoreGenerator{
 		store: make(map[string]*StoreGenerator),
 	}
-	for i, storeParams := range params.StoreParams {
-		generator.store[storeParams.StoreName] = &StoreGenerator{
+	for i, storeParams := range params.Stores {
+		generator.store[storeParams.Name] = &StoreGenerator{
 			rng:      rand.New(rand.NewPCG(uint64(i), 0)),
 			kvParams: storeParams,
+			seed2:    uint64(i),
 		}
 	}
 	return func(yield func(uint32, MultiStoreUpdates) bool) {
@@ -98,34 +100,34 @@ func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) iter.Seq[Upda
 		for i := uint32(0); i < phaseParams.UpdatesPerVersion; i++ {
 			r := g.rng.Float64()
 			var update Update
-			if r < phaseParams.InsertRatio || g.insertIndex == g.deleteIndex {
-				// either we have selected an insert or we must insert because there are no keys to update/delete
-				keyForInsert := g.kvParams.GenKey(g.insertIndex, g.seed2)
-				valueForInsert := g.kvParams.GenValue(g.rng)
+			hasOriginalKeys := updateRangeEnd > g.deleteIndex
+			updateRatio := 1.0 - phaseParams.InsertRatio - phaseParams.DeleteRatio
+
+			if r < phaseParams.DeleteRatio && hasOriginalKeys {
+				// delete only when we have some original keys
 				update = Update{
-					Key:    keyForInsert,
-					Value:  valueForInsert,
-					Delete: false,
-				}
-				g.insertIndex++
-			} else if r < phaseParams.InsertRatio+phaseParams.DeleteRatio && g.deleteIndex < updateRangeEnd {
-				// we have selected a delete and there are keys available to delete
-				keyForDelete := g.kvParams.GenKey(g.deleteIndex, g.seed2)
-				update = Update{
-					Key:    keyForDelete,
+					Key:    g.kvParams.GenKey(g.deleteIndex, g.seed2),
 					Delete: true,
 				}
 				g.deleteIndex++
-			} else {
+			} else if r < phaseParams.DeleteRatio+updateRatio && hasOriginalKeys {
+				// also update only when we have some original keys
 				keyIndex := g.rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
-				keyForUpdate := g.kvParams.GenKey(keyIndex, g.seed2)
-				valueForUpdate := g.kvParams.GenValue(g.rng)
 				update = Update{
-					Key:    keyForUpdate,
-					Value:  valueForUpdate,
+					Key:    g.kvParams.GenKey(keyIndex, g.seed2),
+					Value:  g.kvParams.GenValue(g.rng),
 					Delete: false,
 				}
+			} else {
+				// otherwise insert
+				update = Update{
+					Key:    g.kvParams.GenKey(g.insertIndex, g.seed2),
+					Value:  g.kvParams.GenValue(g.rng),
+					Delete: false,
+				}
+				g.insertIndex++
 			}
+
 			if !yield(update) {
 				return
 			}

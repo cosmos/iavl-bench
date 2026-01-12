@@ -1,7 +1,6 @@
 package bench
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -15,25 +14,27 @@ import (
 	"sync/atomic"
 	"time"
 
-	storev1beta1 "cosmossdk.io/api/cosmos/store/v1beta1"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protodelim"
 )
 
-// Tree is a generic interface wrapping a multi-store tree structure.
-type Tree interface {
+type MultiTree interface {
 	// Version should return the last committed version. If no version has been committed, it should return 0.
 	Version() int64
-	// ApplyUpdate should apply a single set or delete to the tree.
-	ApplyUpdate(storeKey string, key, value []byte, delete bool) error
 	// Commit should persist all changes made since the last commit and return the new version's hash.
-	Commit() error
+	Commit(updates MultiStoreUpdates) error
+	// Tree should return a TreeReader for the given store name.
+	Tree(storeName string) TreeReader
 	io.Closer
+}
+
+type TreeReader interface {
+	Get(key []byte) ([]byte, error)
+	Size() int64
 }
 
 type LoaderParams struct {
@@ -43,7 +44,7 @@ type LoaderParams struct {
 	Logger      *slog.Logger
 }
 
-type TreeLoader func(params LoaderParams) (Tree, error)
+type TreeLoader func(params LoaderParams) (MultiTree, error)
 
 type RunConfig struct {
 	TreeLoader  TreeLoader
@@ -69,8 +70,7 @@ func (r Runner) Run() {
 func NewRunner(treeType string, cfg RunConfig) Runner {
 	var treeDir string
 	var treeOptions string
-	var changesetDir string
-	var targetVersion int64
+	var genOptions string
 	var logHandlerType string
 	var logFile string
 	cmd := &cobra.Command{
@@ -79,8 +79,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 	}
 	cmd.Flags().StringVar(&treeDir, "db-dir", "", "Directory for the db's data.")
 	cmd.Flags().StringVar(&treeOptions, "db-options", "", "Implementation specific options for the db, in JSON format.")
-	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing the changeset files.")
-	cmd.Flags().Int64Var(&targetVersion, "target-version", 0, "Target version to apply changesets up to. If this is empty or 0, all remaining versions in the changeset-dir will be applied.")
+	cmd.Flags().StringVar(&genOptions, "gen-options", "", "Changeset generator params, in JSON format.")
 	cmd.Flags().StringVar(&logHandlerType, "log-type", "text", "Log handler type. One of 'text' or 'json'.")
 	cmd.Flags().StringVar(&logFile, "log-file", "", "If set, log output will be written to this file instead of stdout.")
 
@@ -89,17 +88,16 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 			return fmt.Errorf("tree-dir is required")
 		}
 
-		if changesetDir == "" {
-			return fmt.Errorf("changeset-dir is required")
+		var genParams GenParams
+		if genOptions == "" {
+			return fmt.Errorf("gen-options is required")
 		}
-
-		changesetInfo, err := readChangesetInfo(changesetDir)
+		decoder := json.NewDecoder(bytes.NewReader([]byte(genOptions)))
+		// we disallow unknown fields to catch typos with generator options
+		decoder.DisallowUnknownFields()
+		err := decoder.Decode(&genParams)
 		if err != nil {
-			return fmt.Errorf("error reading changeset info file: %w", err)
-		}
-
-		if targetVersion <= 0 {
-			targetVersion = changesetInfo.Versions
+			return fmt.Errorf("error unmarshaling gen-options: %w", err)
 		}
 
 		// decode db options from json
@@ -157,14 +155,18 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 
 		logger := slog.New(handler).With("module", "runner")
 		treeLogger := slog.New(treeHandler)
-		slog.SetDefault(treeLogger)
 		logger.Info("Starting benchmark run, loading tree")
+
+		var storeNames []string
+		for _, store := range genParams.Stores {
+			storeNames = append(storeNames, store.Name)
+		}
 
 		loaderParams := LoaderParams{
 			TreeDir:     treeDir,
 			TreeOptions: opts,
-			StoreNames:  changesetInfo.StoreNames,
-			Logger:      treeLogger.With("module", "tree"),
+			StoreNames:  storeNames,
+			Logger:      treeLogger.With("module", treeType),
 		}
 
 		tree, err := cfg.TreeLoader(loaderParams)
@@ -172,11 +174,10 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 			return fmt.Errorf("error loading tree: %w", err)
 		}
 
-		return run(tree, changesetDir, changesetInfo, runParams{
-			TreeType:      treeType,
-			TargetVersion: targetVersion,
-			Logger:        logger,
-			LoaderParams:  loaderParams,
+		return run(tree, genParams, runParams{
+			TreeType:     treeType,
+			Logger:       logger,
+			LoaderParams: loaderParams,
 		})
 	}
 
@@ -192,7 +193,7 @@ type runParams struct {
 	TreeType      string
 }
 
-func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params runParams) error {
+func run(tree MultiTree, genParams GenParams, params runParams) error {
 	logger := params.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -210,8 +211,7 @@ func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params run
 	logger.Info("starting run",
 		"start_version", version,
 		"target_version", target,
-		"changeset_dir", changesetDir,
-		"changeset_info", changesetInfo,
+		"gen_params", genParams,
 		"db_dir", params.LoaderParams.TreeDir,
 		"db_options", params.LoaderParams.TreeOptions,
 		"tree_type", params.TreeType,
@@ -224,15 +224,13 @@ func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params run
 	currentVersion.Store(version)
 	doneCh := measureBackgroundStats(logger, &currentVersion, params.LoaderParams.TreeDir, closeCh)
 
-	i := 0
-	for version < target {
-		version++
-		currentVersion.Store(version)
-		err := applyVersion(logger, tree, changesetDir, version)
+	gen := GenMultiStoreUpdates(genParams)
+	for version, updates := range gen {
+		currentVersion.Store(int64(version))
+		err := applyVersion(logger, tree, updates, int64(version))
 		if err != nil {
 			return fmt.Errorf("error applying version %d: %w", version, err)
 		}
-		i++
 	}
 
 	err := tree.Close()
@@ -243,7 +241,7 @@ func run(tree Tree, changesetDir string, changesetInfo changesetInfo, params run
 
 	logger.Info(
 		"benchmark run complete",
-		"versions_applied", i,
+		"versions_applied", currentVersion.Load(),
 	)
 
 	close(closeCh)
@@ -306,46 +304,12 @@ func captureSystemInfo(logger *slog.Logger) {
 	_, _ = cpu.Percent(0, true)
 }
 
-func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, version int64) error {
-	dataFilename := changesetDataFilename(changesetDir, version)
-	dataFile, err := os.Open(dataFilename)
-	if err != nil {
-		return fmt.Errorf("error opening changeset file for version %d: %w", version, err)
-	}
-	defer func() {
-		err := dataFile.Close()
-		if err != nil {
-			panic(err)
-		}
-	}()
-	reader := bufio.NewReader(dataFile)
-
-	logger.Info("applying changeset", "version", version, "file", dataFilename)
+func applyVersion(logger *slog.Logger, tree MultiTree, updates MultiStoreUpdates, version int64) error {
+	logger.Info("applying changeset", "version", version)
 	i := 0
 	startTime := time.Now()
-	for {
-		if i%10_000 == 0 && i > 0 {
-			logger.Debug("applied changes", "version", version, "count", i)
-		}
-		var storeKVPair storev1beta1.StoreKVPair
-		err := protodelim.UnmarshalFrom(reader, &storeKVPair)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("error at entry %d reading changeset: %w", i, err)
-		}
 
-		err = tree.ApplyUpdate(storeKVPair.StoreKey, storeKVPair.Key, storeKVPair.Value, storeKVPair.Delete)
-		if err != nil {
-			return fmt.Errorf("error at entry %d applying update: %w", i, err)
-		}
-
-		i++
-	}
-	logger.Info("applied all changes, commiting", "version", version, "count", i)
-
-	err = tree.Commit()
+	err := tree.Commit(updates)
 	if err != nil {
 		return fmt.Errorf("error committing version %d: %w", version, err)
 	}
@@ -373,13 +337,13 @@ func applyVersion(logger *slog.Logger, tree Tree, changesetDir string, version i
 func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
 	doneChan := make(chan struct{})
 	go func() {
-		fastStatTicker := time.NewTicker(1 * time.Second)
-		diskStatTicker := time.NewTicker(10 * time.Second)
-		defer fastStatTicker.Stop()
-		defer diskStatTicker.Stop()
+		fastTicker := time.NewTicker(1 * time.Second)
+		slowTicker := time.NewTicker(10 * time.Second)
+		defer fastTicker.Stop()
+		defer slowTicker.Stop()
 		for {
 			select {
-			case <-fastStatTicker.C:
+			case <-fastTicker.C:
 				// capture mem stats
 				var memStats runtime.MemStats
 				runtime.ReadMemStats(&memStats)
@@ -417,7 +381,7 @@ func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, p
 				}
 				logger.Info("disk io counters", "version", currentVersion.Load(), "disk_io_counters", diskIOCounters)
 
-			case <-diskStatTicker.C:
+			case <-slowTicker.C:
 				// capture disk usage (expensive operation)
 				size := getDirSize(logger, path)
 				logger.Info("disk usage", "version", currentVersion.Load(), "size", humanize.Bytes(size))
