@@ -11,10 +11,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tidwall/jsonc"
+
+	"github.com/cosmos/iavl-bench/bench"
 )
 
 type Plan struct {
-	Runs []RunPlan `json:"runs"`
+	Runs        []RunPlan         `json:"configs"`
+	Simulations []bench.SimParams `json:"simulations,omitempty"`
 }
 
 type RunPlan struct {
@@ -25,8 +28,6 @@ type RunPlan struct {
 
 func main() {
 	var dryRun bool
-	var changesetDir string
-	var versions int64
 	var outDir string
 	cmd := &cobra.Command{
 		Use:   "bench-all [plan-file]",
@@ -34,8 +35,6 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
-	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing changesets.")
-	cmd.Flags().Int64Var(&versions, "target-version", 0, "If non-zero, the target version to run the benchmarks against.")
 	cmd.Flags().StringVar(&outDir, "out-dir", "", "If set, the directory to write results to. Defaults to a timestamped directory next to the plan file.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		planFile := args[0]
@@ -69,7 +68,9 @@ func main() {
 		}
 
 		for _, run := range plan.Runs {
-			runOne(logger, run, changesetDir, versions, outDir, dryRun)
+			for _, sim := range plan.Simulations {
+				runOne(logger, run, sim, outDir, dryRun)
+			}
 		}
 
 		return nil
@@ -79,14 +80,21 @@ func main() {
 	}
 }
 
-func runOne(logger *slog.Logger, plan RunPlan, changesetDir string, versions int64, resultDir string, dryRun bool) {
-	bz, err := json.Marshal(plan)
+func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDir string, dryRun bool) {
+	cfgBz, err := json.Marshal(plan)
 	if err != nil {
 		logger.Error("error marshaling plan", "error", err)
 		return
 	}
-	logger.Info("starting run", "run_plan", string(bz))
-	dir := filepath.Join(resultDir, fmt.Sprintf("%s-tmp", plan.RunName))
+
+	simBz, err := json.Marshal(simPlan)
+	if err != nil {
+		logger.Error("error marshaling sim plan", "error", err)
+		return
+	}
+
+	logger.Info("starting run", "config", string(cfgBz), "simulation", string(simBz))
+	dir := filepath.Join(resultDir, fmt.Sprintf("%s__%s-tmp", plan.RunName, simPlan.Name))
 	err = os.Mkdir(dir, 0700)
 	if err != nil {
 		logger.Error("error creating db dir", "error", err)
@@ -96,22 +104,18 @@ func runOne(logger *slog.Logger, plan RunPlan, changesetDir string, versions int
 
 	args := []string{
 		"bench",
-		"--changeset-dir",
-		changesetDir,
+		"--gen-options",
+		string(simBz),
 		"--db-dir",
 		dir,
 		"--log-type",
 		"json",
 		"--log-file",
-		filepath.Join(resultDir, fmt.Sprintf("%s.jsonl", plan.RunName)),
+		filepath.Join(resultDir, fmt.Sprintf("%s__%s.jsonl", plan.RunName, simPlan.Name)),
 	}
 
 	if plan.Options != nil {
 		args = append(args, "--db-options", string(plan.Options))
-	}
-
-	if versions != 0 {
-		args = append(args, "--target-version", fmt.Sprintf("%d", versions))
 	}
 
 	cmd := exec.Command(plan.Runner, args...)

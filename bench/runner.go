@@ -88,7 +88,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 			return fmt.Errorf("tree-dir is required")
 		}
 
-		var genParams GenParams
+		var genParams SimParams
 		if genOptions == "" {
 			return fmt.Errorf("gen-options is required")
 		}
@@ -193,7 +193,7 @@ type runParams struct {
 	TreeType      string
 }
 
-func run(tree MultiTree, genParams GenParams, params runParams) error {
+func run(tree MultiTree, genParams SimParams, params runParams) error {
 	logger := params.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -224,10 +224,10 @@ func run(tree MultiTree, genParams GenParams, params runParams) error {
 	currentVersion.Store(version)
 	doneCh := measureBackgroundStats(logger, &currentVersion, params.LoaderParams.TreeDir, closeCh)
 
-	gen := GenMultiStoreUpdates(genParams)
-	for version, updates := range gen {
+	sim := GenSimulation(genParams)
+	for version, versionSim := range sim {
 		currentVersion.Store(int64(version))
-		err := applyVersion(logger, tree, updates, int64(version))
+		err := applyVersion(logger, tree, versionSim, int64(version))
 		if err != nil {
 			return fmt.Errorf("error applying version %d: %w", version, err)
 		}
@@ -304,12 +304,13 @@ func captureSystemInfo(logger *slog.Logger) {
 	_, _ = cpu.Percent(0, true)
 }
 
-func applyVersion(logger *slog.Logger, tree MultiTree, updates MultiStoreUpdates, version int64) error {
+func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, version int64) error {
 	logger.Info("applying changeset", "version", version)
-	i := 0
 	startTime := time.Now()
 
-	err := tree.Commit(updates)
+	// TODO add gets
+
+	err := tree.Commit(versionSim.Updates)
 	if err != nil {
 		return fmt.Errorf("error committing version %d: %w", version, err)
 	}
@@ -319,7 +320,13 @@ func applyVersion(logger *slog.Logger, tree MultiTree, updates MultiStoreUpdates
 	}
 
 	duration := time.Since(startTime)
-	opsPerSec := float64(i) / duration.Seconds()
+	count := uint32(0)
+	totalSize := int64(0)
+	for storeName, storeUpdates := range versionSim.Updates {
+		count += storeUpdates.TotalOps
+		totalSize += tree.Tree(storeName).Size()
+	}
+	opsPerSec := float64(count) / duration.Seconds()
 
 	// get mem stats
 
@@ -327,8 +334,9 @@ func applyVersion(logger *slog.Logger, tree MultiTree, updates MultiStoreUpdates
 		"committed version",
 		"version", version,
 		"duration", duration,
-		"count", i,
+		"count", count,
 		"ops_per_sec", opsPerSec,
+		"total_size", totalSize,
 	)
 
 	return nil

@@ -10,7 +10,7 @@ type Update = struct {
 	Delete     bool
 }
 
-type GenParams struct {
+type SimParams struct {
 	Name   string            `json:"name"`
 	Stores []KVParams        `json:"stores"`
 	Phases []MultiStorePhase `json:"phases"`
@@ -22,9 +22,10 @@ type MultiStorePhase struct {
 }
 
 type StorePhase struct {
-	UpdatesPerVersion uint32  `json:"updates_per_version"`
-	InsertRatio       float64 `json:"insert_ratio"`
-	DeleteRatio       float64 `json:"delete_ratio"`
+	Inserts uint32 `json:"inserts"`
+	Updates uint32 `json:"updates"`
+	Deletes uint32 `json:"deletes"`
+	Gets    uint32 `json:"gets"`
 }
 
 type KVParams struct {
@@ -47,9 +48,19 @@ type MultiStoreGenerator struct {
 	store map[string]*StoreGenerator
 }
 
-type MultiStoreUpdates = map[string]iter.Seq[Update]
+type MultiStoreUpdates = map[string]StoreUpdates
 
-func GenMultiStoreUpdates(params GenParams) iter.Seq2[uint32, MultiStoreUpdates] {
+type VersionSim struct {
+	Gets    iter.Seq2[string, []byte]
+	Updates MultiStoreUpdates
+}
+
+type StoreUpdates struct {
+	Updates  iter.Seq[Update]
+	TotalOps uint32
+}
+
+func GenSimulation(params SimParams) iter.Seq2[uint32, VersionSim] {
 	generator := &MultiStoreGenerator{
 		store: make(map[string]*StoreGenerator),
 	}
@@ -60,13 +71,14 @@ func GenMultiStoreUpdates(params GenParams) iter.Seq2[uint32, MultiStoreUpdates]
 			seed2:    uint64(i),
 		}
 	}
-	return func(yield func(uint32, MultiStoreUpdates) bool) {
+	return func(yield func(uint32, VersionSim) bool) {
 		var version uint32
 		for _, phaseParams := range params.Phases {
 			for i := 0; i < int(phaseParams.Versions); i++ {
 				version++
+				gets := generator.GenVersionGets(phaseParams)
 				updates := generator.GenVersionUpdates(phaseParams)
-				if !yield(version, updates) {
+				if !yield(version, VersionSim{Gets: gets, Updates: updates}) {
 					return
 				}
 			}
@@ -74,8 +86,38 @@ func GenMultiStoreUpdates(params GenParams) iter.Seq2[uint32, MultiStoreUpdates]
 	}
 }
 
-func (g *MultiStoreGenerator) GenVersionUpdates(phaseParams MultiStorePhase) map[string]iter.Seq[Update] {
-	result := make(map[string]iter.Seq[Update])
+func (g *MultiStoreGenerator) GenVersionGets(phaseParams MultiStorePhase) iter.Seq2[string, []byte] {
+	remainingCounts := map[string]uint32{}
+	for storeName, storePhaseParams := range phaseParams.Stores {
+		remainingCounts[storeName] = storePhaseParams.Gets
+	}
+
+	return func(yield func(string, []byte) bool) {
+		// naive algorithm simply iterates over all stores and generates gets until all are done
+		for len(remainingCounts) > 0 {
+			for storeName, count := range remainingCounts {
+				if count == 0 {
+					delete(remainingCounts, storeName)
+					continue
+				}
+				storeGen := g.store[storeName]
+				key := storeGen.GenGet()
+				if key == nil {
+					// no keys to get from this store
+					delete(remainingCounts, storeName)
+					continue
+				}
+				remainingCounts[storeName]--
+				if !yield(storeName, key) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (g *MultiStoreGenerator) GenVersionUpdates(phaseParams MultiStorePhase) map[string]StoreUpdates {
+	result := make(map[string]StoreUpdates)
 	for storeName, storePhaseParams := range phaseParams.Stores {
 		storeGen, exists := g.store[storeName]
 		if !exists {
@@ -94,23 +136,38 @@ type StoreGenerator struct {
 	seed2       uint64
 }
 
-func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) iter.Seq[Update] {
+func (g *StoreGenerator) GenGet() []byte {
+	getStartRange := g.deleteIndex
+	getEndRange := g.insertIndex
+	if getEndRange <= getStartRange {
+		// no keys to get
+		return nil
+	}
+
+	keyIndex := g.rng.Uint64N(getEndRange-getStartRange) + getStartRange
+	return g.kvParams.GenKey(keyIndex, g.seed2)
+}
+
+func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) StoreUpdates {
 	updateRangeEnd := g.insertIndex
-	return func(yield func(Update) bool) {
-		for i := uint32(0); i < phaseParams.UpdatesPerVersion; i++ {
+	updatesPerVersion := phaseParams.Inserts + phaseParams.Updates + phaseParams.Deletes
+	deleteRatio := float64(phaseParams.Deletes) / float64(updatesPerVersion)
+	insertRatio := float64(phaseParams.Inserts) / float64(updatesPerVersion)
+	updateRatio := 1.0 - insertRatio - deleteRatio
+	updates := func(yield func(Update) bool) {
+		for i := uint32(0); i < updatesPerVersion; i++ {
 			r := g.rng.Float64()
 			var update Update
 			hasOriginalKeys := updateRangeEnd > g.deleteIndex
-			updateRatio := 1.0 - phaseParams.InsertRatio - phaseParams.DeleteRatio
 
-			if r < phaseParams.DeleteRatio && hasOriginalKeys {
+			if r < deleteRatio && hasOriginalKeys {
 				// delete only when we have some original keys
 				update = Update{
 					Key:    g.kvParams.GenKey(g.deleteIndex, g.seed2),
 					Delete: true,
 				}
 				g.deleteIndex++
-			} else if r < phaseParams.DeleteRatio+updateRatio && hasOriginalKeys {
+			} else if r < deleteRatio+updateRatio && hasOriginalKeys {
 				// also update only when we have some original keys
 				keyIndex := g.rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
 				update = Update{
@@ -132,5 +189,9 @@ func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) iter.Seq[Upda
 				return
 			}
 		}
+	}
+	return StoreUpdates{
+		Updates:  updates,
+		TotalOps: updatesPerVersion,
 	}
 }

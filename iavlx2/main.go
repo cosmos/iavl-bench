@@ -1,17 +1,34 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/cosmos/cosmos-sdk/iavl"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 
 	"github.com/cosmos/iavl-bench/bench"
 )
 
 type multiTree struct {
 	version int64
-	trees   map[string]iavl.CommitTree
+	trees   map[string]*iavl.CommitTree
+}
+
+func NewMultiTree(storeNames []string, opts iavl.Options) (bench.MultiTree, error) {
+	trees := make(map[string]*iavl.CommitTree)
+	for _, name := range storeNames {
+		var err error
+		trees[name], err = iavl.NewCommitTree("", opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tree for store %s: %w", name, err)
+		}
+	}
+	return &multiTree{
+		trees: trees,
+	}, nil
 }
 
 func (m *multiTree) Version() int64 {
@@ -28,7 +45,7 @@ func (m *multiTree) Commit(updates bench.MultiStoreUpdates) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := tree.Commit(treeUpdates)
+			_, err := tree.Commit(treeUpdates.Updates)
 			if err != nil {
 				panic(err)
 			}
@@ -40,12 +57,28 @@ func (m *multiTree) Commit(updates bench.MultiStoreUpdates) error {
 }
 
 func (m *multiTree) Tree(storeName string) bench.TreeReader {
-	//TODO implement me
-	panic("implement me")
+	return m.trees[storeName].Latest()
 }
 
 func (m *multiTree) Close() error {
-	return nil
+	return errors.Join(
+		// TODO add closing individual trees if needed
+		telemetry.Shutdown(context.Background()),
+	)
 }
 
 var _ bench.MultiTree = (*multiTree)(nil)
+
+func main() {
+	bench.Run("iavlx2", bench.RunConfig{
+		OptionsType: &iavl.Options{},
+		TreeLoader: func(params bench.LoaderParams) (bench.MultiTree, error) {
+			opts := params.TreeOptions.(*iavl.Options)
+			if opts == nil {
+				opts = &iavl.Options{}
+			}
+
+			return NewMultiTree(params.StoreNames, *opts)
+		},
+	})
+}
