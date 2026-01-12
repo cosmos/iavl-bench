@@ -1,16 +1,32 @@
 {
   "configs": [
     {
-      "name": "iavlx2-sync",
+      "name": "iavlx2-mem",
       "runner": "bench-iavlx2",
       "options": {
-        "fsync": true
+        "write_wal": false,
+      }
+    },
+    {
+      "name": "iavlx2-wal",
+      "runner": "bench-iavlx2",
+      "options": {
+        "write_wal": true,
+        "fsync_wal": false
+      }
+    },
+    {
+      "name": "iavlx2-wal-fsync",
+      "runner": "bench-iavlx2",
+      "options": {
+        "write_wal": true,
+        "fsync_wal": true
       }
     }
   ],
   "simulations": [
     {
-      "name": "wal-1m",
+      "name": "1m",
       "stores": [
         {
           "name": "bank",
@@ -39,36 +55,36 @@
         }
       ]
     },
-//    {
-//      "name": "wal-10m",
-//      "stores": [
-//        {
-//          "name": "bank",
-//          "key_len_mean": 56,
-//          "key_len_stddev": 3,
-//          "value_len_mean": 16,
-//          "value_len_stddev": 2
-//        }
-//      ],
-//      "phases": [
-//        {
-//          "versions": 100,
-//          "stores": {
-//            "bank": {
-//              "inserts": 100000
-//            }
-//          }
-//        },
-//        {
-//          "versions": 2000,
-//          "stores": {
-//            "bank": {
-//              "updates": 10000
-//            }
-//          }
-//        }
-//      ]
-//    }
+    {
+      "name": "10m",
+      "stores": [
+        {
+          "name": "bank",
+          "key_len_mean": 56,
+          "key_len_stddev": 3,
+          "value_len_mean": 16,
+          "value_len_stddev": 2
+        }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "bank": {
+              "inserts": 100000
+            }
+          }
+        },
+        {
+          "versions": 2000,
+          "stores": {
+            "bank": {
+              "updates": 10000
+            }
+          }
+        }
+      ]
+    }
 //    {
 //      "name": "mem-100m",
 //      "stores": [
