@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/cosmos/cosmos-sdk/iavl"
@@ -17,11 +18,12 @@ type multiTree struct {
 	trees   map[string]*iavl.CommitTree
 }
 
-func NewMultiTree(storeNames []string, opts iavl.Options) (bench.MultiTree, error) {
+func NewMultiTree(storeNames []string, dir string, opts iavl.Options) (bench.MultiTree, error) {
 	trees := make(map[string]*iavl.CommitTree)
 	for _, name := range storeNames {
 		var err error
-		trees[name], err = iavl.NewCommitTree("", opts)
+		treeDir := filepath.Join(dir, name)
+		trees[name], err = iavl.NewCommitTree(treeDir, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tree for store %s: %w", name, err)
 		}
@@ -78,7 +80,7 @@ func main() {
 				opts = &iavl.Options{}
 			}
 
-			return NewMultiTree(params.StoreNames, *opts)
+			return NewMultiTree(params.StoreNames, params.TreeDir, *opts)
 		},
 	})
 }
