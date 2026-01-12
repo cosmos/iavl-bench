@@ -322,11 +322,11 @@ func (c *storeState) writeKVStorePair(w io.Writer, key, value []byte, delete boo
 }
 
 func (c *storeState) genKey(rng *rand.Rand) []byte {
-	return genBytes(rng, c.gen.KeyMean, c.gen.KeyStdDev)
+	return genBytes(rng, float64(c.gen.KeyMean), float64(c.gen.KeyStdDev))
 }
 
 func (c *storeState) genValue(rng *rand.Rand) []byte {
-	return genBytes(rng, c.gen.ValueMean, c.gen.ValueStdDev)
+	return genBytes(rng, float64(c.gen.ValueMean), float64(c.gen.ValueStdDev))
 }
 
 func (c *storeState) has(key []byte) bool {
@@ -334,8 +334,8 @@ func (c *storeState) has(key []byte) bool {
 	return ok
 }
 
-func genBytes(rng *rand.Rand, mean, stdDev int) []byte {
-	length := int(rng.NormFloat64()*float64(stdDev) + float64(mean))
+func genBytes(rng *rand.Rand, mean, stdDev float64) []byte {
+	length := int(rng.NormFloat64()*stdDev + mean)
 	// length must be at least 1
 	// explanation: normal distribution is a poor approximation of certain data sets where std dev is skewed
 	// by outliers on the upper bound.  mean - std dev can be negative, which is not a valid length.
@@ -343,7 +343,7 @@ func genBytes(rng *rand.Rand, mean, stdDev int) []byte {
 	// not realistic.  instead we just generate again closer to the mean with a std dev of mean / 3.
 	// this is not perfect but good enough for test sets.
 	if length < 1 {
-		length = int(rng.NormFloat64()*float64(mean/3) + float64(mean))
+		length = int(rng.NormFloat64()*(mean/3) + mean)
 		// much lower probability of this happening twice, but just in case
 		if length < 1 {
 			length = 1

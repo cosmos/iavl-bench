@@ -1,8 +1,6 @@
 module github.com/cosmos/iavl-bench/bench
 
-go 1.23.0
-
-toolchain go1.24.2
+go 1.25.5
 
 require (
 	cosmossdk.io/api v0.9.2
