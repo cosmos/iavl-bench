@@ -48,7 +48,7 @@
       "name": "1mx5",
       "stores": [
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
@@ -62,7 +62,7 @@
       "name": "1mx10",
       "stores": [
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
