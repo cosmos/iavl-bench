@@ -2,7 +2,9 @@ package bench
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -22,7 +23,12 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
-	"go.opentelemetry.io/contrib/otelconf"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	otellogglobal "go.opentelemetry.io/otel/log/global"
+	otellogsdk "go.opentelemetry.io/otel/sdk/log"
+	oteltracesdk "go.opentelemetry.io/otel/sdk/trace"
 )
 
 var (
@@ -97,19 +103,14 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		if outDir == "" {
 			return fmt.Errorf("out-dir is required")
 		}
-		otelConfFile, err := initOtel(outDir, runName)
+		otelShutdown, err := initOtel(outDir, runName)
 		if err != nil {
 			return fmt.Errorf("failed to initialize open telemetry: %w", err)
 		}
 		defer func() {
-			err := telemetry.Shutdown(cmd.Context())
+			err := otelShutdown(context.Background())
 			if err != nil {
-				logErr := fmt.Errorf("failed to shutdown telemetry: %w", err)
-				logger.Error(logErr.Error())
-			}
-			err = os.Remove(otelConfFile)
-			if err != nil {
-				logger.Error("failed to remove otel config file", "error", err)
+				slog.Error("failed to shutdown open telemetry", "error", err)
 			}
 		}()
 
@@ -414,54 +415,59 @@ func getDirSize(logger *slog.Logger, path string) uint64 {
 	return uint64(size)
 }
 
-func initOtel(dir, baseName string) (string, error) {
-	conf := otelConf(dir, baseName)
-	jsonConf, err := json.MarshalIndent(conf, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal otel config: %v", err)
-	}
-	confFilePath := filepath.Join(dir, fmt.Sprintf("%s.otel.yaml", baseName))
-	err = os.WriteFile(confFilePath, jsonConf, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("failed to write otel config file: %v", err)
-	}
-	err = telemetry.InitializeOpenTelemetry(confFilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to initialize open telemetry: %v", err)
-	}
-	return confFilePath, nil
-}
+func initOtel(dir, baseName string) (func(ctx context.Context) error, error) {
+	var shutdownFns []func(context.Context) error
 
-func otelConf(dir, baseName string) *otelconf.OpenTelemetryConfiguration {
 	logFileName := filepath.Join(dir, fmt.Sprintf("%s.logs.jsonl", baseName))
-	traceFileName := filepath.Join(dir, fmt.Sprintf("%s.traces.jsonl", baseName))
-	//meterFileName := filepath.Join(dir, fmt.Sprintf("%s.metrics.jsonl", baseName)
-	return &otelconf.OpenTelemetryConfiguration{
-		LoggerProvider: &otelconf.LoggerProviderJson{
-			Processors: []otelconf.LogRecordProcessor{
-				{
-					Batch: &otelconf.BatchLogRecordProcessor{
-						Exporter: otelconf.LogRecordExporter{
-							OTLPFileDevelopment: &otelconf.ExperimentalOTLPFileExporter{
-								OutputStream: &logFileName,
-							},
-						},
-					},
-				},
-			},
-		},
-		TracerProvider: &otelconf.TracerProviderJson{
-			Processors: []otelconf.SpanProcessor{
-				{
-					Batch: &otelconf.BatchSpanProcessor{
-						Exporter: otelconf.SpanExporter{
-							OTLPFileDevelopment: &otelconf.ExperimentalOTLPFileExporter{
-								OutputStream: &traceFileName,
-							},
-						},
-					},
-				},
-			},
-		},
+	logFile, err := os.Create(logFileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
+	shutdownFns = append(shutdownFns, func(ctx context.Context) error {
+		return logFile.Close()
+	})
+	logExporter, err := stdoutlog.New(stdoutlog.WithWriter(logFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout log exporter: %w", err)
+	}
+	shutdownFns = append(shutdownFns, logExporter.Shutdown)
+
+	otellogglobal.SetLoggerProvider(
+		otellogsdk.NewLoggerProvider(
+			otellogsdk.WithProcessor(
+				otellogsdk.NewBatchProcessor(
+					logExporter,
+				),
+			)),
+	)
+
+	traceFileName := filepath.Join(dir, fmt.Sprintf("%s.traces.jsonl", baseName))
+	traceFile, err := os.Create(traceFileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trace file: %w", err)
+	}
+	shutdownFns = append(shutdownFns, func(ctx context.Context) error {
+		return traceFile.Close()
+	})
+	traceExporter, err := stdouttrace.New(
+		stdouttrace.WithWriter(traceFile),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout trace exporter: %w", err)
+	}
+	shutdownFns = append(shutdownFns, traceExporter.Shutdown)
+
+	otel.SetTracerProvider(
+		oteltracesdk.NewTracerProvider(
+			oteltracesdk.WithBatcher(traceExporter),
+		),
+	)
+
+	return func(ctx context.Context) error {
+		var errs []error
+		for _, fn := range shutdownFns {
+			errs = append(errs, fn(ctx))
+		}
+		return errors.Join(errs...)
+	}, nil
 }
