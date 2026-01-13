@@ -25,60 +25,60 @@
     }
   ],
   "simulations": [
-//    {
-//      "name": "1m",
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "versions": 100, "stores": { "bank": { "inserts": 10000 } } },
-//        { "versions": 2000, "stores": { "bank": { "updates": 10000 } } }
-//      ]
-//    },
-//    {
-//      "name": "1mx2",
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000} } },
-//        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates":  10000} } }
-//      ]
-//    },
-//    {
-//      "name": "1mx5",
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000}, "bank3": {"inserts": 10000}, "bank4": {"inserts": 10000}, "bank5": {"inserts": 10000}}},
-//        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates":  10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000}}},
-//      ]
-//    },
-//    {
-//      "name": "1mx10",
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank6", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank7", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank8", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank9", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-//        { "name": "bank10", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000} , "bank3": {"inserts": 10000}, "bank4": {"inserts": 10000}, "bank5": {"inserts": 10000}, "bank6": {"inserts": 10000}, "bank7": {"inserts": 10000}, "bank8": {"inserts": 10000}, "bank9": {"inserts": 10000}, "bank10": {"inserts": 10000} }},
-//        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates":  10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000}, "bank6": {"updates": 10000}, "bank7": {"updates": 10000}, "bank8": {"updates": 10000}, "bank9": {"updates": 10000}, "bank10": {"updates": 10000} }}
-//      ]
-//    },
     {
-      "name": "1mx16",
+      "name": "10m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 } }},
+        { "versions": 2000, "stores": { "bank": { "updates": 10000 } }}
+      ]
+    },
+    {
+      "name": "10mx2",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 }, "bank2": {"inserts": 100000} }},
+        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000} }}
+      ]
+    },
+    {
+      "name": "10mx5",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 }, "bank2": {"inserts": 100000}, "bank3": {"inserts": 100000}, "bank4": {"inserts": 100000}, "bank5": {"inserts": 100000} }},
+        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000} }}
+      ]
+    },
+    {
+      "name": "10mx10",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank6", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank7", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank8", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank9", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank10", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 }, "bank2": {"inserts": 100000}, "bank3": {"inserts": 100000}, "bank4": {"inserts": 100000}, "bank5": {"inserts": 100000}, "bank6": {"inserts": 100000}, "bank7": {"inserts": 100000}, "bank8": {"inserts": 100000}, "bank9": {"inserts": 100000}, "bank10": {"inserts": 100000} }},
+        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000}, "bank6": {"updates": 10000}, "bank7": {"updates": 10000}, "bank8": {"updates": 10000}, "bank9": {"updates": 10000}, "bank10": {"updates": 10000} }}
+      ]
+    },
+    {
+      "name": "10mx16",
       "stores": [
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
@@ -98,12 +98,12 @@
         { "name": "bank16", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
       ],
       "phases": [
-        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000}, "bank3": {"inserts": 10000}, "bank4": {"inserts": 10000}, "bank5": {"inserts": 10000}, "bank6": {"inserts": 10000}, "bank7": {"inserts": 10000}, "bank8": {"inserts": 10000}, "bank9": {"inserts": 10000}, "bank10": {"inserts": 10000}, "bank11": {"inserts": 10000}, "bank12": {"inserts": 10000}, "bank13": {"inserts": 10000}, "bank14": {"inserts": 10000}, "bank15": {"inserts": 10000}, "bank16": {"inserts": 10000} }},
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 }, "bank2": {"inserts": 100000}, "bank3": {"inserts": 100000}, "bank4": {"inserts": 100000}, "bank5": {"inserts": 100000}, "bank6": {"inserts": 100000}, "bank7": {"inserts": 100000}, "bank8": {"inserts": 100000}, "bank9": {"inserts": 100000}, "bank10": {"inserts": 100000}, "bank11": {"inserts": 100000}, "bank12": {"inserts": 100000}, "bank13": {"inserts": 100000}, "bank14": {"inserts": 100000}, "bank15": {"inserts": 100000}, "bank16": {"inserts": 100000} }},
         { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000}, "bank6": {"updates": 10000}, "bank7": {"updates": 10000}, "bank8": {"updates": 10000}, "bank9": {"updates": 10000}, "bank10": {"updates": 10000}, "bank11": {"updates": 10000}, "bank12": {"updates": 10000}, "bank13": {"updates": 10000}, "bank14": {"updates": 10000}, "bank15": {"updates": 10000}, "bank16": {"updates": 10000} }}
       ]
     },
     {
-      "name": "1mx32",
+      "name": "10mx32",
       "stores": [
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
         { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
@@ -139,7 +139,7 @@
         { "name": "bank32", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
       ],
       "phases": [
-        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000}, "bank3": {"inserts": 10000}, "bank4": {"inserts": 10000}, "bank5": {"inserts": 10000}, "bank6": {"inserts": 10000}, "bank7": {"inserts": 10000}, "bank8": {"inserts": 10000}, "bank9": {"inserts": 10000}, "bank10": {"inserts": 10000}, "bank11": {"inserts": 10000}, "bank12": {"inserts": 10000}, "bank13": {"inserts": 10000}, "bank14": {"inserts": 10000}, "bank15": {"inserts": 10000}, "bank16": {"inserts": 10000}, "bank17": {"inserts": 10000}, "bank18": {"inserts": 10000}, "bank19": {"inserts": 10000}, "bank20": {"inserts": 10000}, "bank21": {"inserts": 10000}, "bank22": {"inserts": 10000}, "bank23": {"inserts": 10000}, "bank24": {"inserts": 10000}, "bank25": {"inserts": 10000}, "bank26": {"inserts": 10000}, "bank27": {"inserts": 10000}, "bank28": {"inserts": 10000}, "bank29": {"inserts": 10000}, "bank30": {"inserts": 10000}, "bank31": {"inserts": 10000}, "bank32": {"inserts": 10000} }},
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 }, "bank2": {"inserts": 100000}, "bank3": {"inserts": 100000}, "bank4": {"inserts": 100000}, "bank5": {"inserts": 100000}, "bank6": {"inserts": 100000}, "bank7": {"inserts": 100000}, "bank8": {"inserts": 100000}, "bank9": {"inserts": 100000}, "bank10": {"inserts": 100000}, "bank11": {"inserts": 100000}, "bank12": {"inserts": 100000}, "bank13": {"inserts": 100000}, "bank14": {"inserts": 100000}, "bank15": {"inserts": 100000}, "bank16": {"inserts": 100000}, "bank17": {"inserts": 100000}, "bank18": {"inserts": 100000}, "bank19": {"inserts": 100000}, "bank20": {"inserts": 100000}, "bank21": {"inserts": 100000}, "bank22": {"inserts": 100000}, "bank23": {"inserts": 100000}, "bank24": {"inserts": 100000}, "bank25": {"inserts": 100000}, "bank26": {"inserts": 100000}, "bank27": {"inserts": 100000}, "bank28": {"inserts": 100000}, "bank29": {"inserts": 100000}, "bank30": {"inserts": 100000}, "bank31": {"inserts": 100000}, "bank32": {"inserts": 100000} }},
         { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000}, "bank3": {"updates": 10000}, "bank4": {"updates": 10000}, "bank5": {"updates": 10000}, "bank6": {"updates": 10000}, "bank7": {"updates": 10000}, "bank8": {"updates": 10000}, "bank9": {"updates": 10000}, "bank10": {"updates": 10000}, "bank11": {"updates": 10000}, "bank12": {"updates": 10000}, "bank13": {"updates": 10000}, "bank14": {"updates": 10000}, "bank15": {"updates": 10000}, "bank16": {"updates": 10000}, "bank17": {"updates": 10000}, "bank18": {"updates": 10000}, "bank19": {"updates": 10000}, "bank20": {"updates": 10000}, "bank21": {"updates": 10000}, "bank22": {"updates": 10000}, "bank23": {"updates": 10000}, "bank24": {"updates": 10000}, "bank25": {"updates": 10000}, "bank26": {"updates": 10000}, "bank27": {"updates": 10000}, "bank28": {"updates": 10000}, "bank29": {"updates": 10000}, "bank30": {"updates": 10000}, "bank31": {"updates": 10000}, "bank32": {"updates": 10000} }}
       ]
     },
