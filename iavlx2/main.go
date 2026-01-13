@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 
 	"github.com/cosmos/cosmos-sdk/iavl"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 
 	"github.com/cosmos/iavl-bench/bench"
 )
@@ -47,7 +45,7 @@ func (m *multiTree) Commit(updates bench.MultiStoreUpdates) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := tree.Commit(treeUpdates.Updates)
+			_, err := tree.Commit(context.Background(), treeUpdates.Updates, int(treeUpdates.TotalOps))
 			if err != nil {
 				panic(err)
 			}
@@ -63,10 +61,7 @@ func (m *multiTree) Tree(storeName string) bench.TreeReader {
 }
 
 func (m *multiTree) Close() error {
-	return errors.Join(
-		// TODO add closing individual trees if needed
-		telemetry.Shutdown(context.Background()),
-	)
+	return nil
 }
 
 var _ bench.MultiTree = (*multiTree)(nil)

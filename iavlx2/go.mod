@@ -7,7 +7,7 @@ replace github.com/cosmos/iavl-bench/bench => ../bench
 replace github.com/cosmos/cosmos-sdk => ../../../cosmos-sdk
 
 require (
-	github.com/cosmos/cosmos-sdk v0.0.0-00010101000000-000000000000
+	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260107154909-791b3dc30b64
 	github.com/cosmos/iavl-bench/bench v0.0.0-00010101000000-000000000000
 )
 
@@ -89,6 +89,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.64.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.64.0 // indirect
 	go.opentelemetry.io/contrib/otelconf v0.19.0 // indirect

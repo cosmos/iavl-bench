@@ -108,10 +108,10 @@ func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDi
 		string(simBz),
 		"--db-dir",
 		dir,
-		"--log-type",
-		"json",
-		"--log-file",
-		filepath.Join(resultDir, fmt.Sprintf("%s__%s.jsonl", plan.RunName, simPlan.Name)),
+		"--out-dir",
+		resultDir,
+		"--run-name",
+		fmt.Sprintf("%s__%s", plan.RunName, simPlan.Name),
 	}
 
 	if plan.Options != nil {

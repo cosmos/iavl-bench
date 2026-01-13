@@ -14,12 +14,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/contrib/otelconf"
+)
+
+var (
+	logger = otelslog.NewLogger("iavl-bench")
 )
 
 type MultiTree interface {
@@ -41,7 +48,6 @@ type LoaderParams struct {
 	TreeDir     string
 	TreeOptions interface{}
 	StoreNames  []string
-	Logger      *slog.Logger
 }
 
 type TreeLoader func(params LoaderParams) (MultiTree, error)
@@ -60,6 +66,7 @@ type Runner struct {
 }
 
 func (r Runner) Run() {
+
 	err := r.Command.Execute()
 	if err != nil {
 		slog.Error("error running benchmarks", "error", err)
@@ -71,8 +78,8 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 	var treeDir string
 	var treeOptions string
 	var genOptions string
-	var logHandlerType string
-	var logFile string
+	var runName string
+	var outDir string
 	cmd := &cobra.Command{
 		Use:   "bench",
 		Short: "Runs benchmarks for the tree implementation.",
@@ -80,10 +87,32 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 	cmd.Flags().StringVar(&treeDir, "db-dir", "", "Directory for the db's data.")
 	cmd.Flags().StringVar(&treeOptions, "db-options", "", "Implementation specific options for the db, in JSON format.")
 	cmd.Flags().StringVar(&genOptions, "gen-options", "", "Changeset generator params, in JSON format.")
-	cmd.Flags().StringVar(&logHandlerType, "log-type", "text", "Log handler type. One of 'text' or 'json'.")
-	cmd.Flags().StringVar(&logFile, "log-file", "", "If set, log output will be written to this file instead of stdout.")
+	cmd.Flags().StringVar(&runName, "run-name", "", "Name for this benchmark run, used for log file names.")
+	cmd.Flags().StringVar(&outDir, "out-dir", ".", "Output directory for logs and traces.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if runName == "" {
+			return fmt.Errorf("run-name is required")
+		}
+		if outDir == "" {
+			return fmt.Errorf("out-dir is required")
+		}
+		otelConfFile, err := initOtel(outDir, runName)
+		if err != nil {
+			return fmt.Errorf("failed to initialize open telemetry: %w", err)
+		}
+		defer func() {
+			err := telemetry.Shutdown(cmd.Context())
+			if err != nil {
+				logErr := fmt.Errorf("failed to shutdown telemetry: %w", err)
+				logger.Error(logErr.Error())
+			}
+			err = os.Remove(otelConfFile)
+			if err != nil {
+				logger.Error("failed to remove otel config file", "error", err)
+			}
+		}()
+
 		if treeDir == "" {
 			return fmt.Errorf("tree-dir is required")
 		}
@@ -95,7 +124,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		decoder := json.NewDecoder(bytes.NewReader([]byte(genOptions)))
 		// we disallow unknown fields to catch typos with generator options
 		decoder.DisallowUnknownFields()
-		err := decoder.Decode(&genParams)
+		err = decoder.Decode(&genParams)
 		if err != nil {
 			return fmt.Errorf("error unmarshaling gen-options: %w", err)
 		}
@@ -118,43 +147,6 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 			}
 		}
 
-		logOut := os.Stdout
-		if logFile != "" {
-			logOut, err = os.Create(logFile)
-			if err != nil {
-				return fmt.Errorf("error creating log file: %w", err)
-			}
-			defer func() {
-				err := logOut.Close()
-				if err != nil {
-					slog.Error("error closing log file", "error", err)
-				}
-			}()
-		}
-
-		var handler slog.Handler
-		switch logHandlerType {
-		case "text":
-			handler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
-		case "json":
-			handler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})
-		default:
-			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
-		}
-
-		// Create a separate handler for tree logger at info level
-		var treeHandler slog.Handler
-		switch logHandlerType {
-		case "text":
-			treeHandler = slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo})
-		case "json":
-			treeHandler = slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true})
-		default:
-			return fmt.Errorf("unknown log handler type: %s", logHandlerType)
-		}
-
-		logger := slog.New(handler).With("module", "runner")
-		treeLogger := slog.New(treeHandler)
 		logger.Info("Starting benchmark run, loading tree")
 
 		var storeNames []string
@@ -166,7 +158,6 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 			TreeDir:     treeDir,
 			TreeOptions: opts,
 			StoreNames:  storeNames,
-			Logger:      treeLogger.With("module", treeType),
 		}
 
 		tree, err := cfg.TreeLoader(loaderParams)
@@ -421,4 +412,56 @@ func getDirSize(logger *slog.Logger, path string) uint64 {
 		logger.Warn("error getting dir size", "path", path, "error", err)
 	}
 	return uint64(size)
+}
+
+func initOtel(dir, baseName string) (string, error) {
+	conf := otelConf(dir, baseName)
+	jsonConf, err := json.MarshalIndent(conf, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal otel config: %v", err)
+	}
+	confFilePath := filepath.Join(dir, fmt.Sprintf("%s.otel.yaml", baseName))
+	err = os.WriteFile(confFilePath, jsonConf, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("failed to write otel config file: %v", err)
+	}
+	err = telemetry.InitializeOpenTelemetry(confFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize open telemetry: %v", err)
+	}
+	return confFilePath, nil
+}
+
+func otelConf(dir, baseName string) *otelconf.OpenTelemetryConfiguration {
+	logFileName := filepath.Join(dir, fmt.Sprintf("%s.logs.jsonl", baseName))
+	traceFileName := filepath.Join(dir, fmt.Sprintf("%s.traces.jsonl", baseName))
+	//meterFileName := filepath.Join(dir, fmt.Sprintf("%s.metrics.jsonl", baseName)
+	return &otelconf.OpenTelemetryConfiguration{
+		LoggerProvider: &otelconf.LoggerProviderJson{
+			Processors: []otelconf.LogRecordProcessor{
+				{
+					Batch: &otelconf.BatchLogRecordProcessor{
+						Exporter: otelconf.LogRecordExporter{
+							OTLPFileDevelopment: &otelconf.ExperimentalOTLPFileExporter{
+								OutputStream: &logFileName,
+							},
+						},
+					},
+				},
+			},
+		},
+		TracerProvider: &otelconf.TracerProviderJson{
+			Processors: []otelconf.SpanProcessor{
+				{
+					Batch: &otelconf.BatchSpanProcessor{
+						Exporter: otelconf.SpanExporter{
+							OTLPFileDevelopment: &otelconf.ExperimentalOTLPFileExporter{
+								OutputStream: &traceFileName,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
