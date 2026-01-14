@@ -2,6 +2,7 @@ package bench
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -246,6 +248,12 @@ func run(tree MultiTree, genParams SimParams, params runParams) error {
 
 	close(closeCh)
 	<-doneCh
+
+	err = telemetry.Shutdown(context.Background())
+	if err != nil {
+		logger.Warn("error shutting down telemetry", "error", err)
+		return err
+	}
 
 	return nil
 }
