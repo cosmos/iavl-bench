@@ -124,6 +124,13 @@ def plot_ops_per_sec(dataset, run_names: list[str] = None, batch_size=100):
             continue
         df = calculate_batch_ops_per_sec(run.versions_df, batch_size)
 
+        # Trim leading/trailing zeros
+        nonzero_mask = df['ops_per_sec'] > 0
+        if nonzero_mask.any():
+            first_idx = nonzero_mask.arg_max()
+            last_idx = len(nonzero_mask) - 1 - nonzero_mask.reverse().arg_max()
+            df = df.slice(first_idx, last_idx - first_idx + 1)
+
         fig.add_trace(go.Scatter(
             x=df['version'],
             y=df['ops_per_sec'],
@@ -153,6 +160,13 @@ def plot_read_throughput(dataset, run_names: list[str] = None):
         df = run.version_reads_df.with_columns([
             (pl.col('total_reads') / (pl.col('duration') / 1_000_000_000)).alias('reads_per_sec')
         ])
+
+        # Trim leading/trailing zeros
+        nonzero_mask = df['reads_per_sec'] > 0
+        if nonzero_mask.any():
+            first_idx = nonzero_mask.arg_max()
+            last_idx = len(nonzero_mask) - 1 - nonzero_mask.reverse().arg_max()
+            df = df.slice(first_idx, last_idx - first_idx + 1)
 
         fig.add_trace(go.Scatter(
             x=df['version'],
@@ -531,7 +545,7 @@ def plot_cpu_breakdown(dataset, run_names: list[str] = None):
     return fig
 
 
-def plot_bottleneck_analysis(dataset, run_names: list[str] = None, batch_size: int = 100):
+def plot_bottleneck_analysis(dataset, run_names: list[str] = None, batch_size: int = 1):
     """Plot combined I/O utilization and CPU metrics to identify bottlenecks.
 
     Shows:
