@@ -33,17 +33,17 @@
         { "versions": 2000, "stores": { "bank": { "updates": 10000 } }}
       ]
     },
-    {
-      "name": "1mx2",
-      "stores": [
-        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
-        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-      ],
-      "phases": [
-        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000} }},
-        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000} }}
-      ]
-    },
+//    {
+//      "name": "1mx2",
+//      "stores": [
+//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+//        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+//      ],
+//      "phases": [
+//        { "versions": 100, "stores": { "bank": { "inserts": 10000 }, "bank2": {"inserts": 10000} }},
+//        { "versions": 2000, "stores": { "bank": { "updates": 10000 }, "bank2": {"updates": 10000} }}
+//      ]
+//    },
 //    {
 //      "name": "10mx5",
 //      "stores": [
