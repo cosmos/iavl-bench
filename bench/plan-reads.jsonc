@@ -1,0 +1,76 @@
+{
+  "configs": [
+    {
+      "name": "iavlx2",
+      "runner": "bench-iavlx2",
+      "options": {}
+    }
+  ],
+  "simulations": [
+    {
+      "name": "mem-read-1m",
+      "stores": [
+        {
+          "name": "bank",
+          "key_len_mean": 56,
+          "key_len_stddev": 3,
+          "value_len_mean": 16,
+          "value_len_stddev": 2
+        }
+      ],
+      "phases": [
+        {
+          "name": "load",
+          "versions": 100,
+          "stores": {
+            "bank": {
+              "inserts": 10000
+            }
+          }
+        },
+        {
+          "name": "read",
+          "versions": 2000,
+          "stores": {
+            "bank": {
+              "gets": 100000
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "disk-read-1m",
+      "stores": [
+        {
+          "name": "bank",
+          "key_len_mean": 56,
+          "key_len_stddev": 3,
+          "value_len_mean": 16,
+          "value_len_stddev": 2
+        }
+      ],
+      "phases": [
+        {
+          "name": "load",
+          "versions": 100,
+          "stores": {
+            "bank": {
+              "inserts": 10000
+            }
+          }
+        },
+        {
+          "name": "read",
+          "force_to_disk": true,
+          "versions": 2000,
+          "stores": {
+            "bank": {
+              "gets": 100000
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

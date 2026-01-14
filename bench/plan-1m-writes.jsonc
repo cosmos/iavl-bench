@@ -1,27 +1,9 @@
 {
   "configs": [
     {
-      "name": "iavlx2-mem",
+      "name": "iavlx2",
       "runner": "bench-iavlx2",
-      "options": {
-        "write_wal": false
-      }
-    },
-    {
-      "name": "iavlx2-wal",
-      "runner": "bench-iavlx2",
-      "options": {
-        "write_wal": true,
-        "fsync_wal": false
-      }
-    },
-    {
-      "name": "iavlx2-wal-fsync",
-      "runner": "bench-iavlx2",
-      "options": {
-        "write_wal": true,
-        "fsync_wal": true
-      }
+      "options": {}
     }
   ],
   "simulations": [

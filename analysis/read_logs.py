@@ -24,6 +24,7 @@ class BenchmarkData:
     disk_io_df: pl.DataFrame  # disk I/O counters from gopsutil
     cpu_df: pl.DataFrame  # CPU usage from gopsutil
     memiavl_snapshots: Optional[pl.DataFrame]
+    version_reads_df: pl.DataFrame  # read simulation stats per version
 
 
 def row_iterator(path: str) -> Generator[dict, None, None]:
@@ -67,6 +68,7 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     disk_io_rows = []
     cpu_rows = []
     memiavl_snapshot_data = []
+    version_read_rows = []
 
     for row in row_iterator(path):
         msg = row.get('msg')
@@ -163,6 +165,14 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                     # Max iowait from any single CPU (to detect single-threaded I/O bottleneck)
                     'iowait_max': max((t.get('iowait', 0) for t in cpu_times), default=0),
                 })
+        elif msg == 'completed reads':
+            version_read_rows.append({
+                'version': row['version'],
+                'timestamp': timestamp,
+                'total_reads': row['total_reads'],
+                'duration': row['duration'],
+                'concurrent_readers': row['concurrent_readers'],
+            })
         elif module == 'memiavl':
             capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
 
@@ -173,6 +183,7 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     disk_io_df = pl.DataFrame(disk_io_rows) if disk_io_rows else pl.DataFrame()
     cpu_df = pl.DataFrame(cpu_rows) if cpu_rows else pl.DataFrame()
     memiavl_snapshots = pl.DataFrame(memiavl_snapshot_data) if memiavl_snapshot_data else None
+    version_reads_df = pl.DataFrame(version_read_rows) if version_read_rows else pl.DataFrame()
 
     return BenchmarkData(
         name=name,
@@ -184,6 +195,7 @@ def load_benchmark_log(path: str) -> BenchmarkData:
         disk_io_df=disk_io_df,
         cpu_df=cpu_df,
         memiavl_snapshots=memiavl_snapshots,
+        version_reads_df=version_reads_df,
     )
 
 

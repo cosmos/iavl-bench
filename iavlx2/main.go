@@ -18,6 +18,15 @@ type multiTree struct {
 	trees   map[string]*iavl.CommitTree
 }
 
+func (m *multiTree) ForceToDisk() error {
+	for _, tree := range m.trees {
+		if err := tree.ForceToDisk(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func NewMultiTree(storeNames []string, dir string, opts iavl.Options) (bench.MultiTree, error) {
 	trees := make(map[string]*iavl.CommitTree)
 	for _, name := range storeNames {

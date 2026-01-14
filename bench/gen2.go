@@ -14,11 +14,17 @@ type SimParams struct {
 	Name   string            `json:"name"`
 	Stores []KVParams        `json:"stores"`
 	Phases []MultiStorePhase `json:"phases"`
+	// ConcurrentReaders indicates the number of concurrent readers to simulate.
+	// The number of gets will be multiplied by this number to determine the total number of read operations.
+	ConcurrentReaders uint32 `json:"concurrent_readers"`
 }
 
 type MultiStorePhase struct {
+	Name     string                `json:"name"`
 	Versions uint32                `json:"versions"`
 	Stores   map[string]StorePhase `json:"stores"`
+	// ForceToDisk indicates whether to force all data to disk before the start of this phase
+	ForceToDisk bool `json:"force_to_disk"`
 }
 
 type StorePhase struct {
@@ -51,8 +57,15 @@ type MultiStoreGenerator struct {
 type MultiStoreUpdates = map[string]StoreUpdates
 
 type VersionSim struct {
-	Gets    iter.Seq2[string, []byte]
-	Updates MultiStoreUpdates
+	// ReaderOps are sequences of read operations to perform before applying updates,
+	// these should be run in parallel to simulate concurrent reads.
+	ReaderOps []iter.Seq[ReadOp]
+	Updates   MultiStoreUpdates
+}
+
+type ReadOp struct {
+	Store string
+	Key   []byte
 }
 
 type StoreUpdates struct {
@@ -60,7 +73,12 @@ type StoreUpdates struct {
 	TotalOps uint32
 }
 
-func GenSimulation(params SimParams) iter.Seq2[uint32, VersionSim] {
+type PhaseSim struct {
+	Params   MultiStorePhase
+	Versions iter.Seq2[uint32, VersionSim]
+}
+
+func GenSimulation(params SimParams) iter.Seq[PhaseSim] {
 	generator := &MultiStoreGenerator{
 		store: make(map[string]*StoreGenerator),
 	}
@@ -71,28 +89,42 @@ func GenSimulation(params SimParams) iter.Seq2[uint32, VersionSim] {
 			seed2:    uint64(i),
 		}
 	}
-	return func(yield func(uint32, VersionSim) bool) {
+	return func(yield func(sim PhaseSim) bool) {
 		var version uint32
 		for _, phaseParams := range params.Phases {
-			for i := 0; i < int(phaseParams.Versions); i++ {
-				version++
-				gets := generator.GenVersionGets(phaseParams)
-				updates := generator.GenVersionUpdates(phaseParams)
-				if !yield(version, VersionSim{Gets: gets, Updates: updates}) {
-					return
-				}
+			if !yield(PhaseSim{
+				Params: phaseParams,
+				Versions: func(yield func(uint32, VersionSim) bool) {
+					for i := 0; i < int(phaseParams.Versions); i++ {
+						version++
+						concurrentReaders := params.ConcurrentReaders
+						if concurrentReaders == 0 {
+							concurrentReaders = 1
+						}
+						readers := make([]iter.Seq[ReadOp], concurrentReaders)
+						for r := uint32(0); r < concurrentReaders; r++ {
+							readers[r] = generator.GenVersionReadOps(phaseParams)
+						}
+						updates := generator.GenVersionUpdates(phaseParams)
+						if !yield(version, VersionSim{ReaderOps: readers, Updates: updates}) {
+							return
+						}
+					}
+				},
+			}) {
+				return
 			}
 		}
 	}
 }
 
-func (g *MultiStoreGenerator) GenVersionGets(phaseParams MultiStorePhase) iter.Seq2[string, []byte] {
+func (g *MultiStoreGenerator) GenVersionReadOps(phaseParams MultiStorePhase) iter.Seq[ReadOp] {
 	remainingCounts := map[string]uint32{}
 	for storeName, storePhaseParams := range phaseParams.Stores {
 		remainingCounts[storeName] = storePhaseParams.Gets
 	}
 
-	return func(yield func(string, []byte) bool) {
+	return func(yield func(op ReadOp) bool) {
 		// naive algorithm simply iterates over all stores and generates gets until all are done
 		for len(remainingCounts) > 0 {
 			for storeName, count := range remainingCounts {
@@ -108,7 +140,7 @@ func (g *MultiStoreGenerator) GenVersionGets(phaseParams MultiStorePhase) iter.S
 					continue
 				}
 				remainingCounts[storeName]--
-				if !yield(storeName, key) {
+				if !yield(ReadOp{Store: storeName, Key: key}) {
 					return
 				}
 			}

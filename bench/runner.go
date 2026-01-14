@@ -22,6 +22,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 type MultiTree interface {
@@ -31,6 +32,7 @@ type MultiTree interface {
 	Commit(updates MultiStoreUpdates) error
 	// Tree should return a TreeReader for the given store name.
 	Tree(storeName string) TreeReader
+	ForceToDisk() error
 	io.Closer
 }
 
@@ -189,10 +191,9 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 }
 
 type runParams struct {
-	TargetVersion int64
-	Logger        *slog.Logger
-	LoaderParams  LoaderParams
-	TreeType      string
+	Logger       *slog.Logger
+	LoaderParams LoaderParams
+	TreeType     string
 }
 
 func run(tree MultiTree, genParams SimParams, params runParams) error {
@@ -209,10 +210,8 @@ func run(tree MultiTree, genParams SimParams, params runParams) error {
 	}()
 
 	version := tree.Version()
-	target := params.TargetVersion
 	logger.Info("starting run",
 		"start_version", version,
-		"target_version", target,
 		"gen_params", genParams,
 		"db_dir", params.LoaderParams.TreeDir,
 		"db_options", params.LoaderParams.TreeOptions,
@@ -227,11 +226,21 @@ func run(tree MultiTree, genParams SimParams, params runParams) error {
 	doneCh := measureBackgroundStats(logger, &currentVersion, params.LoaderParams.TreeDir, closeCh)
 
 	sim := GenSimulation(genParams)
-	for version, versionSim := range sim {
-		currentVersion.Store(int64(version))
-		err := applyVersion(logger, tree, versionSim, int64(version))
-		if err != nil {
-			return fmt.Errorf("error applying version %d: %w", version, err)
+	for phase := range sim {
+		logger.Info("starting phase", "phase", phase.Params)
+		if phase.Params.ForceToDisk {
+			logger.Info("forcing tree to disk before starting phase")
+			err := tree.ForceToDisk()
+			if err != nil {
+				return fmt.Errorf("error forcing tree to disk: %w", err)
+			}
+		}
+		for version, versionSim := range phase.Versions {
+			currentVersion.Store(int64(version))
+			err := applyVersion(logger, tree, versionSim, int64(version))
+			if err != nil {
+				return fmt.Errorf("error applying version %d: %w", version, err)
+			}
 		}
 	}
 
@@ -313,6 +322,36 @@ func captureSystemInfo(logger *slog.Logger) {
 }
 
 func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, version int64) error {
+	logger.Info("simulating reads", "version", version, "concurrent_readers", len(versionSim.ReaderOps))
+
+	startReadTime := time.Now()
+
+	var readCount atomic.Uint64
+	g := new(errgroup.Group)
+	for _, reader := range versionSim.ReaderOps {
+		g.Go(func() error {
+			for op := range reader {
+				_, err := tree.Tree(op.Store).Get(op.Key)
+				if err != nil {
+					return fmt.Errorf("reading key from store %s: %w", op.Store, err)
+				}
+				readCount.Add(1)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	readDuration := time.Since(startReadTime)
+	logger.Info("completed reads",
+		"version", version,
+		"total_reads", readCount.Load(),
+		"duration", readDuration,
+		"concurrent_readers", len(versionSim.ReaderOps),
+	)
+
 	logger.Info("applying changeset", "version", version)
 	startTime := time.Now()
 

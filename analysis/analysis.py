@@ -6,12 +6,27 @@ from datetime import datetime
 
 
 def total_ops_per_sec(run: BenchmarkData) -> float:
-    """Calculate total ops/sec across all versions."""
+    """Calculate total ops/sec across all versions with non-zero counts."""
     if run.versions_df.is_empty():
         return 0.0
-    count = run.versions_df['count'].sum()
-    total_duration = run.versions_df['duration'].sum() / 1_000_000_000  # convert from nanoseconds
+    df = run.versions_df.filter(pl.col('count') > 0)
+    if df.is_empty():
+        return 0.0
+    count = df['count'].sum()
+    total_duration = df['duration'].sum() / 1_000_000_000  # convert from nanoseconds
     return count / total_duration
+
+
+def total_reads_per_sec(run: BenchmarkData) -> float:
+    """Calculate total reads/sec across all versions with non-zero reads."""
+    if run.version_reads_df.is_empty():
+        return 0.0
+    df = run.version_reads_df.filter(pl.col('total_reads') > 0)
+    if df.is_empty():
+        return 0.0
+    total_reads = df['total_reads'].sum()
+    total_duration = df['duration'].sum() / 1_000_000_000
+    return total_reads / total_duration
 
 
 def max_mem_gb(run: BenchmarkData) -> float:
@@ -69,6 +84,7 @@ def summary(dataset: dict[str, BenchmarkData], run_names=None) -> pl.DataFrame:
             'versions_applied': versions_applied(run),
             'elapsed_time_minutes': elapsed_time_minutes(run),
             'ops_per_sec': total_ops_per_sec(run),
+            'reads_per_sec': total_reads_per_sec(run),
             'max_mem_gb': max_mem_gb(run),
             'max_disk_gb': max_disk_gb(run),
         })
@@ -118,6 +134,36 @@ def plot_ops_per_sec(dataset, run_names: list[str] = None, batch_size=100):
     fig.update_layout(
         xaxis_title="Version",
         yaxis_title="Ops/Sec",
+        hovermode='x unified'
+    )
+    return fig
+
+
+def plot_read_throughput(dataset, run_names: list[str] = None):
+    """Plot read throughput (reads/sec) over version from read simulation data."""
+    if run_names is None:
+        run_names = list(dataset.keys())
+
+    fig = go.Figure()
+    for name in run_names:
+        run = dataset[name]
+        if run.version_reads_df.is_empty():
+            continue
+
+        df = run.version_reads_df.with_columns([
+            (pl.col('total_reads') / (pl.col('duration') / 1_000_000_000)).alias('reads_per_sec')
+        ])
+
+        fig.add_trace(go.Scatter(
+            x=df['version'],
+            y=df['reads_per_sec'],
+            mode='lines',
+            name=name
+        ))
+
+    fig.update_layout(
+        xaxis_title="Version",
+        yaxis_title="Reads/Sec",
         hovermode='x unified'
     )
     return fig
