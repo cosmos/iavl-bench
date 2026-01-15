@@ -3,46 +3,14 @@
 package bench
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
-
-	"golang.org/x/sys/unix"
 )
 
-// EvictFromPageCache walks the directory and advises the kernel to evict
-// all file data from the page cache using FADV_DONTNEED. This forces
-// subsequent reads to actually hit disk rather than serving from cache.
+// EvictFromPageCache drops all clean caches system-wide by writing to
+// /proc/sys/vm/drop_caches. This is the nuclear option but it works
+// reliably even for mmap'd files. Requires root.
 //
-// This is useful for benchmarking disk read performance - without this,
-// mmap'd files stay in the page cache even after ForceToDisk() is called.
+// Value 3 = drop pagecache, dentries, and inodes
 func EvictFromPageCache(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-
-		f, err := os.Open(path)
-		if err != nil {
-			return fmt.Errorf("opening %s: %w", path, err)
-		}
-		defer f.Close()
-
-		size := info.Size()
-		if size == 0 {
-			return nil
-		}
-
-		// FADV_DONTNEED tells the kernel we don't need this data anymore,
-		// causing it to evict the pages from the page cache
-		err = unix.Fadvise(int(f.Fd()), 0, size, unix.FADV_DONTNEED)
-		if err != nil {
-			return fmt.Errorf("fadvise on %s: %w", path, err)
-		}
-
-		return nil
-	})
+	return os.WriteFile("/proc/sys/vm/drop_caches", []byte("3"), 0644)
 }
