@@ -100,98 +100,584 @@
         { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 10000 } } },
         { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
     },
-//    {
-//      "name": "mem-read-10m",
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
-//      ]
-//    },
-//    {
-//      "name": "disk-read-10m",
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
-//    },
-//    {
-//      "name": "mem-read-10mx2",
-//      "concurrent_readers": 2,
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
-//      ]
-//    },
-//    {
-//      "name": "disk-read-10mx2",
-//      "concurrent_readers": 2,
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
-//    },
-//    {
-//      "name": "mem-read-10mx4",
-//      "concurrent_readers": 4,
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
-//      ]
-//    },
-//    {
-//      "name": "disk-read-10mx4",
-//      "concurrent_readers": 4,
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
-//    },
-//    {
-//      "name": "mem-read-10mx8",
-//      "concurrent_readers": 8,
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
-//      ]
-//    },
-//    {
-//      "name": "disk-read-10mx8",
-//      "concurrent_readers": 8,
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
-//    },
-//    {
-//      "name": "mem-read-10mx16",
-//      "concurrent_readers": 16,
-//      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
-//      ]
-//    },
-//    {
-//      "name": "disk-read-10mx16",
-//      "concurrent_readers": 16,
-//      "stores": [
-//        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-//      ],
-//      "phases": [
-//        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
-//        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
-//    }
+    {
+      "name": "mem-read-1mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 10000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-1mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 10000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10mx2",
+      "concurrent_readers": 2,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10mx2",
+      "concurrent_readers": 2,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10mx4",
+      "concurrent_readers": 4,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10mx4",
+      "concurrent_readers": 4,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10mx8",
+      "concurrent_readers": 8,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10mx8",
+      "concurrent_readers": 8,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10mx16",
+      "concurrent_readers": 16,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10mx16",
+      "concurrent_readers": 16,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-10mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-10mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 100000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20mx2",
+      "concurrent_readers": 2,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20mx2",
+      "concurrent_readers": 2,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20mx4",
+      "concurrent_readers": 4,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20mx4",
+      "concurrent_readers": 4,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20mx8",
+      "concurrent_readers": 8,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20mx8",
+      "concurrent_readers": 8,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20mx16",
+      "concurrent_readers": 16,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20mx16",
+      "concurrent_readers": 16,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-20mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-20mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 200000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30mx2",
+      "concurrent_readers": 2,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30mx2",
+      "concurrent_readers": 2,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30mx4",
+      "concurrent_readers": 4,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30mx4",
+      "concurrent_readers": 4,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30mx8",
+      "concurrent_readers": 8,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30mx8",
+      "concurrent_readers": 8,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30mx16",
+      "concurrent_readers": 16,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30mx16",
+      "concurrent_readers": 16,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-30mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-30mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 300000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40mx2",
+      "concurrent_readers": 2,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40mx2",
+      "concurrent_readers": 2,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40mx4",
+      "concurrent_readers": 4,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40mx4",
+      "concurrent_readers": 4,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40mx8",
+      "concurrent_readers": 8,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40mx8",
+      "concurrent_readers": 8,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40mx16",
+      "concurrent_readers": 16,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40mx16",
+      "concurrent_readers": 16,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-40mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-40mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 400000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50mx2",
+      "concurrent_readers": 2,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50mx2",
+      "concurrent_readers": 2,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50mx4",
+      "concurrent_readers": 4,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50mx4",
+      "concurrent_readers": 4,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50mx8",
+      "concurrent_readers": 8,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50mx8",
+      "concurrent_readers": 8,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50mx16",
+      "concurrent_readers": 16,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50mx16",
+      "concurrent_readers": 16,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    },
+    {
+      "name": "mem-read-50mx32",
+      "concurrent_readers": 32,
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "versions": 100, "stores": { "bank": { "gets": 100000 } } }
+      ]
+    },
+    {
+      "name": "disk-read-50mx32",
+      "concurrent_readers": 32,
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        { "name": "load", "versions": 100, "stores": { "bank": { "inserts": 500000 } } },
+        { "name": "read", "force_to_disk": true, "versions": 100, "stores": { "bank": { "gets": 100000 } } } ]
+    }
   ]
 }
