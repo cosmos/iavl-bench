@@ -3,7 +3,7 @@ module bench-iavlx
 go 1.25.5
 
 require (
-	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260107154909-791b3dc30b64
+	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260108215426-335db329d76d
 	github.com/cosmos/iavl-bench/bench v0.0.4
 	github.com/cosmos/iavl-bench/store-v1 v0.0.0-00010101000000-000000000000
 	github.com/samber/slog-multi v1.6.0

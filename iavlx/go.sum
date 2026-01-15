@@ -68,6 +68,7 @@ github.com/cosmos/cosmos-proto v1.0.0-beta.5 h1:eNcayDLpip+zVLRLYafhzLvQlSmyab+R
 github.com/cosmos/cosmos-proto v1.0.0-beta.5/go.mod h1:hQGLpiIUloJBMdQMMWb/4wRApmI9hjHH05nefC0Ojec=
 github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260107154909-791b3dc30b64 h1:cJCmeZvRhXwkqI4GRUXHdhn3FaPpqphDRpLomCbn9eA=
 github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260107154909-791b3dc30b64/go.mod h1:CVjbSa5ZidcbnsDS8lo7Ttct3zTfLcQlRwZXf/vaFAI=
+github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260108215426-335db329d76d/go.mod h1:LCYe65YQ75/i+YlmTi/svh840AAPTFjubGrZ2gGt3Mg=
 github.com/cosmos/gogoproto v1.7.2 h1:5G25McIraOC0mRFv9TVO139Uh3OklV2hczr13KKVHCA=
 github.com/cosmos/gogoproto v1.7.2/go.mod h1:8S7w53P1Y1cHwND64o0BnArT6RmdgIvsBuco6uTllsk=
 github.com/cosmos/iavl v1.2.6 h1:Hs3LndJbkIB+rEvToKJFXZvKo6Vy0Ex1SJ54hhtioIs=
