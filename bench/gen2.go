@@ -25,6 +25,8 @@ type MultiStorePhase struct {
 	Stores   map[string]StorePhase `json:"stores"`
 	// ForceToDisk indicates whether to force all data to disk before the start of this phase
 	ForceToDisk bool `json:"force_to_disk"`
+	// ClearCaches indicates whether to clear OS page caches before each version (requires ForceToDisk)
+	ClearCaches bool `json:"clear_caches"`
 }
 
 type StorePhase struct {

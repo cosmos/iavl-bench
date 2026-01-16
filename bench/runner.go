@@ -237,7 +237,7 @@ func run(tree MultiTree, genParams SimParams, params runParams) error {
 		}
 		for version, versionSim := range phase.Versions {
 			currentVersion.Store(int64(version))
-			if phase.Params.ForceToDisk {
+			if phase.Params.ClearCaches {
 				// Evict all data from the OS page cache before each version
 				// so reads actually hit disk rather than serving from cached mmap pages
 				err := EvictFromPageCache(params.LoaderParams.TreeDir)
