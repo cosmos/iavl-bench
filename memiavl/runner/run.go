@@ -37,7 +37,22 @@ func (d DBWrapper) Commit(updates bench.MultiStoreUpdates) error {
 }
 
 func (d DBWrapper) Tree(storeName string) bench.TreeReader {
-	panic("not implemented")
+	tree := d.db.TreeByName(storeName)
+	return treeReader{
+		tree: tree,
+	}
+}
+
+type treeReader struct {
+	tree *memiavl.Tree
+}
+
+func (t treeReader) Get(key []byte) ([]byte, error) {
+	return t.tree.Get(key), nil
+}
+
+func (t treeReader) Size() int64 {
+	return 0
 }
 
 func (d DBWrapper) ForceToDisk() error {

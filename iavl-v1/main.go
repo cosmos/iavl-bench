@@ -50,8 +50,25 @@ func (m *MultiTreeWrapper) Commit(updates bench.MultiStoreUpdates) error {
 }
 
 func (m *MultiTreeWrapper) Tree(storeName string) bench.TreeReader {
-	//TODO implement me
-	panic("implement me")
+	store, ok := m.trees[storeName]
+	if !ok {
+		return nil
+	}
+	return treeReader{
+		store: store,
+	}
+}
+
+type treeReader struct {
+	store *iavl.MutableTree
+}
+
+func (t treeReader) Get(key []byte) ([]byte, error) {
+	return t.store.Get(key)
+}
+
+func (t treeReader) Size() int64 {
+	return t.store.Size()
 }
 
 func (m *MultiTreeWrapper) ForceToDisk() error {
