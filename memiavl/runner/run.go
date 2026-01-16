@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"fmt"
+
 	"github.com/crypto-org-chain/cronos/memiavl"
 
 	"github.com/cosmos/iavl-bench/bench"
@@ -11,33 +13,42 @@ type DBWrapper struct {
 	db *memiavl.DB
 }
 
-func (d *DBWrapper) Close() error {
-	return d.db.Close()
-}
-
-func (d *DBWrapper) Version() int64 {
+func (d DBWrapper) Version() int64 {
 	return d.db.Version()
 }
 
-func (d *DBWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
-	changeSet := memiavl.ChangeSet{
-		Pairs: []*memiavl.KVPair{
-			{
-				Key:    key,
-				Value:  value,
-				Delete: delete,
-			},
-		},
+func (d DBWrapper) Commit(updates bench.MultiStoreUpdates) error {
+	// for now just do this sequentially since that's what we were doing before
+	for storeKey, treeUpdates := range updates {
+		var changeSet memiavl.ChangeSet
+		for update := range treeUpdates.Updates {
+			changeSet.Pairs = append(changeSet.Pairs, &memiavl.KVPair{
+				Key:    update.Key,
+				Value:  update.Value,
+				Delete: update.Delete,
+			})
+		}
+		if err := d.db.ApplyChangeSet(storeKey, changeSet); err != nil {
+			return err
+		}
 	}
-	return d.db.ApplyChangeSet(storeKey, changeSet)
-}
-
-func (d *DBWrapper) Commit() error {
 	_, err := d.db.Commit()
 	return err
 }
 
-var _ bench.Tree = &DBWrapper{}
+func (d DBWrapper) Tree(storeName string) bench.TreeReader {
+	panic("not implemented")
+}
+
+func (d DBWrapper) ForceToDisk() error {
+	return fmt.Errorf("not implemented")
+}
+
+func (d DBWrapper) Close() error {
+	return d.db.Close()
+}
+
+var _ bench.MultiTree = &DBWrapper{}
 
 type Options struct {
 	SnapshotKeepRecent uint32 `json:"snapshot_keep_recent"`
@@ -58,7 +69,7 @@ func Run() {
 func Runner() bench.Runner {
 	return bench.NewRunner("memiavl", bench.RunConfig{
 		OptionsType: &Options{},
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.MultiTree, error) {
 			benchmarkOpts := params.TreeOptions.(*Options)
 			opts := memiavl.Options{
 				CreateIfMissing:    true,

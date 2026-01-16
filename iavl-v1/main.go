@@ -18,6 +18,46 @@ type MultiTreeWrapper struct {
 	trees   map[string]*iavl.MutableTree
 }
 
+func (m *MultiTreeWrapper) Commit(updates bench.MultiStoreUpdates) error {
+	// for now just do this sequentially since that's what we were doing before
+	for storeKey, treeUpdates := range updates {
+		tree, ok := m.trees[storeKey]
+		if !ok {
+			return fmt.Errorf("store key %s not found", storeKey)
+		}
+		for update := range treeUpdates.Updates {
+			if update.Delete {
+				_, _, err := tree.Remove(update.Key)
+				if err != nil {
+					return err
+				}
+			} else {
+				_, err := tree.Set(update.Key, update.Value)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		_, _, err := tree.SaveVersion()
+		if err != nil {
+			return err
+		}
+	}
+	m.version++
+
+	return util.SaveVersion(m.dbDir, m.version)
+}
+
+func (m *MultiTreeWrapper) Tree(storeName string) bench.TreeReader {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MultiTreeWrapper) ForceToDisk() error {
+	return fmt.Errorf("not implemented")
+}
+
 func (m *MultiTreeWrapper) Close() error {
 	for _, tree := range m.trees {
 		err := tree.Close()
@@ -32,34 +72,7 @@ func (m *MultiTreeWrapper) Version() int64 {
 	return m.version
 }
 
-func (m *MultiTreeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
-	tree, ok := m.trees[storeKey]
-	if !ok {
-		return fmt.Errorf("store key %s not found", storeKey)
-	}
-	if delete {
-		_, _, err := tree.Remove(key)
-		return err
-	} else {
-		_, err := tree.Set(key, value)
-		return err
-	}
-}
-
-func (m *MultiTreeWrapper) Commit() error {
-	for _, tree := range m.trees {
-		_, _, err := tree.SaveVersion()
-		if err != nil {
-			return err
-		}
-	}
-
-	m.version++
-
-	return util.SaveVersion(m.dbDir, m.version)
-}
-
-var _ bench.Tree = &MultiTreeWrapper{}
+var _ bench.MultiTree = &MultiTreeWrapper{}
 
 type Options struct {
 	SkipFastStorageUpgrade bool `json:"skip_fast_storage_upgrade"`
@@ -69,7 +82,7 @@ type Options struct {
 func main() {
 	bench.Run("iavl/v1", bench.RunConfig{
 		OptionsType: &Options{},
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.MultiTree, error) {
 			opts := params.TreeOptions.(*Options)
 			dbDir := params.TreeDir
 			version, err := util.LoadVersion(dbDir)
