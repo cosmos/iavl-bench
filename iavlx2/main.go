@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/cosmos/cosmos-sdk/iavl"
@@ -56,7 +57,7 @@ func (m *multiTree) Commit(updates bench.MultiStoreUpdates) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := tree.Commit(context.Background(), treeUpdates.Updates, int(treeUpdates.TotalOps))
+			_, err := tree.Commit(context.Background(), slices.Values(treeUpdates.Updates), int(treeUpdates.TotalOps))
 			if err != nil {
 				panic(err)
 			}

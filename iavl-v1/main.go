@@ -25,7 +25,7 @@ func (m *MultiTreeWrapper) Commit(updates bench.MultiStoreUpdates) error {
 		if !ok {
 			return fmt.Errorf("store key %s not found", storeKey)
 		}
-		for update := range treeUpdates.Updates {
+		for _, update := range treeUpdates.Updates {
 			if update.Delete {
 				_, _, err := tree.Remove(update.Key)
 				if err != nil {

@@ -338,7 +338,7 @@ func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, ve
 	g := new(errgroup.Group)
 	for _, reader := range versionSim.ReaderOps {
 		g.Go(func() error {
-			for op := range reader {
+			for _, op := range reader {
 				_, err := tree.Tree(op.Store).Get(op.Key)
 				if err != nil {
 					return fmt.Errorf("reading key from store %s: %w", op.Store, err)

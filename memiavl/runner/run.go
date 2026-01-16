@@ -21,7 +21,7 @@ func (d DBWrapper) Commit(updates bench.MultiStoreUpdates) error {
 	// for now just do this sequentially since that's what we were doing before
 	for storeKey, treeUpdates := range updates {
 		var changeSet memiavl.ChangeSet
-		for update := range treeUpdates.Updates {
+		for _, update := range treeUpdates.Updates {
 			changeSet.Pairs = append(changeSet.Pairs, &memiavl.KVPair{
 				Key:    update.Key,
 				Value:  update.Value,

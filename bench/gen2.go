@@ -61,7 +61,7 @@ type MultiStoreUpdates = map[string]StoreUpdates
 type VersionSim struct {
 	// ReaderOps are sequences of read operations to perform before applying updates,
 	// these should be run in parallel to simulate concurrent reads.
-	ReaderOps []iter.Seq[ReadOp]
+	ReaderOps [][]ReadOp
 	Updates   MultiStoreUpdates
 }
 
@@ -71,12 +71,13 @@ type ReadOp struct {
 }
 
 type StoreUpdates struct {
-	Updates  iter.Seq[Update]
+	Updates  []Update
 	TotalOps uint32
 }
 
 type PhaseSim struct {
-	Params   MultiStorePhase
+	Params MultiStorePhase
+	// we use an iterator here to avoid materializing all versions in memory at once
 	Versions iter.Seq2[uint32, VersionSim]
 }
 
@@ -103,7 +104,7 @@ func GenSimulation(params SimParams) iter.Seq[PhaseSim] {
 						if concurrentReaders == 0 {
 							concurrentReaders = 1
 						}
-						readers := make([]iter.Seq[ReadOp], concurrentReaders)
+						readers := make([][]ReadOp, concurrentReaders)
 						for r := uint32(0); r < concurrentReaders; r++ {
 							readers[r] = generator.GenVersionReadOps(phaseParams)
 						}
@@ -120,34 +121,34 @@ func GenSimulation(params SimParams) iter.Seq[PhaseSim] {
 	}
 }
 
-func (g *MultiStoreGenerator) GenVersionReadOps(phaseParams MultiStorePhase) iter.Seq[ReadOp] {
+func (g *MultiStoreGenerator) GenVersionReadOps(phaseParams MultiStorePhase) []ReadOp {
 	remainingCounts := map[string]uint32{}
 	for storeName, storePhaseParams := range phaseParams.Stores {
 		remainingCounts[storeName] = storePhaseParams.Gets
 	}
 
-	return func(yield func(op ReadOp) bool) {
-		// naive algorithm simply iterates over all stores and generates gets until all are done
-		for len(remainingCounts) > 0 {
-			for storeName, count := range remainingCounts {
-				if count == 0 {
-					delete(remainingCounts, storeName)
-					continue
-				}
-				storeGen := g.store[storeName]
-				key := storeGen.GenGet()
-				if key == nil {
-					// no keys to get from this store
-					delete(remainingCounts, storeName)
-					continue
-				}
-				remainingCounts[storeName]--
-				if !yield(ReadOp{Store: storeName, Key: key}) {
-					return
-				}
+	var readOps []ReadOp
+
+	// naive algorithm simply iterates over all stores and generates gets until all are done
+	for len(remainingCounts) > 0 {
+		for storeName, count := range remainingCounts {
+			if count == 0 {
+				delete(remainingCounts, storeName)
+				continue
 			}
+			storeGen := g.store[storeName]
+			key := storeGen.GenGet()
+			if key == nil {
+				// no keys to get from this store
+				delete(remainingCounts, storeName)
+				continue
+			}
+			remainingCounts[storeName]--
+			readOps = append(readOps, ReadOp{Store: storeName, Key: key})
 		}
 	}
+
+	return readOps
 }
 
 func (g *MultiStoreGenerator) GenVersionUpdates(phaseParams MultiStorePhase) map[string]StoreUpdates {
@@ -188,41 +189,38 @@ func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) StoreUpdates 
 	deleteRatio := float64(phaseParams.Deletes) / float64(updatesPerVersion)
 	insertRatio := float64(phaseParams.Inserts) / float64(updatesPerVersion)
 	updateRatio := 1.0 - insertRatio - deleteRatio
-	updates := func(yield func(Update) bool) {
-		for i := uint32(0); i < updatesPerVersion; i++ {
-			r := g.rng.Float64()
-			var update Update
-			hasOriginalKeys := updateRangeEnd > g.deleteIndex
+	var updates []Update
+	for i := uint32(0); i < updatesPerVersion; i++ {
+		r := g.rng.Float64()
+		var update Update
+		hasOriginalKeys := updateRangeEnd > g.deleteIndex
 
-			if r < deleteRatio && hasOriginalKeys {
-				// delete only when we have some original keys
-				update = Update{
-					Key:    g.kvParams.GenKey(g.deleteIndex, g.seed2),
-					Delete: true,
-				}
-				g.deleteIndex++
-			} else if r < deleteRatio+updateRatio && hasOriginalKeys {
-				// also update only when we have some original keys
-				keyIndex := g.rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
-				update = Update{
-					Key:    g.kvParams.GenKey(keyIndex, g.seed2),
-					Value:  g.kvParams.GenValue(g.rng),
-					Delete: false,
-				}
-			} else {
-				// otherwise insert
-				update = Update{
-					Key:    g.kvParams.GenKey(g.insertIndex, g.seed2),
-					Value:  g.kvParams.GenValue(g.rng),
-					Delete: false,
-				}
-				g.insertIndex++
+		if r < deleteRatio && hasOriginalKeys {
+			// delete only when we have some original keys
+			update = Update{
+				Key:    g.kvParams.GenKey(g.deleteIndex, g.seed2),
+				Delete: true,
 			}
-
-			if !yield(update) {
-				return
+			g.deleteIndex++
+		} else if r < deleteRatio+updateRatio && hasOriginalKeys {
+			// also update only when we have some original keys
+			keyIndex := g.rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
+			update = Update{
+				Key:    g.kvParams.GenKey(keyIndex, g.seed2),
+				Value:  g.kvParams.GenValue(g.rng),
+				Delete: false,
 			}
+		} else {
+			// otherwise insert
+			update = Update{
+				Key:    g.kvParams.GenKey(g.insertIndex, g.seed2),
+				Value:  g.kvParams.GenValue(g.rng),
+				Delete: false,
+			}
+			g.insertIndex++
 		}
+
+		updates = append(updates, update)
 	}
 	return StoreUpdates{
 		Updates:  updates,
