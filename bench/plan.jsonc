@@ -1,27 +1,16 @@
 {
   "configs": [
     {
-      "name": "iavlx2-mem",
+      "name": "iavlx2",
       "runner": "bench-iavlx2",
       "options": {
-        "write_wal": false,
+        "fsync_wal": true,
       }
     },
     {
-      "name": "iavlx2-wal",
-      "runner": "bench-iavlx2",
-      "options": {
-        "write_wal": true,
-        "fsync_wal": false
-      }
-    },
-    {
-      "name": "iavlx2-wal-fsync",
-      "runner": "bench-iavlx2",
-      "options": {
-        "write_wal": true,
-        "fsync_wal": true
-      }
+      "name": "iavlx2",
+      "runner": "bench-treedb",
+      "options": {}
     }
   ],
   "simulations": [
@@ -30,6 +19,14 @@
       "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
       "phases": [
         { "versions": 100, "stores": { "bank": { "inserts": 10000 } }},
+        { "versions": 2000, "stores": { "bank": { "updates": 10000 } }}
+      ]
+    },
+    {
+      "name": "10m",
+      "stores": [ { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 } ],
+      "phases": [
+        { "versions": 100, "stores": { "bank": { "inserts": 100000 } }},
         { "versions": 2000, "stores": { "bank": { "updates": 10000 } }}
       ]
     },

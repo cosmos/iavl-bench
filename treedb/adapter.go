@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	dbm "github.com/cosmos/cosmos-db"
+	dbm "github.com/cosmos/iavl/db"
 	treedb "github.com/snissn/gomap/TreeDB"
 	"github.com/snissn/gomap/kvstore"
 	treedbadapter "github.com/snissn/gomap/kvstore/adapters/treedb"
@@ -187,6 +187,11 @@ type treeDBBatch struct {
 	db   *TreeDBAdapter
 	kb   kvstore.Batch
 	done bool
+}
+
+func (b *treeDBBatch) GetByteSize() (int, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (b *treeDBBatch) Set(key, value []byte) error {

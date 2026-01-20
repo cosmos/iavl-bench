@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
+	dbm "github.com/cosmos/iavl/db"
 
 	"github.com/cosmos/iavl-bench/bench"
 	"github.com/cosmos/iavl-bench/bench/util"
@@ -140,10 +140,7 @@ func main() {
 				}
 				dbs[storeName] = d
 
-				tree, err := iavl.NewMutableTree(d, 10_000, true)
-				if err != nil {
-					return nil, fmt.Errorf("error creating store %s: %w", storeName, err)
-				}
+				tree := iavl.NewMutableTree(d, 10_000, true, params.Logger)
 				if version != 0 {
 					if _, err := tree.LoadVersion(version); err != nil {
 						return nil, fmt.Errorf("loading store %s at version %d: %w", storeName, version, err)
