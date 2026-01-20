@@ -1,17 +1,22 @@
 {
   "configs": [
     {
+      "name": "treedb",
+      "runner": "bench-treedb",
+      "options": {}
+    },
+    {
+      "name": "memiavl",
+      "runner": "bench-memiavl",
+      "options": {"snapshot_interval": 1000, "snapshot_keep_recent": 1}
+    },
+    {
       "name": "iavlx2",
       "runner": "bench-iavlx2",
       "options": {
         "fsync_wal": true,
       }
     },
-    {
-      "name": "iavlx2",
-      "runner": "bench-treedb",
-      "options": {}
-    }
   ],
   "simulations": [
     {
