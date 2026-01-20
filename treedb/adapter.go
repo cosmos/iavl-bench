@@ -190,8 +190,7 @@ type treeDBBatch struct {
 }
 
 func (b *treeDBBatch) GetByteSize() (int, error) {
-	//TODO implement me
-	panic("implement me")
+	return 0, nil
 }
 
 func (b *treeDBBatch) Set(key, value []byte) error {
