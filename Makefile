@@ -8,6 +8,7 @@ install:
 #	cd iavl-v2/alpha5 && go install .
 #	cd iavl-v2/alpha6 && go install .
 	cd memiavl && go install .
+	cd treedb && go install .
 #	cd memiavl/thread-safe && go install .
 #	cd memiavl/query-thread-safe && go install .
 #	cd store-v1/latest && go install .

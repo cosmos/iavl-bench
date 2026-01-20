@@ -12,6 +12,7 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
+
 	"github.com/cosmos/iavl-bench/bench"
 	"github.com/cosmos/iavl-bench/bench/util"
 )
@@ -35,6 +36,75 @@ type MultiTreeWrapper struct {
 	diagEvery   int64
 }
 
+func (m *MultiTreeWrapper) Commit(updates bench.MultiStoreUpdates) error {
+	// for now just do this sequentially since that's what we were doing before
+	for storeKey, treeUpdates := range updates {
+		tree, ok := m.trees[storeKey]
+		if !ok {
+			return fmt.Errorf("store key %s not found", storeKey)
+		}
+		for _, update := range treeUpdates.Updates {
+			if update.Delete {
+				_, _, err := tree.Remove(update.Key)
+				if err != nil {
+					return err
+				}
+			} else {
+				_, err := tree.Set(update.Key, update.Value)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, d := range m.dbs {
+			if tdb, ok := d.(*TreeDBAdapter); ok {
+				if err := tdb.Checkpoint(); err != nil {
+					return fmt.Errorf("error checkpointing treedb: %w", err)
+				}
+			}
+		}
+
+		_, _, err := tree.SaveVersion()
+		if err != nil {
+			return err
+		}
+	}
+	m.version++
+
+	if m.diagEnabled && (m.diagEvery <= 1 || (m.version%m.diagEvery) == 0) {
+		m.writeDiagReports(m.version)
+	}
+
+	return util.SaveVersion(m.dbDir, m.version)
+}
+
+func (m *MultiTreeWrapper) Tree(storeName string) bench.TreeReader {
+	store, ok := m.trees[storeName]
+	if !ok {
+		return nil
+	}
+	return treeReader{
+		store: store,
+	}
+}
+
+type treeReader struct {
+	store *iavl.MutableTree
+}
+
+func (t treeReader) Get(key []byte) ([]byte, error) {
+	return t.store.Get(key)
+}
+
+func (t treeReader) Size() int64 {
+	return t.store.Size()
+}
+
+func (m *MultiTreeWrapper) ForceToDisk() error {
+	return fmt.Errorf("not implemented")
+}
+
 func (m *MultiTreeWrapper) Close() error {
 	for _, d := range m.dbs {
 		if err := d.Close(); err != nil {
@@ -48,51 +118,11 @@ func (m *MultiTreeWrapper) Version() int64 {
 	return m.version
 }
 
-func (m *MultiTreeWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
-	tree, ok := m.trees[storeKey]
-	if !ok {
-		return fmt.Errorf("store key %s not found", storeKey)
-	}
-	if delete {
-		_, _, err := tree.Remove(key)
-		return err
-	}
-	_, err := tree.Set(key, value)
-	return err
-}
-
-func (m *MultiTreeWrapper) Commit() error {
-	for _, tree := range m.trees {
-		if _, _, err := tree.SaveVersion(); err != nil {
-			return err
-		}
-	}
-
-	for _, d := range m.dbs {
-		if tdb, ok := d.(*TreeDBAdapter); ok {
-			if err := tdb.Checkpoint(); err != nil {
-				return fmt.Errorf("error checkpointing treedb: %w", err)
-			}
-		}
-	}
-
-	m.version++
-
-	if err := util.SaveVersion(m.dbDir, m.version); err != nil {
-		return err
-	}
-
-	if m.diagEnabled && (m.diagEvery <= 1 || (m.version%m.diagEvery) == 0) {
-		m.writeDiagReports(m.version)
-	}
-	return nil
-}
-
-var _ bench.Tree = &MultiTreeWrapper{}
+var _ bench.MultiTree = &MultiTreeWrapper{}
 
 func main() {
 	bench.Run("iavl-treedb", bench.RunConfig{
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.MultiTree, error) {
 			dbDir := params.TreeDir
 			version, err := util.LoadVersion(dbDir)
 			if err != nil {
