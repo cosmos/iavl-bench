@@ -400,8 +400,8 @@ func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, ve
 func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
 	doneChan := make(chan struct{})
 	go func() {
-		fastTicker := time.NewTicker(1 * time.Second)
-		slowTicker := time.NewTicker(10 * time.Second)
+		fastTicker := time.NewTicker(5 * time.Second)
+		slowTicker := time.NewTicker(60 * time.Second)
 		defer fastTicker.Stop()
 		defer slowTicker.Stop()
 		for {
