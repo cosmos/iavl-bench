@@ -4,14 +4,10 @@
       "name": "iavlx2",
       "runner": "bench-iavlx2",
       "options": {
-        "evict_depth": 24,
+        "evict_depth": 23,
+        "checkpoint_interval": 500,
         "fsync_wal": true
       }
-    },
-    {
-      "name": "iavl-v1",
-      "runner": "bench-iavl-v1",
-      "options": {}
     },
     {
       "name": "memiavl",
@@ -20,7 +16,12 @@
         "snapshot_interval": 1000,
         "snapshot_keep_recent": 1
       }
-    }
+    },
+    {
+      "name": "iavl-v1",
+      "runner": "bench-iavl-v1",
+      "options": {}
+    },
   ],
   "simulations": [
     {
