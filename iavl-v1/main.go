@@ -94,6 +94,7 @@ var _ bench.MultiTree = &MultiTreeWrapper{}
 type Options struct {
 	SkipFastStorageUpgrade bool `json:"skip_fast_storage_upgrade"`
 	CacheSize              int  `json:"cache_size"`
+	Mem                    bool `json:"mem"`
 }
 
 func main() {
@@ -111,9 +112,14 @@ func main() {
 			// logging is very noisy, use a nop logger
 			logger := log.NewNopLogger()
 			for _, storeName := range params.StoreNames {
-				d, err := db.NewGoLevelDBWithOpts(storeName, dbDir, &opt.Options{})
-				if err != nil {
-					return nil, err
+				var d db.DB
+				if opts.Mem {
+					d = db.NewMemDB()
+				} else {
+					d, err = db.NewGoLevelDBWithOpts(storeName, dbDir, &opt.Options{})
+					if err != nil {
+						return nil, err
+					}
 				}
 				tree := iavl.NewMutableTree(d, opts.CacheSize, opts.SkipFastStorageUpgrade, logger)
 				if version != 0 {
