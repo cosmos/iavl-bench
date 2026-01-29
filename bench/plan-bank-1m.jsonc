@@ -20,7 +20,7 @@
     {
       "name": "iavl-v1-memdb",
       "runner": "bench-iavl-v1",
-      "options": {"cache_size": 2000000, "mem":  true}
+      "options": {"mem":  true}
     },
     {
       "name": "iavl-v1",
@@ -30,32 +30,24 @@
   ],
   "simulations": [
     {
-      "name": "1m",
+      "name": "bank-1m",
       "stores": [
-        {
-          "name": "bank",
-          "key_len_mean": 56,
-          "key_len_stddev": 3,
-          "value_len_mean": 16,
-          "value_len_stddev": 2
-        }
+        { "name": "auth", "key_len_mean": 33, "key_len_stddev": 3, "value_len_mean": 128, "value_len_stddev": 2 },
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
       ],
       "phases": [
         {
           "versions": 100,
           "stores": {
-            "bank": {
-              "inserts": 10000
-            }
+            "auth": { "inserts": 10000 },
+            "bank": { "inserts": 10000 }
           }
         },
         {
           "versions": 2000,
           "stores": {
-            "bank": {
-              "gets": 1000,
-              "updates": 20000
-            }
+            "auth": { "gets": 500, "updates": 10000 },
+            "bank": { "gets": 1000, "updates": 20000 }
           }
         }
       ],
