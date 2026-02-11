@@ -146,7 +146,7 @@ def plot_ops_per_sec(dataset, run_names: list[str] = None, batch_size=100):
     return fig
 
 
-def plot_read_throughput(dataset, run_names: list[str] = None):
+def plot_read_throughput(dataset, run_names: list[str] = None, batch_size: int = 1):
     """Plot read throughput (reads/sec) over version from read simulation data."""
     if run_names is None:
         run_names = list(dataset.keys())
@@ -157,9 +157,28 @@ def plot_read_throughput(dataset, run_names: list[str] = None):
         if run.version_reads_df.is_empty():
             continue
 
-        df = run.version_reads_df.with_columns([
-            (pl.col('total_reads') / (pl.col('duration') / 1_000_000_000)).alias('reads_per_sec')
-        ])
+        if batch_size > 1:
+            df = (
+                run.version_reads_df
+                .with_columns(
+                    ((pl.col("version") / batch_size).ceil() * batch_size).alias("version_batch")
+                )
+                .group_by("version_batch")
+                .agg([
+                    pl.col("total_reads").sum().alias("total_reads"),
+                    pl.col("duration").sum().alias("duration")
+                ])
+                .with_columns(
+                    (pl.col("total_reads") / (pl.col("duration") / 1_000_000_000)).alias("reads_per_sec")
+                )
+                .select(["version_batch", "reads_per_sec"])
+                .rename({"version_batch": "version"})
+                .sort("version")
+            )
+        else:
+            df = run.version_reads_df.with_columns([
+                (pl.col('total_reads') / (pl.col('duration') / 1_000_000_000)).alias('reads_per_sec')
+            ])
 
         # Trim leading/trailing zeros
         nonzero_mask = df['reads_per_sec'] > 0

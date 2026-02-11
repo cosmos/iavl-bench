@@ -62,4 +62,4 @@ func (s *CommitMultiStoreWrapper) Commit() error {
 	return nil
 }
 
-var _ bench.Tree = &CommitMultiStoreWrapper{}
+var _ bench.MultiTree = &CommitMultiStoreWrapper{}

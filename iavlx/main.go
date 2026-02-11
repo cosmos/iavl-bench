@@ -16,12 +16,12 @@ import (
 )
 
 type telemetryWrapper struct {
-	bench.Tree
+	bench.MultiTree
 }
 
 func (w *telemetryWrapper) Close() error {
 	return errors.Join(
-		w.Tree.Close(),
+		w.MultiTree.Close(),
 		telemetry.Shutdown(context.Background()),
 	)
 }
@@ -29,7 +29,7 @@ func (w *telemetryWrapper) Close() error {
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
 		OptionsType: &iavlx.Options{},
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.MultiTree, error) {
 			opts := params.TreeOptions.(*iavlx.Options)
 			if opts == nil {
 				opts = &iavlx.Options{}
@@ -50,7 +50,7 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
-			return &telemetryWrapper{Tree: tree}, nil
+			return &telemetryWrapper{MultiTree: tree}, nil
 		},
 	})
 }

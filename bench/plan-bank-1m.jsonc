@@ -36,19 +36,8 @@
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
       ],
       "phases": [
-        {
-          "versions": 100,
-          "stores": {
-            "auth": { "inserts": 10000 },
-            "bank": { "inserts": 10000 }
-          }
-        },
-        {
-          "versions": 2000,
-          "stores": {
-            "auth": { "gets": 500, "updates": 10000 },
-            "bank": { "gets": 1000, "updates": 20000 }
-          }
+        { "versions": 100, "stores": { "auth": { "inserts": 10000 }, "bank": { "inserts": 10000 } } },
+        { "versions": 2000, "stores": { "auth": { "gets": 500, "updates": 10000 }, "bank": { "gets": 1000, "updates": 20000 } }
         }
       ],
       "concurrent_readers": 32
