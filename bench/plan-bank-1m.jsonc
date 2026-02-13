@@ -1,15 +1,18 @@
 {
   "configs": [
-//    {
-//      "name": "iavlx-pruning",
-//      "runner": "bench-iavlx",
-//      "options": {
-//        "pruning": {
-//            "KeepRecent": 3,
-//            "Interval": 500
-//        }
-//      },
-//    },
+    {
+      "name": "iavlx-pruning",
+      "runner": "bench-iavlx",
+      "options": {
+        "db": {
+          "checkpoint_interval": 500,
+        },
+        "pruning": {
+            "KeepRecent": 3,
+            "Interval": 500
+        }
+      },
+    },
     {
       "name": "memiavl",
       "runner": "bench-memiavl",
