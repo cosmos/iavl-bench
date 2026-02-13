@@ -189,7 +189,11 @@ func (sim *simulator) applyVersionReadOps(phaseParams MultiStorePhase, tree Root
 	for i := uint32(0); i < sim.simParams.ConcurrentReaders; i++ {
 		sim.applyVersionReadOpsThread(&errGroup, &totalReads, phaseParams, tree, i)
 	}
-	return totalReads.Load(), errGroup.Wait()
+	err := errGroup.Wait() // finish all readers before loading atomic count of total reads
+	if err != nil {
+		return 0, err
+	}
+	return totalReads.Load(), nil
 }
 
 func (sim *simulator) applyVersionReadOpsThread(errGroup *errgroup.Group, totalReads *atomic.Int64, phaseParams MultiStorePhase, tree RootMultiTree, idx uint32) {
@@ -253,7 +257,11 @@ func (sim *simulator) applyVersionUpdatesToCache(phaseParams MultiStorePhase, ca
 			return nil
 		})
 	}
-	return totalUpdates.Load(), wg.Wait()
+	err := wg.Wait() // finish applying updates to all stores before loading atomic count of total updates
+	if err != nil {
+		return 0, err
+	}
+	return totalUpdates.Load(), nil
 }
 
 func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
