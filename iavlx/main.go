@@ -74,7 +74,7 @@ func main() {
 				opts = &Options{}
 			}
 
-			mt, err := NewMultiTree(params.StoreKeys, params.TreeDir, opts)
+			mt, err := NewMultiTree(params.StoreKeys, params.TreeDir, *opts)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multi tree: %w", err)
 			}
