@@ -18,11 +18,12 @@ type multiTree struct {
 	mt *iavl.CommitMultiTree
 }
 
-func NewMultiTree(storeKeys []*storetypes.KVStoreKey, dir string, opts iavl.Options) (bench.RootMultiTree, error) {
-	mt, err := iavl.LoadCommitMultiTree(dir, opts)
+func NewMultiTree(storeKeys []*storetypes.KVStoreKey, dir string, opts Options) (bench.RootMultiTree, error) {
+	mt, err := iavl.LoadCommitMultiTree(dir, opts.DB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load commit multi tree: %w", err)
 	}
+	mt.SetPruning(opts.Pruning)
 	for _, key := range storeKeys {
 		mt.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
 	}
