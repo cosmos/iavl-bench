@@ -1,8 +1,8 @@
 {
   "configs": [
     {
-      "name": "iavlx2",
-      "runner": "bench-iavlx2",
+      "name": "iavlx",
+      "runner": "bench-iavlx",
       "options": {}
     },
 //    {
