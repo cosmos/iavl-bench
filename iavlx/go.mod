@@ -1,13 +1,14 @@
-module bench-iavlx
+module bench-iavlx2
 
 go 1.25.6
 
+replace github.com/cosmos/iavl-bench/bench => ../bench
+
+replace github.com/cosmos/cosmos-sdk => ../../../cosmos-sdk
+
 require (
 	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260108215426-335db329d76d
-	github.com/cosmos/iavl-bench/bench v0.0.4
-	github.com/cosmos/iavl-bench/store-v1 v0.0.0-00010101000000-000000000000
-	github.com/samber/slog-multi v1.6.0
-	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0
+	github.com/cosmos/iavl-bench/bench v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -15,8 +16,8 @@ require (
 	cosmossdk.io/errors v1.0.2 // indirect
 	cosmossdk.io/log v1.6.1 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
-	cosmossdk.io/store v1.10.0-rc.1 // indirect
-	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
+	cosmossdk.io/store v1.3.0-beta.0 // indirect
+	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
@@ -31,7 +32,7 @@ require (
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
-	github.com/cometbft/cometbft v1.0.1 // indirect
+	github.com/cometbft/cometbft v0.39.0-beta.2 // indirect
 	github.com/cosmos/cosmos-db v1.1.3 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.2 // indirect
@@ -75,8 +76,6 @@ require (
 	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/samber/lo v1.52.0 // indirect
-	github.com/samber/slog-common v0.19.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.6 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.1 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
@@ -90,6 +89,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.65.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.65.0 // indirect
 	go.opentelemetry.io/contrib/otelconf v0.20.0 // indirect
@@ -120,6 +120,7 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
@@ -127,9 +128,3 @@ require (
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/cosmos/iavl-bench/store-v1 => ../store-v1
-
-replace github.com/cosmos/iavl-bench/bench => ../bench
-
-replace github.com/cosmos/cosmos-sdk => ../../cosmos-sdk

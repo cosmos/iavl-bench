@@ -19,7 +19,11 @@ type MultiTreeWrapper struct {
 }
 
 func (m *MultiTreeWrapper) Commit(updates bench.MultiStoreUpdates) error {
-	// for now just do this sequentially since that's what we were doing before
+	// We apply updates to each store synchronously instead of concurrently because:
+	// 1. this is what the Cosmos SDK currently does, so it more accurately reflects the current state of things
+	// 2. I'm actually not sure whether iavl/v1 could be used safely concurrently because everything is in the same
+	// leveldb instance under the hood. We actually occasionally trigger mutex panics as is, so the assumption is
+	// that concurrent access isn't safe.
 	for storeKey, treeUpdates := range updates {
 		tree, ok := m.trees[storeKey]
 		if !ok {
@@ -71,10 +75,6 @@ func (t treeReader) Size() int64 {
 	return t.store.Size()
 }
 
-func (m *MultiTreeWrapper) ForceToDisk() error {
-	return fmt.Errorf("not implemented")
-}
-
 func (m *MultiTreeWrapper) Close() error {
 	for _, tree := range m.trees {
 		err := tree.Close()
@@ -94,7 +94,7 @@ var _ bench.MultiTree = &MultiTreeWrapper{}
 type Options struct {
 	SkipFastStorageUpgrade bool `json:"skip_fast_storage_upgrade"`
 	CacheSize              int  `json:"cache_size"`
-	Mem                    bool `json:"mem"`
+	MemDB                  bool `json:"memdb"`
 }
 
 func main() {
@@ -113,7 +113,7 @@ func main() {
 			logger := log.NewNopLogger()
 			for _, storeName := range params.StoreNames {
 				var d db.DB
-				if opts.Mem {
+				if opts.MemDB {
 					d = db.NewMemDB()
 				} else {
 					d, err = db.NewGoLevelDBWithOpts(storeName, dbDir, &opt.Options{})

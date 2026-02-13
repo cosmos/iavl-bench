@@ -2,10 +2,8 @@ package bench
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,40 +13,23 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/telemetry"
+	storetypes "cosmossdk.io/store/types"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
-
-type MultiTree interface {
-	// Version should return the last committed version. If no version has been committed, it should return 0.
-	Version() int64
-	// Commit should persist all changes made since the last commit and return the new version's hash.
-	Commit(updates MultiStoreUpdates) error
-	// Tree should return a TreeReader for the given store name.
-	Tree(storeName string) TreeReader
-	ForceToDisk() error
-	io.Closer
-}
-
-type TreeReader interface {
-	Get(key []byte) ([]byte, error)
-	Size() int64
-}
 
 type LoaderParams struct {
 	TreeDir     string
 	TreeOptions interface{}
-	StoreNames  []string
+	StoreKeys   []*storetypes.KVStoreKey
 	Logger      *slog.Logger
 }
 
-type TreeLoader func(params LoaderParams) (MultiTree, error)
+type TreeLoader func(params LoaderParams) (RootMultiTree, error)
 
 type RunConfig struct {
 	TreeLoader  TreeLoader
@@ -105,9 +86,9 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		}
 
 		// decode db options from json
-		var opts interface{}
+		var parsedOpts interface{}
 		if cfg.OptionsType != nil {
-			opts = reflect.New(reflect.TypeOf(cfg.OptionsType).Elem()).Interface()
+			parsedOpts = reflect.New(reflect.TypeOf(cfg.OptionsType).Elem()).Interface()
 			if treeOptions != "" {
 				if cfg.OptionsType == nil {
 					return fmt.Errorf("db-options provided but no OptionsType set in RunConfig")
@@ -115,7 +96,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 				decoder := json.NewDecoder(bytes.NewReader([]byte(treeOptions)))
 				// we disallow unknown fields to catch typos with database options
 				decoder.DisallowUnknownFields()
-				err := decoder.Decode(opts)
+				err := decoder.Decode(parsedOpts)
 				if err != nil {
 					return fmt.Errorf("error unmarshaling db-options: %w", err)
 				}
@@ -158,121 +139,21 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		}
 
 		logger := slog.New(handler).With("module", "runner")
-		treeLogger := slog.New(treeHandler)
+		treeLogger := slog.New(treeHandler).With("module", treeType)
 		logger.Info("Starting benchmark run, loading tree")
 
-		var storeNames []string
-		for _, store := range genParams.Stores {
-			storeNames = append(storeNames, store.Name)
-		}
-
-		loaderParams := LoaderParams{
+		return RunSimulation(logger, TreeParams{
+			TreeLogger:  treeLogger,
+			TreeLoader:  cfg.TreeLoader,
 			TreeDir:     treeDir,
-			TreeOptions: opts,
-			StoreNames:  storeNames,
-			Logger:      treeLogger.With("module", treeType),
-		}
-
-		tree, err := cfg.TreeLoader(loaderParams)
-		if err != nil {
-			return fmt.Errorf("error loading tree: %w", err)
-		}
-
-		return run(tree, genParams, runParams{
-			TreeType:     treeType,
-			Logger:       logger,
-			LoaderParams: loaderParams,
-		})
+			TreeOptions: parsedOpts,
+			TreeType:    treeType,
+		}, genParams)
 	}
 
 	rootCmd := &cobra.Command{}
 	rootCmd.AddCommand(cmd)
 	return Runner{Command: rootCmd}
-}
-
-type runParams struct {
-	Logger       *slog.Logger
-	LoaderParams LoaderParams
-	TreeType     string
-}
-
-func run(tree MultiTree, genParams SimParams, params runParams) error {
-	logger := params.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	// capture exceptions and log stack trace
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Error("panic occurred", "error", r, "stack", string(debug.Stack()))
-		}
-	}()
-
-	version := tree.Version()
-	logger.Info("starting run",
-		"start_version", version,
-		"gen_params", genParams,
-		"db_dir", params.LoaderParams.TreeDir,
-		"db_options", params.LoaderParams.TreeOptions,
-		"tree_type", params.TreeType,
-	)
-
-	captureSystemInfo(logger)
-
-	closeCh := make(chan struct{})
-	currentVersion := atomic.Int64{}
-	currentVersion.Store(version)
-	doneCh := measureBackgroundStats(logger, &currentVersion, params.LoaderParams.TreeDir, closeCh)
-
-	sim := GenSimulation(genParams)
-	for phase := range sim {
-		logger.Info("starting phase", "phase", phase.Params)
-		if phase.Params.ForceToDisk {
-			logger.Info("forcing tree to disk before starting phase")
-			err := tree.ForceToDisk()
-			if err != nil {
-				return fmt.Errorf("error forcing tree to disk: %w", err)
-			}
-		}
-		for version, versionSim := range phase.Versions {
-			currentVersion.Store(int64(version))
-			if phase.Params.ClearCaches {
-				// Evict all data from the OS page cache before each version
-				// so reads actually hit disk rather than serving from cached mmap pages
-				err := EvictFromPageCache(params.LoaderParams.TreeDir)
-				if err != nil {
-					return fmt.Errorf("error evicting from page cache: %w", err)
-				}
-			}
-			err := applyVersion(logger, tree, versionSim, int64(version))
-			if err != nil {
-				return fmt.Errorf("error applying version %d: %w", version, err)
-			}
-		}
-	}
-
-	err := tree.Close()
-	if err != nil {
-		return fmt.Errorf("error closing tree: %w", err)
-	}
-	logger.Info("closed tree")
-
-	logger.Info(
-		"benchmark run complete",
-		"versions_applied", currentVersion.Load(),
-	)
-
-	close(closeCh)
-	<-doneCh
-
-	err = telemetry.Shutdown(context.Background())
-	if err != nil {
-		logger.Warn("error shutting down telemetry", "error", err)
-		return err
-	}
-
-	return nil
 }
 
 func captureSystemInfo(logger *slog.Logger) {
@@ -329,43 +210,36 @@ func captureSystemInfo(logger *slog.Logger) {
 	_, _ = cpu.Percent(0, true)
 }
 
-func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, version int64) error {
-	logger.Info("simulating reads", "version", version, "concurrent_readers", len(versionSim.ReaderOps))
+func (sim *Simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, version int64, phaseParams MultiStorePhase) error {
+	logger.Info("simulating reads", "version", version, "concurrent_readers", sim.simParams.ConcurrentReaders)
 
 	startReadTime := time.Now()
 
-	var readCount atomic.Uint64
-	g := new(errgroup.Group)
-	for _, reader := range versionSim.ReaderOps {
-		g.Go(func() error {
-			for _, op := range reader {
-				_, err := tree.Tree(op.Store).Get(op.Key)
-				if err != nil {
-					return fmt.Errorf("reading key from store %s: %w", op.Store, err)
-				}
-				readCount.Add(1)
-			}
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
+	cacheMt := tree.CacheMultiTree()
+	totalReads, err := sim.ApplyVersionReadOps(phaseParams, cacheMt)
+	if err != nil {
+		return fmt.Errorf("error applying read ops for version %d: %w", version, err)
 	}
 
 	readDuration := time.Since(startReadTime)
 	logger.Info("completed reads",
 		"version", version,
-		"total_reads", readCount.Load(),
+		"total_reads", totalReads,
 		"duration", readDuration,
-		"concurrent_readers", len(versionSim.ReaderOps),
+		"concurrent_readers", sim.simParams.ConcurrentReaders,
 	)
+
+	logger.Info("applying updates to cache mutlistore", "version", version)
+
+	totalUpdates, err := sim.ApplyVersionUpdatesToCache(phaseParams, cacheMt)
+	if err != nil {
+		return fmt.Errorf("error applying updates to cache for version %d: %w", version, err)
+	}
 
 	logger.Info("applying changeset", "version", version)
 	startTime := time.Now()
 
-	// TODO add gets
-
-	err := tree.Commit(versionSim.Updates)
+	err = tree.Commit(cacheMt)
 	if err != nil {
 		return fmt.Errorf("error committing version %d: %w", version, err)
 	}
@@ -375,13 +249,8 @@ func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, ve
 	}
 
 	duration := time.Since(startTime)
-	count := uint32(0)
 	totalSize := int64(0)
-	for storeName, storeUpdates := range versionSim.Updates {
-		count += storeUpdates.TotalOps
-		totalSize += tree.Tree(storeName).Size()
-	}
-	opsPerSec := float64(count) / duration.Seconds()
+	opsPerSec := float64(totalUpdates) / duration.Seconds()
 
 	// get mem stats
 
@@ -389,7 +258,7 @@ func applyVersion(logger *slog.Logger, tree MultiTree, versionSim VersionSim, ve
 		"committed version",
 		"version", version,
 		"duration", duration,
-		"count", count,
+		"count", totalUpdates,
 		"ops_per_sec", opsPerSec,
 		"total_size", totalSize,
 	)

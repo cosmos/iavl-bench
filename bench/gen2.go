@@ -1,78 +1,23 @@
 package bench
 
 import (
+	"context"
+	"fmt"
 	"iter"
+	"log/slog"
 	"math/rand/v2"
+	"runtime/debug"
+	"sync/atomic"
+
+	storetypes "cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"golang.org/x/sync/errgroup"
 )
 
-type Update = struct {
-	Key, Value []byte
-	Delete     bool
-}
-
-type SimParams struct {
-	Name   string            `json:"name"`
-	Stores []KVParams        `json:"stores"`
-	Phases []MultiStorePhase `json:"phases"`
-	// ConcurrentReaders indicates the number of concurrent readers to simulate.
-	// The number of gets will be multiplied by this number to determine the total number of read operations.
-	ConcurrentReaders uint32 `json:"concurrent_readers"`
-}
-
-type MultiStorePhase struct {
-	Name     string                `json:"name"`
-	Versions uint32                `json:"versions"`
-	Stores   map[string]StorePhase `json:"stores"`
-	// ForceToDisk indicates whether to force all data to disk before the start of this phase
-	ForceToDisk bool `json:"force_to_disk"`
-	// ClearCaches indicates whether to clear OS page caches before each version (requires ForceToDisk)
-	ClearCaches bool `json:"clear_caches"`
-}
-
-type StorePhase struct {
-	Inserts uint32 `json:"inserts"`
-	Updates uint32 `json:"updates"`
-	Deletes uint32 `json:"deletes"`
-	Gets    uint32 `json:"gets"`
-}
-
-type KVParams struct {
-	Name           string  `json:"name"`
-	KeyLenMean     float64 `json:"key_len_mean"`
-	KeyLenStdDev   float64 `json:"key_len_stddev"`
-	ValueLenMean   float64 `json:"value_len_mean"`
-	ValueLenStdDev float64 `json:"value_len_stddev"`
-}
-
-func (kv KVParams) GenKey(index, seed2 uint64) []byte {
-	return genBytes(rand.New(rand.NewPCG(index, seed2)), kv.KeyLenMean, kv.KeyLenStdDev)
-}
-
-func (kv KVParams) GenValue(rng *rand.Rand) []byte {
-	return genBytes(rng, kv.ValueLenMean, kv.ValueLenStdDev)
-}
-
-type MultiStoreGenerator struct {
-	store map[string]*StoreGenerator
-}
-
-type MultiStoreUpdates = map[string]StoreUpdates
-
-type VersionSim struct {
-	// ReaderOps are sequences of read operations to perform before applying updates,
-	// these should be run in parallel to simulate concurrent reads.
-	ReaderOps [][]ReadOp
-	Updates   MultiStoreUpdates
-}
-
-type ReadOp struct {
-	Store string
-	Key   []byte
-}
-
-type StoreUpdates struct {
-	Updates  []Update
-	TotalOps uint32
+type Simulator struct {
+	rng       *rand.Rand
+	store     map[string]*StoreGenerator
+	simParams SimParams
 }
 
 type PhaseSim struct {
@@ -81,97 +26,192 @@ type PhaseSim struct {
 	Versions iter.Seq2[uint32, VersionSim]
 }
 
-func GenSimulation(params SimParams) iter.Seq[PhaseSim] {
-	generator := &MultiStoreGenerator{
-		store: make(map[string]*StoreGenerator),
+type VersionSim struct {
+	ApplyReads         func(MultiTree) error
+	ApplyUpdateToCache func(MultiTree) error
+}
+
+type TreeParams struct {
+	TreeLogger  *slog.Logger
+	TreeLoader  TreeLoader
+	TreeDir     string
+	TreeOptions any
+	TreeType    string
+}
+
+func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimParams) error {
+	sim := &Simulator{
+		rng:       rand.New(rand.NewPCG(0, 0)),
+		store:     make(map[string]*StoreGenerator),
+		simParams: simParams,
 	}
-	for i, storeParams := range params.Stores {
-		generator.store[storeParams.Name] = &StoreGenerator{
-			rng:      rand.New(rand.NewPCG(uint64(i), 0)),
+	storeKeys := make([]*storetypes.KVStoreKey, len(simParams.Stores))
+	for i, storeParams := range simParams.Stores {
+		key := storetypes.NewKVStoreKey(storeParams.Name)
+		sim.store[storeParams.Name] = &StoreGenerator{
 			kvParams: storeParams,
 			seed2:    uint64(i),
+			storeKey: key,
 		}
+		storeKeys[i] = key
 	}
-	return func(yield func(sim PhaseSim) bool) {
-		var version uint32
-		for _, phaseParams := range params.Phases {
-			if !yield(PhaseSim{
-				Params: phaseParams,
-				Versions: func(yield func(uint32, VersionSim) bool) {
-					for i := 0; i < int(phaseParams.Versions); i++ {
-						version++
-						concurrentReaders := params.ConcurrentReaders
-						if concurrentReaders == 0 {
-							concurrentReaders = 1
-						}
-						readers := make([][]ReadOp, concurrentReaders)
-						for r := uint32(0); r < concurrentReaders; r++ {
-							readers[r] = generator.GenVersionReadOps(phaseParams)
-						}
-						updates := generator.GenVersionUpdates(phaseParams)
-						if !yield(version, VersionSim{ReaderOps: readers, Updates: updates}) {
-							return
-						}
-					}
-				},
-			}) {
-				return
+
+	loaderParams := LoaderParams{
+		TreeDir:     treeParams.TreeDir,
+		TreeOptions: treeParams.TreeOptions,
+		StoreKeys:   storeKeys,
+		Logger:      treeParams.TreeLogger,
+	}
+
+	tree, err := treeParams.TreeLoader(loaderParams)
+	if err != nil {
+		return fmt.Errorf("failed to load tree: %w", err)
+	}
+
+	// capture exceptions and log stack trace
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("panic occurred", "error", r, "stack", string(debug.Stack()))
+		}
+	}()
+
+	version := tree.Version()
+	logger.Info("starting run",
+		"start_version", version,
+		"gen_params", simParams,
+		"db_dir", treeParams.TreeDir,
+		"db_options", treeParams.TreeOptions,
+		"tree_type", treeParams.TreeType,
+	)
+
+	captureSystemInfo(logger)
+
+	closeCh := make(chan struct{})
+	currentVersion := atomic.Int64{}
+	currentVersion.Store(version)
+	doneCh := measureBackgroundStats(logger, &currentVersion, treeParams.TreeDir, closeCh)
+
+	for _, phase := range simParams.Phases {
+		logger.Info("starting phase", "phase", phase)
+		for version := uint32(1); version <= phase.Versions; version++ {
+			currentVersion.Store(int64(version))
+			if phase.ClearCaches {
+				// Evict all data from the OS page cache before each version
+				// so reads actually hit disk rather than serving from cached mmap pages
+				err := EvictFromPageCache(treeParams.TreeDir)
+				if err != nil {
+					return fmt.Errorf("error evicting from page cache: %w", err)
+				}
+			}
+			err := sim.applyVersion(logger, tree, int64(version), phase)
+			if err != nil {
+				return fmt.Errorf("error applying version %d: %w", version, err)
 			}
 		}
 	}
+
+	err = tree.Close()
+	if err != nil {
+		return fmt.Errorf("error closing tree: %w", err)
+	}
+	logger.Info("closed tree")
+
+	logger.Info(
+		"benchmark run complete",
+		"versions_applied", currentVersion.Load(),
+	)
+
+	close(closeCh)
+	<-doneCh
+
+	err = telemetry.Shutdown(context.Background())
+	if err != nil {
+		logger.Warn("error shutting down telemetry", "error", err)
+		return err
+	}
+
+	return nil
 }
 
-func (g *MultiStoreGenerator) GenVersionReadOps(phaseParams MultiStorePhase) []ReadOp {
+func (g *Simulator) ApplyVersionReadOps(phaseParams MultiStorePhase, tree MultiTree) (int64, error) {
+	var errGroup errgroup.Group
+	var totalReads atomic.Int64
+	for i := uint32(0); i < g.simParams.ConcurrentReaders; i++ {
+		g.applyOneVersionReadOps(&errGroup, &totalReads, phaseParams, tree, i)
+	}
+	return totalReads.Load(), errGroup.Wait()
+}
+
+func (g *Simulator) applyOneVersionReadOps(errGroup *errgroup.Group, totalReads *atomic.Int64, phaseParams MultiStorePhase, tree MultiTree, idx uint32) {
 	remainingCounts := map[string]uint32{}
 	for storeName, storePhaseParams := range phaseParams.Stores {
-		remainingCounts[storeName] = storePhaseParams.Gets
-	}
-
-	var readOps []ReadOp
-
-	// naive algorithm simply iterates over all stores and generates gets until all are done
-	for len(remainingCounts) > 0 {
-		for storeName, count := range remainingCounts {
-			if count == 0 {
-				delete(remainingCounts, storeName)
-				continue
-			}
-			storeGen := g.store[storeName]
-			key := storeGen.GenGet()
-			if key == nil {
-				// no keys to get from this store
-				delete(remainingCounts, storeName)
-				continue
-			}
-			remainingCounts[storeName]--
-			readOps = append(readOps, ReadOp{Store: storeName, Key: key})
+		remainingCounts[storeName] = storePhaseParams.Gets / g.simParams.ConcurrentReaders
+		if idx == 0 {
+			// add any remainder to the first reader
+			remainingCounts[storeName] += storePhaseParams.Gets % g.simParams.ConcurrentReaders
 		}
 	}
 
-	return readOps
+	perThreadRng := rand.New(rand.NewPCG(g.rng.Uint64(), g.rng.Uint64()))
+
+	errGroup.Go(func() error {
+		// naive algorithm simply iterates over all stores and generates gets until all are done
+		for len(remainingCounts) > 0 {
+			for storeName, count := range remainingCounts {
+				if count == 0 {
+					delete(remainingCounts, storeName)
+					continue
+				}
+				storeGen := g.store[storeName]
+				key := storeGen.GenGet(perThreadRng)
+				if key == nil {
+					// no keys to get from this store
+					delete(remainingCounts, storeName)
+					continue
+				}
+				remainingCounts[storeName]--
+				value := tree.GetKVStore(storeGen.storeKey).Get(key)
+				if value == nil {
+					return fmt.Errorf("key not found: store=%s key=%x", storeName, key)
+				}
+				totalReads.Add(1)
+			}
+		}
+		return nil
+	})
 }
 
-func (g *MultiStoreGenerator) GenVersionUpdates(phaseParams MultiStorePhase) map[string]StoreUpdates {
-	result := make(map[string]StoreUpdates)
+func (g *Simulator) ApplyVersionUpdatesToCache(phaseParams MultiStorePhase, cachedTree MultiTree) (int64, error) {
+	var wg errgroup.Group
+	var totalUpdates atomic.Int64
 	for storeName, storePhaseParams := range phaseParams.Stores {
 		storeGen, exists := g.store[storeName]
 		if !exists {
-			panic("store generator not found: " + storeName)
+			return 0, fmt.Errorf("store generator not found: " + storeName)
 		}
-		result[storeName] = storeGen.GenVersionUpdates(storePhaseParams)
+		perThreadRng := rand.New(rand.NewPCG(g.rng.Uint64(), g.rng.Uint64()))
+		// we apply updates in parallel to each cached store,
+		// but this isn't really applying the updates to iavl, just the cache, so this should be safe
+		wg.Go(func() error {
+			err := storeGen.ApplyVersionUpdatesToCache(&totalUpdates, storePhaseParams, cachedTree, perThreadRng)
+			if err != nil {
+				return fmt.Errorf("failed to apply updates for store %s: %w", storeName, err)
+			}
+			return nil
+		})
 	}
-	return result
+	return totalUpdates.Load(), wg.Wait()
 }
 
 type StoreGenerator struct {
-	rng         *rand.Rand
 	insertIndex uint64
 	deleteIndex uint64
 	kvParams    KVParams
 	seed2       uint64
+	storeKey    *storetypes.KVStoreKey
 }
 
-func (g *StoreGenerator) GenGet() []byte {
+func (g *StoreGenerator) GenGet(rng *rand.Rand) []byte {
 	getStartRange := g.deleteIndex
 	getEndRange := g.insertIndex
 	if getEndRange <= getStartRange {
@@ -179,51 +219,42 @@ func (g *StoreGenerator) GenGet() []byte {
 		return nil
 	}
 
-	keyIndex := g.rng.Uint64N(getEndRange-getStartRange) + getStartRange
+	keyIndex := rng.Uint64N(getEndRange-getStartRange) + getStartRange
 	return g.kvParams.GenKey(keyIndex, g.seed2)
 }
 
-func (g *StoreGenerator) GenVersionUpdates(phaseParams StorePhase) StoreUpdates {
+func (g *StoreGenerator) ApplyVersionUpdatesToCache(totalUpdates *atomic.Int64, phaseParams StorePhase, cachedTree MultiTree, rng *rand.Rand) error {
 	updateRangeEnd := g.insertIndex
 	updatesPerVersion := phaseParams.Inserts + phaseParams.Updates + phaseParams.Deletes
 	deleteRatio := float64(phaseParams.Deletes) / float64(updatesPerVersion)
 	insertRatio := float64(phaseParams.Inserts) / float64(updatesPerVersion)
 	updateRatio := 1.0 - insertRatio - deleteRatio
-	var updates []Update
+	store := cachedTree.GetKVStore(g.storeKey)
 	for i := uint32(0); i < updatesPerVersion; i++ {
-		r := g.rng.Float64()
-		var update Update
+		r := rng.Float64()
 		hasOriginalKeys := updateRangeEnd > g.deleteIndex
 
 		if r < deleteRatio && hasOriginalKeys {
 			// delete only when we have some original keys
-			update = Update{
-				Key:    g.kvParams.GenKey(g.deleteIndex, g.seed2),
-				Delete: true,
-			}
+			key := g.kvParams.GenKey(g.deleteIndex, g.seed2)
+			store.Delete(key)
+
 			g.deleteIndex++
 		} else if r < deleteRatio+updateRatio && hasOriginalKeys {
 			// also update only when we have some original keys
-			keyIndex := g.rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
-			update = Update{
-				Key:    g.kvParams.GenKey(keyIndex, g.seed2),
-				Value:  g.kvParams.GenValue(g.rng),
-				Delete: false,
-			}
+			keyIndex := rng.Uint64N(updateRangeEnd-g.deleteIndex) + g.deleteIndex
+			key := g.kvParams.GenKey(keyIndex, g.seed2)
+			value := g.kvParams.GenValue(rng)
+			store.Set(key, value)
 		} else {
 			// otherwise insert
-			update = Update{
-				Key:    g.kvParams.GenKey(g.insertIndex, g.seed2),
-				Value:  g.kvParams.GenValue(g.rng),
-				Delete: false,
-			}
+			key := g.kvParams.GenKey(g.insertIndex, g.seed2)
+			value := g.kvParams.GenValue(rng)
+			store.Set(key, value)
 			g.insertIndex++
 		}
 
-		updates = append(updates, update)
+		totalUpdates.Add(1)
 	}
-	return StoreUpdates{
-		Updates:  updates,
-		TotalOps: updatesPerVersion,
-	}
+	return nil
 }
