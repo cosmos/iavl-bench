@@ -29,6 +29,7 @@ type RunPlan struct {
 func main() {
 	var dryRun bool
 	var outDir string
+	var leaveData bool
 	cmd := &cobra.Command{
 		Use:   "bench-all [plan-file]",
 		Short: "Run all benchmarks in the given JSON/JSONC plan file.",
@@ -36,6 +37,7 @@ func main() {
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
 	cmd.Flags().StringVar(&outDir, "out-dir", "", "If set, the directory to write results to. Defaults to a timestamped directory next to the plan file.")
+	cmd.Flags().BoolVar(&leaveData, "leave-data", false, "If true, the temporary data directories will not be removed after each run.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		planFile := args[0]
 		bz, err := os.ReadFile(planFile)
@@ -69,7 +71,7 @@ func main() {
 
 		for _, run := range plan.Runs {
 			for _, sim := range plan.Simulations {
-				runOne(logger, run, sim, outDir, dryRun)
+				runOne(logger, run, sim, outDir, dryRun, leaveData)
 			}
 		}
 
@@ -80,7 +82,7 @@ func main() {
 	}
 }
 
-func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDir string, dryRun bool) {
+func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDir string, dryRun, leaveData bool) {
 	cfgBz, err := json.Marshal(plan)
 	if err != nil {
 		logger.Error("error marshaling plan", "error", err)
@@ -95,12 +97,16 @@ func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDi
 
 	logger.Info("starting run", "config", string(cfgBz), "simulation", string(simBz))
 	dir := filepath.Join(resultDir, fmt.Sprintf("%s__%s-tmp", plan.RunName, simPlan.Name))
-	err = os.Mkdir(dir, 0700)
-	if err != nil {
-		logger.Error("error creating db dir", "error", err)
-		return
+	if !dryRun {
+		err = os.Mkdir(dir, 0700)
+		if err != nil {
+			logger.Error("error creating db dir", "error", err)
+			return
+		}
+		if !leaveData {
+			defer os.RemoveAll(dir)
+		}
 	}
-	defer os.RemoveAll(dir)
 
 	args := []string{
 		"bench",

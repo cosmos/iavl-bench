@@ -1,4 +1,4 @@
-module bench-iavlx2
+module bench-iavlx
 
 go 1.25.7
 

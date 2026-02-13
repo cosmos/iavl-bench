@@ -27,13 +27,12 @@ func (g *StoreGenerator) GenGet(rng *rand.Rand) []byte {
 	return g.kvParams.GenKey(keyIndex, g.seed2)
 }
 
-func (g *StoreGenerator) ApplyVersionUpdatesToCache(totalUpdates *atomic.Int64, phaseParams StorePhase, cachedTree MultiTree, rng *rand.Rand) error {
+func (g *StoreGenerator) ApplyVersionUpdatesToCache(totalUpdates *atomic.Int64, phaseParams StorePhase, store storetypes.KVStore, rng *rand.Rand) error {
 	updateRangeEnd := g.insertIndex
 	updatesPerVersion := phaseParams.Inserts + phaseParams.Updates + phaseParams.Deletes
 	deleteRatio := float64(phaseParams.Deletes) / float64(updatesPerVersion)
 	insertRatio := float64(phaseParams.Inserts) / float64(updatesPerVersion)
 	updateRatio := 1.0 - insertRatio - deleteRatio
-	store := cachedTree.GetKVStore(g.storeKey)
 	for i := uint32(0); i < updatesPerVersion; i++ {
 		r := rng.Float64()
 		hasOriginalKeys := updateRangeEnd > g.deleteIndex

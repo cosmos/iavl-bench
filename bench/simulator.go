@@ -22,6 +22,7 @@ type simulator struct {
 	rng       *rand.Rand
 	store     map[string]*StoreGenerator
 	simParams SimParams
+	version   atomic.Int64
 }
 
 type TreeParams struct {
@@ -80,14 +81,13 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 	captureSystemInfo(logger)
 
 	closeCh := make(chan struct{})
-	currentVersion := atomic.Int64{}
-	currentVersion.Store(version)
-	doneCh := measureBackgroundStats(logger, &currentVersion, treeParams.TreeDir, closeCh)
+	sim.version.Store(version)
+	doneCh := measureBackgroundStats(logger, &sim.version, treeParams.TreeDir, closeCh)
 
 	for _, phase := range simParams.Phases {
 		logger.Info("starting phase", "phase", phase)
-		for version := uint32(1); version <= phase.Versions; version++ {
-			currentVersion.Store(int64(version))
+		for phaseVersion := uint32(1); phaseVersion <= phase.Versions; phaseVersion++ {
+			sim.version.Add(1)
 			if phase.ClearCaches {
 				// Evict all data from the OS page cache before each version
 				// so reads actually hit disk rather than serving from cached mmap pages
@@ -96,9 +96,9 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 					return fmt.Errorf("error evicting from page cache: %w", err)
 				}
 			}
-			err := sim.applyVersion(logger, tree, int64(version), phase)
+			err := sim.applyVersion(logger, tree, phase)
 			if err != nil {
-				return fmt.Errorf("error applying version %d: %w", version, err)
+				return fmt.Errorf("error applying version %d: %w", sim.version.Load(), err)
 			}
 		}
 	}
@@ -111,7 +111,7 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 
 	logger.Info(
 		"benchmark run complete",
-		"versions_applied", currentVersion.Load(),
+		"versions_applied", sim.version.Load(),
 	)
 
 	close(closeCh)
@@ -126,83 +126,13 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 	return nil
 }
 
-func (sim *simulator) ApplyVersionReadOps(phaseParams MultiStorePhase, tree MultiTree) (int64, error) {
-	var errGroup errgroup.Group
-	var totalReads atomic.Int64
-	for i := uint32(0); i < sim.simParams.ConcurrentReaders; i++ {
-		sim.applyOneVersionReadOps(&errGroup, &totalReads, phaseParams, tree, i)
-	}
-	return totalReads.Load(), errGroup.Wait()
-}
-
-func (sim *simulator) applyOneVersionReadOps(errGroup *errgroup.Group, totalReads *atomic.Int64, phaseParams MultiStorePhase, tree MultiTree, idx uint32) {
-	remainingCounts := map[string]uint32{}
-	for storeName, storePhaseParams := range phaseParams.Stores {
-		remainingCounts[storeName] = storePhaseParams.Gets / sim.simParams.ConcurrentReaders
-		if idx == 0 {
-			// add any remainder to the first reader
-			remainingCounts[storeName] += storePhaseParams.Gets % sim.simParams.ConcurrentReaders
-		}
-	}
-
-	perThreadRng := rand.New(rand.NewPCG(sim.rng.Uint64(), sim.rng.Uint64()))
-
-	errGroup.Go(func() error {
-		// naive algorithm simply iterates over all stores and generates gets until all are done
-		for len(remainingCounts) > 0 {
-			for storeName, count := range remainingCounts {
-				if count == 0 {
-					delete(remainingCounts, storeName)
-					continue
-				}
-				storeGen := sim.store[storeName]
-				key := storeGen.GenGet(perThreadRng)
-				if key == nil {
-					// no keys to get from this store
-					delete(remainingCounts, storeName)
-					continue
-				}
-				remainingCounts[storeName]--
-				value := tree.GetKVStore(storeGen.storeKey).Get(key)
-				if value == nil {
-					return fmt.Errorf("key not found: store=%s key=%x", storeName, key)
-				}
-				totalReads.Add(1)
-			}
-		}
-		return nil
-	})
-}
-
-func (sim *simulator) ApplyVersionUpdatesToCache(phaseParams MultiStorePhase, cachedTree MultiTree) (int64, error) {
-	var wg errgroup.Group
-	var totalUpdates atomic.Int64
-	for storeName, storePhaseParams := range phaseParams.Stores {
-		storeGen, exists := sim.store[storeName]
-		if !exists {
-			return 0, fmt.Errorf("store generator not found: " + storeName)
-		}
-		perThreadRng := rand.New(rand.NewPCG(sim.rng.Uint64(), sim.rng.Uint64()))
-		// we apply updates in parallel to each cached store,
-		// but this isn't really applying the updates to iavl, just the cache, so this should be safe
-		wg.Go(func() error {
-			err := storeGen.ApplyVersionUpdatesToCache(&totalUpdates, storePhaseParams, cachedTree, perThreadRng)
-			if err != nil {
-				return fmt.Errorf("failed to apply updates for store %s: %w", storeName, err)
-			}
-			return nil
-		})
-	}
-	return totalUpdates.Load(), wg.Wait()
-}
-
-func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, version int64, phaseParams MultiStorePhase) error {
+func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, phaseParams MultiStorePhase) error {
+	version := sim.version.Load()
 	logger.Info("simulating reads", "version", version, "concurrent_readers", sim.simParams.ConcurrentReaders)
 
 	startReadTime := time.Now()
 
-	cacheMt := tree.CacheMultiTree()
-	totalReads, err := sim.ApplyVersionReadOps(phaseParams, cacheMt)
+	totalReads, err := sim.applyVersionReadOps(phaseParams, tree)
 	if err != nil {
 		return fmt.Errorf("error applying read ops for version %d: %w", version, err)
 	}
@@ -217,7 +147,8 @@ func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, vers
 
 	logger.Info("applying updates to cache mutlistore", "version", version)
 
-	totalUpdates, err := sim.ApplyVersionUpdatesToCache(phaseParams, cacheMt)
+	cacheMt := tree.CacheMultiTree()
+	totalUpdates, err := sim.applyVersionUpdatesToCache(phaseParams, cacheMt)
 	if err != nil {
 		return fmt.Errorf("error applying updates to cache for version %d: %w", version, err)
 	}
@@ -250,6 +181,79 @@ func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, vers
 	)
 
 	return nil
+}
+
+func (sim *simulator) applyVersionReadOps(phaseParams MultiStorePhase, tree RootMultiTree) (int64, error) {
+	var errGroup errgroup.Group
+	var totalReads atomic.Int64
+	for i := uint32(0); i < sim.simParams.ConcurrentReaders; i++ {
+		sim.applyVersionReadOpsThread(&errGroup, &totalReads, phaseParams, tree, i)
+	}
+	return totalReads.Load(), errGroup.Wait()
+}
+
+func (sim *simulator) applyVersionReadOpsThread(errGroup *errgroup.Group, totalReads *atomic.Int64, phaseParams MultiStorePhase, tree RootMultiTree, idx uint32) {
+	remainingCounts := map[string]uint32{}
+	for storeName, storePhaseParams := range phaseParams.Stores {
+		remainingCounts[storeName] = storePhaseParams.Gets / sim.simParams.ConcurrentReaders
+		if idx == 0 {
+			// add any remainder to the first reader
+			remainingCounts[storeName] += storePhaseParams.Gets % sim.simParams.ConcurrentReaders
+		}
+	}
+
+	perThreadRng := rand.New(rand.NewPCG(sim.rng.Uint64(), sim.rng.Uint64()))
+
+	errGroup.Go(func() error {
+		// each thread gets its own cached tree against the latest state
+		cachedTree := tree.CacheMultiTree()
+		// naive algorithm simply iterates over all stores and generates gets until all are done
+		for len(remainingCounts) > 0 {
+			for storeName, count := range remainingCounts {
+				if count == 0 {
+					delete(remainingCounts, storeName)
+					continue
+				}
+				storeGen := sim.store[storeName]
+				key := storeGen.GenGet(perThreadRng)
+				if key == nil {
+					// no keys to get from this store
+					delete(remainingCounts, storeName)
+					continue
+				}
+				remainingCounts[storeName]--
+				value := cachedTree.GetKVStore(storeGen.storeKey).Get(key)
+				if value == nil {
+					return fmt.Errorf("key not found: store=%s key=%x", storeName, key)
+				}
+				totalReads.Add(1)
+			}
+		}
+		return nil
+	})
+}
+
+func (sim *simulator) applyVersionUpdatesToCache(phaseParams MultiStorePhase, cachedTree MultiTree) (int64, error) {
+	var wg errgroup.Group
+	var totalUpdates atomic.Int64
+	for storeName, storePhaseParams := range phaseParams.Stores {
+		storeGen, exists := sim.store[storeName]
+		if !exists {
+			return 0, fmt.Errorf("store generator not found: " + storeName)
+		}
+		perThreadRng := rand.New(rand.NewPCG(sim.rng.Uint64(), sim.rng.Uint64()))
+		// we apply updates in parallel to each cached store,
+		// but this isn't really applying the updates to iavl, just the cache, so this should be safe
+		store := cachedTree.GetKVStore(storeGen.storeKey)
+		wg.Go(func() error {
+			err := storeGen.ApplyVersionUpdatesToCache(&totalUpdates, storePhaseParams, store, perThreadRng)
+			if err != nil {
+				return fmt.Errorf("failed to apply updates for store %s: %w", storeName, err)
+			}
+			return nil
+		})
+	}
+	return totalUpdates.Load(), wg.Wait()
 }
 
 func measureBackgroundStats(logger *slog.Logger, currentVersion *atomic.Int64, path string, closeCh <-chan struct{}) <-chan struct{} {
