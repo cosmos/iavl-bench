@@ -12,7 +12,7 @@ type RootMultiTree interface {
 	// CacheMultiTree should return a new MultiTree instance that allows cached writes that get committed when Commit gets called.
 	CacheMultiTree() MultiTree
 	// Commit should persist all changes made since the last commit and return the new version's hash.
-	Commit(multiTree MultiTree) error
+	Commit(multiTree MultiTree) (storetypes.CommitID, error)
 	io.Closer
 }
 

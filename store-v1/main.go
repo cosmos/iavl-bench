@@ -34,10 +34,10 @@ func (s *CommitMultiStoreWrapper) CacheMultiTree() bench.MultiTree {
 	return s.store.CacheMultiStore()
 }
 
-func (s *CommitMultiStoreWrapper) Commit(multiTree bench.MultiTree) error {
+func (s *CommitMultiStoreWrapper) Commit(multiTree bench.MultiTree) (types.CommitID, error) {
 	multiTree.(types.CacheMultiStore).Write()
-	s.store.Commit()
-	return nil
+	cid := s.store.Commit()
+	return cid, nil
 }
 
 func (s *CommitMultiStoreWrapper) Close() error {

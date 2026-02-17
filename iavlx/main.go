@@ -44,13 +44,12 @@ func (m *multiTree) CacheMultiTree() bench.MultiTree {
 	return m.mt.CacheMultiStore()
 }
 
-func (m *multiTree) Commit(multiTree bench.MultiTree) error {
+func (m *multiTree) Commit(multiTree bench.MultiTree) (storetypes.CommitID, error) {
 	finalizer, err := m.mt.StartCommit(context.Background(), multiTree.(storetypes.MultiStore), cmtproto.Header{})
 	if err != nil {
-		return fmt.Errorf("failed to start commit: %w", err)
+		return storetypes.CommitID{}, fmt.Errorf("failed to start commit: %w", err)
 	}
-	_, err = finalizer.Finalize()
-	return err
+	return finalizer.Finalize()
 }
 
 func (m *multiTree) Close() error {

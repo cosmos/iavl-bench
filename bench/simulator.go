@@ -156,12 +156,12 @@ func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, phas
 	logger.Info("applying changeset", "version", version)
 	startTime := time.Now()
 
-	err = tree.Commit(cacheMt)
+	commitId, err := tree.Commit(cacheMt)
 	if err != nil {
 		return fmt.Errorf("error committing version %d: %w", version, err)
 	}
 
-	if tree.Version() != version {
+	if commitId.Version != version {
 		return fmt.Errorf("committed version %d does not match expected version %d", tree.Version(), version)
 	}
 
@@ -178,6 +178,7 @@ func (sim *simulator) applyVersion(logger *slog.Logger, tree RootMultiTree, phas
 		"count", totalUpdates,
 		"ops_per_sec", opsPerSec,
 		"total_size", totalSize,
+		"hash", commitId.Hash,
 	)
 
 	return nil

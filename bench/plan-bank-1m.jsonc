@@ -1,11 +1,14 @@
 {
   "configs": [
     {
-      "name": "iavlx-pruning",
+      "name": "iavlx-e1",
       "runner": "bench-iavlx",
       "options": {
         "db": {
-          "checkpoint_interval": 500,
+          "checkpoint_interval": 100,
+          "branch_evict_depth": 1,
+          "leaf_evict_depth": 1,
+          "root_cache_size": -1,
         },
         "pruning": {
             "KeepRecent": 3,
@@ -13,24 +16,24 @@
         }
       },
     },
-    {
-      "name": "memiavl",
-      "runner": "bench-memiavl",
-      "options": {
-        "snapshot_interval": 1000,
-        "snapshot_keep_recent": 1
-      }
-    },
+//    {
+//      "name": "memiavl",
+//      "runner": "bench-memiavl",
+//      "options": {
+//        "snapshot_interval": 1000,
+//        "snapshot_keep_recent": 1
+//      }
+//    },
 //    {
 //      "name": "iavl-v1-memdb",
 //      "runner": "bench-iavl-v1",
 //      "options": {"mem":  true}
 //    },
-    {
-      "name": "iavl-v1",
-      "runner": "bench-iavl-v1",
-//      "options": {"cache_size": 2000000}
-    }
+//    {
+//      "name": "iavl-v1",
+//      "runner": "bench-iavl-v1",
+////      "options": {"cache_size": 2000000}
+//    }
   ],
   "simulations": [
     {
