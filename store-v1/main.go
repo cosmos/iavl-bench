@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	"cosmossdk.io/store/types"
 
 	"github.com/cosmos/iavl-bench/bench"
@@ -28,6 +29,10 @@ func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeKeys []*types
 
 func (s *CommitMultiStoreWrapper) Version() int64 {
 	return s.store.LatestVersion()
+}
+
+func (s *CommitMultiStoreWrapper) SetPruning(pruning pruningtypes.PruningOptions) {
+	s.store.SetPruning(pruning)
 }
 
 func (s *CommitMultiStoreWrapper) CacheMultiTree() bench.MultiTree {

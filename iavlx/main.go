@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"cosmossdk.io/store/pruning/types"
+	"cosmossdk.io/log/v2"
+	"cosmossdk.io/log/v2/slog"
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	storetypes "cosmossdk.io/store/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cosmos/cosmos-sdk/iavl"
@@ -15,15 +17,14 @@ import (
 )
 
 type multiTree struct {
-	mt *iavl.CommitMultiTree
+	mt storetypes.CommitMultiStore
 }
 
-func NewMultiTree(storeKeys []*storetypes.KVStoreKey, dir string, opts Options) (bench.RootMultiTree, error) {
-	mt, err := iavl.LoadCommitMultiTree(dir, opts.DB)
+func NewMultiTree(storeKeys []*storetypes.KVStoreKey, dir string, opts iavl.Options, logger log.Logger) (bench.RootMultiTree, error) {
+	mt, err := iavl.LoadCommitMultiTree(dir, opts, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load commit multi tree: %w", err)
 	}
-	mt.SetPruning(opts.Pruning)
 	for _, key := range storeKeys {
 		mt.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
 	}
@@ -38,6 +39,10 @@ func NewMultiTree(storeKeys []*storetypes.KVStoreKey, dir string, opts Options) 
 
 func (m *multiTree) Version() int64 {
 	return m.mt.LatestVersion()
+}
+
+func (m *multiTree) SetPruning(pruning pruningtypes.PruningOptions) {
+	m.mt.SetPruning(pruning)
 }
 
 func (m *multiTree) CacheMultiTree() bench.MultiTree {
@@ -59,21 +64,16 @@ func (m *multiTree) Close() error {
 	)
 }
 
-type Options struct {
-	DB      iavl.Options         `json:"db"`
-	Pruning types.PruningOptions `json:"pruning"`
-}
-
 func main() {
 	bench.Run("iavlx", bench.RunConfig{
-		OptionsType: &Options{},
+		OptionsType: &iavl.Options{},
 		TreeLoader: func(params bench.LoaderParams) (bench.RootMultiTree, error) {
-			opts := params.TreeOptions.(*Options)
+			opts := params.TreeOptions.(*iavl.Options)
 			if opts == nil {
-				opts = &Options{}
+				opts = &iavl.Options{}
 			}
 
-			mt, err := NewMultiTree(params.StoreKeys, params.TreeDir, *opts)
+			mt, err := NewMultiTree(params.StoreKeys, params.TreeDir, *opts, slog.NewCustomLogger(params.Logger))
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multi tree: %w", err)
 			}

@@ -2,6 +2,7 @@ package bench
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -10,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/dustin/go-humanize"
@@ -26,11 +28,12 @@ type simulator struct {
 }
 
 type TreeParams struct {
-	TreeLogger  *slog.Logger
-	TreeLoader  TreeLoader
-	TreeDir     string
-	TreeOptions any
-	TreeType    string
+	TreeLogger     *slog.Logger
+	TreeLoader     TreeLoader
+	TreeDir        string
+	TreeOptions    any
+	TreeType       string
+	PruningOptions string
 }
 
 func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimParams) error {
@@ -62,6 +65,15 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 		return fmt.Errorf("failed to load tree: %w", err)
 	}
 
+	if treeParams.PruningOptions != "" {
+		var pruningOpts pruningtypes.PruningOptions
+		err = json.Unmarshal([]byte(treeParams.PruningOptions), &pruningOpts)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal pruning options: %w", err)
+		}
+		tree.SetPruning(pruningOpts)
+	}
+
 	// capture exceptions and log stack trace
 	defer func() {
 		if r := recover(); r != nil {
@@ -75,6 +87,7 @@ func RunSimulation(logger *slog.Logger, treeParams TreeParams, simParams SimPara
 		"gen_params", simParams,
 		"db_dir", treeParams.TreeDir,
 		"db_options", treeParams.TreeOptions,
+		"pruning_options", treeParams.PruningOptions,
 		"tree_type", treeParams.TreeType,
 	)
 

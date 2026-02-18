@@ -9,6 +9,7 @@ replace github.com/cosmos/cosmos-sdk => ../../../cosmos-sdk
 replace cosmossdk.io/store => ../../../cosmos-sdk/store
 
 require (
+	cosmossdk.io/log/v2 v2.0.1
 	cosmossdk.io/store v1.3.0-beta.0
 	github.com/cometbft/cometbft v0.39.0-beta.2
 	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260108215426-335db329d76d
@@ -16,8 +17,7 @@ require (
 )
 
 require (
-	cosmossdk.io/errors v1.0.2 // indirect
-	cosmossdk.io/log/v2 v2.0.1 // indirect
+	cosmossdk.io/errors v1.1.0 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
@@ -91,7 +91,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.65.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.65.0 // indirect
 	go.opentelemetry.io/contrib/otelconf v0.20.0 // indirect

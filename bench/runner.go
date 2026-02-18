@@ -45,6 +45,7 @@ func (r Runner) Run() {
 func NewRunner(treeType string, cfg RunConfig) Runner {
 	var treeDir string
 	var treeOptions string
+	var pruningOptions string
 	var genOptions string
 	var logHandlerType string
 	var logFile string
@@ -54,6 +55,7 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 	}
 	cmd.Flags().StringVar(&treeDir, "db-dir", "", "Directory for the db's data.")
 	cmd.Flags().StringVar(&treeOptions, "db-options", "", "Implementation specific options for the db, in JSON format.")
+	cmd.Flags().StringVar(&pruningOptions, "pruning-options", "", "Pruning options, in JSON format.")
 	cmd.Flags().StringVar(&genOptions, "gen-options", "", "Changeset generator params, in JSON format.")
 	cmd.Flags().StringVar(&logHandlerType, "log-type", "text", "Log handler type. One of 'text' or 'json'.")
 	cmd.Flags().StringVar(&logFile, "log-file", "", "If set, log output will be written to this file instead of stdout.")
@@ -133,11 +135,12 @@ func NewRunner(treeType string, cfg RunConfig) Runner {
 		logger.Info("Starting benchmark run, loading tree")
 
 		return RunSimulation(logger, TreeParams{
-			TreeLogger:  treeLogger,
-			TreeLoader:  cfg.TreeLoader,
-			TreeDir:     treeDir,
-			TreeOptions: parsedOpts,
-			TreeType:    treeType,
+			TreeLogger:     treeLogger,
+			TreeLoader:     cfg.TreeLoader,
+			TreeDir:        treeDir,
+			TreeOptions:    parsedOpts,
+			TreeType:       treeType,
+			PruningOptions: pruningOptions,
 		}, genParams)
 	}
 

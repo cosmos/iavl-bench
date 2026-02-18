@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/jsonc"
 
@@ -21,9 +22,10 @@ type Plan struct {
 }
 
 type RunPlan struct {
-	RunName string          `json:"name"`
-	Runner  string          `json:"runner"`
-	Options json.RawMessage `json:"options"`
+	RunName string                       `json:"name"`
+	Runner  string                       `json:"runner"`
+	Options json.RawMessage              `json:"options"`
+	Pruning *pruningtypes.PruningOptions `json:"pruning,omitempty"`
 }
 
 func main() {
@@ -122,6 +124,14 @@ func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDi
 
 	if plan.Options != nil {
 		args = append(args, "--db-options", string(plan.Options))
+	}
+
+	if plan.Pruning != nil {
+		jsonBz, err := json.Marshal(plan.Pruning)
+		if err != nil {
+			logger.Error("error marshaling pruning options", "error", err)
+		}
+		args = append(args, "--pruning-options", string(jsonBz))
 	}
 
 	cmd := exec.Command(plan.Runner, args...)
