@@ -11,7 +11,7 @@ replace cosmossdk.io/store => ../../../cosmos-sdk/store
 require (
 	cosmossdk.io/log/v2 v2.0.1
 	cosmossdk.io/store v1.3.0-beta.0
-	github.com/cometbft/cometbft v0.39.0-beta.2
+	github.com/cometbft/cometbft v0.39.0-beta.2.0.20260219154603-da56c5f931bf
 	github.com/cosmos/cosmos-sdk v0.54.0-rc.1.0.20260108215426-335db329d76d
 	github.com/cosmos/iavl-bench/bench v0.0.0-00010101000000-000000000000
 )
@@ -34,6 +34,7 @@ require (
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
+	github.com/cosmos/btree v1.0.0 // indirect
 	github.com/cosmos/cosmos-db v1.1.3 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogoproto v1.7.2 // indirect
