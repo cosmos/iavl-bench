@@ -1,12 +1,14 @@
 {
   "configs": [
     {
-      "name": "iavlx",
+      "name": "iavlx-long",
       "runner": "bench-iavlx",
-      "options": {},
+      "options": {
+        "changeset_rollover_size": 1048576 // 1 MiB
+      },
       "pruning": {
         "KeepRecent": 3,
-        "Interval": 500
+        "Interval": 100
       }
     }
     //    {
@@ -60,7 +62,7 @@
           }
         },
         {
-          "versions": 2000,
+          "versions": 20000,
           "stores": {
             "auth": {
               "gets": 20000,
