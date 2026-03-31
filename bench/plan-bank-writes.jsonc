@@ -7,6 +7,12 @@
       "pruning": {}
     },
     {
+      "name": "memiavl",
+      "runner": "bench-memiavl",
+      "options": {},
+      "pruning": {}
+    },
+    {
       "name": "iavl-v1",
       "runner": "bench-iavl-v1",
       "options": {},
