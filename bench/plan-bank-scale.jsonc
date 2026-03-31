@@ -32,7 +32,7 @@
         },
         {
           "versions": 1000,
-          "stores": { "bank": { "updates": 2000 } }
+          "stores": { "bank": { "updates": 20000 } }
         }
       ]
     },
@@ -64,7 +64,7 @@
         },
         {
           "versions": 1000,
-          "stores": { "bank": { "updates": 200000 } }
+          "stores": { "bank": { "updates": 20000 } }
         }
       ]
     }
