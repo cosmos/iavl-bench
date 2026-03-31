@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	pruningtypes "cosmossdk.io/store/pruning/types"
-	storetypes "cosmossdk.io/store/types"
+	pruningtypes "github.com/cosmos/cosmos-sdk/store/v2/pruning/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/dustin/go-humanize"
 	"github.com/shirou/gopsutil/v4/cpu"

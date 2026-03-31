@@ -8,7 +8,7 @@ import (
 	"os"
 	"reflect"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/spf13/cobra"
 )
 

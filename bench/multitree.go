@@ -3,8 +3,8 @@ package bench
 import (
 	"io"
 
-	pruningtypes "cosmossdk.io/store/pruning/types"
-	storetypes "cosmossdk.io/store/types"
+	pruningtypes "github.com/cosmos/cosmos-sdk/store/v2/pruning/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 )
 
 type RootMultiTree interface {
