@@ -37,22 +37,6 @@
       ]
     },
     {
-      "name": "bank-500k",
-      "stores": [
-        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-      ],
-      "phases": [
-        {
-          "versions": 100,
-          "stores": { "bank": { "inserts": 5000 } }
-        },
-        {
-          "versions": 1000,
-          "stores": { "bank": { "updates": 10000 } }
-        }
-      ]
-    },
-    {
       "name": "bank-1m",
       "stores": [
         { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
@@ -65,22 +49,6 @@
         {
           "versions": 1000,
           "stores": { "bank": { "updates": 20000 } }
-        }
-      ]
-    },
-    {
-      "name": "bank-5m",
-      "stores": [
-        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
-      ],
-      "phases": [
-        {
-          "versions": 100,
-          "stores": { "bank": { "inserts": 50000 } }
-        },
-        {
-          "versions": 1000,
-          "stores": { "bank": { "updates": 100000 } }
         }
       ]
     },
