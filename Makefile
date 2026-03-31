@@ -1,9 +1,10 @@
 install:
 	cd bench && go install ./cmd/iavl-bench-all
 	cd iavlx && go install .
-	cd store-v1/latest && go install .
-	cd store-v1/memiavl && go install .
-	cd store-v1/iavl-v2 && go install .
+# TODO: the other benchmarking tools need to be updated for store/v2 incompatibility unfortunately
+#	cd store-v1/latest && go install .
+#	cd store-v1/memiavl && go install .
+#	cd store-v1/iavl-v2 && go install .
 #	cd iavl-v0 && go install .
 #	cd iavl-v1 && go install .
 #	cd iavl-v2/alpha5 && go install .
