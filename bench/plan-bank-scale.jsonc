@@ -1,0 +1,104 @@
+{
+  "configs": [
+    {
+      "name": "iavlx",
+      "runner": "bench-iavlx",
+      "options": {},
+      "pruning": {}
+    },
+    {
+      "name": "memiavl",
+      "runner": "bench-memiavl",
+      "options": {},
+      "pruning": {}
+    },
+    {
+      "name": "iavl-v1",
+      "runner": "bench-iavl-v1",
+      "options": {},
+      "pruning": {}
+    }
+  ],
+  "simulations": [
+    {
+      "name": "bank-100k",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 1000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": { "bank": { "updates": 2000 } }
+        }
+      ]
+    },
+    {
+      "name": "bank-500k",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 5000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": { "bank": { "updates": 10000 } }
+        }
+      ]
+    },
+    {
+      "name": "bank-1m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 10000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": { "bank": { "updates": 20000 } }
+        }
+      ]
+    },
+    {
+      "name": "bank-5m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 50000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": { "bank": { "updates": 100000 } }
+        }
+      ]
+    },
+    {
+      "name": "bank-10m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 100000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": { "bank": { "updates": 200000 } }
+        }
+      ]
+    }
+  ]
+}
