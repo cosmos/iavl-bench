@@ -1,0 +1,81 @@
+{
+  "configs": [
+    {
+      "name": "iavlx-long",
+      "runner": "bench-iavlx",
+      "options": {
+        "changeset_rollover_size": 1048576 // 1 MiB
+      },
+      "pruning": {
+        "KeepRecent": 3,
+        "Interval": 100
+      }
+    }
+    //    {
+    //      "name": "memiavl",
+    //      "runner": "bench-memiavl",
+    //      "options": {
+    //        "snapshot_interval": 1000,
+    //        "snapshot_keep_recent": 1
+    //      }
+    //    },
+    //    {
+    //      "name": "iavl-v1-memdb",
+    //      "runner": "bench-iavl-v1",
+    //      "options": {"mem":  true}
+    //    },
+    //    {
+    //      "name": "iavl-v1",
+    //      "runner": "bench-iavl-v1",
+    ////      "options": {"cache_size": 2000000}
+    //    }
+  ],
+  "simulations": [
+    {
+      "name": "bank-1m",
+      "stores": [
+        {
+          "name": "auth",
+          "key_len_mean": 33,
+          "key_len_stddev": 3,
+          "value_len_mean": 128,
+          "value_len_stddev": 2
+        },
+        {
+          "name": "bank",
+          "key_len_mean": 56,
+          "key_len_stddev": 3,
+          "value_len_mean": 16,
+          "value_len_stddev": 2
+        }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "auth": {
+              "inserts": 10000
+            },
+            "bank": {
+              "inserts": 10000
+            }
+          }
+        },
+        {
+          "versions": 20000,
+          "stores": {
+            "auth": {
+              "gets": 20000,
+              "updates": 10000
+            },
+            "bank": {
+              "gets": 30000,
+              "updates": 20000
+            }
+          }
+        }
+      ],
+      "concurrent_readers": 32
+    }
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "configs": [
+    {
+      "name": "iavlx",
+      "runner": "bench-iavlx",
+      "options": {},
+      "pruning": {}
+    },
+    {
+      "name": "memiavl",
+      "runner": "bench-memiavl",
+      "options": {},
+      "pruning": {}
+    },
+    {
+      "name": "iavl-v1",
+      "runner": "bench-iavl-v1",
+      "options": {},
+      "pruning": {}
+    }
+  ],
+  "simulations": [
+    {
+      "name": "bank-1m",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": { "bank": { "inserts": 10000 } }
+        },
+        {
+          "versions": 1000,
+          "stores": {
+            "bank": { "updates": 20000 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bank-1mx2",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "bank": { "inserts": 10000 },
+            "bank2": { "inserts": 10000 }
+          }
+        },
+        {
+          "versions": 1000,
+          "stores": {
+            "bank": { "updates": 20000 },
+            "bank2": { "updates": 20000 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bank-1mx4",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "bank": { "inserts": 10000 },
+            "bank2": { "inserts": 10000 },
+            "bank3": { "inserts": 10000 },
+            "bank4": { "inserts": 10000 }
+          }
+        },
+        {
+          "versions": 1000,
+          "stores": {
+            "bank": { "updates": 20000 },
+            "bank2": { "updates": 20000 },
+            "bank3": { "updates": 20000 },
+            "bank4": { "updates": 20000 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bank-1mx8",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank6", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank7", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank8", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "bank": { "inserts": 10000 },
+            "bank2": { "inserts": 10000 },
+            "bank3": { "inserts": 10000 },
+            "bank4": { "inserts": 10000 },
+            "bank5": { "inserts": 10000 },
+            "bank6": { "inserts": 10000 },
+            "bank7": { "inserts": 10000 },
+            "bank8": { "inserts": 10000 }
+          }
+        },
+        {
+          "versions": 1000,
+          "stores": {
+            "bank": { "updates": 20000 },
+            "bank2": { "updates": 20000 },
+            "bank3": { "updates": 20000 },
+            "bank4": { "updates": 20000 },
+            "bank5": { "updates": 20000 },
+            "bank6": { "updates": 20000 },
+            "bank7": { "updates": 20000 },
+            "bank8": { "updates": 20000 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bank-1mx16",
+      "stores": [
+        { "name": "bank", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank2", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank3", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank4", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank5", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank6", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank7", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank8", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank9", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank10", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank11", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank12", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank13", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank14", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank15", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 },
+        { "name": "bank16", "key_len_mean": 56, "key_len_stddev": 3, "value_len_mean": 16, "value_len_stddev": 2 }
+      ],
+      "phases": [
+        {
+          "versions": 100,
+          "stores": {
+            "bank": { "inserts": 10000 },
+            "bank2": { "inserts": 10000 },
+            "bank3": { "inserts": 10000 },
+            "bank4": { "inserts": 10000 },
+            "bank5": { "inserts": 10000 },
+            "bank6": { "inserts": 10000 },
+            "bank7": { "inserts": 10000 },
+            "bank8": { "inserts": 10000 },
+            "bank9": { "inserts": 10000 },
+            "bank10": { "inserts": 10000 },
+            "bank11": { "inserts": 10000 },
+            "bank12": { "inserts": 10000 },
+            "bank13": { "inserts": 10000 },
+            "bank14": { "inserts": 10000 },
+            "bank15": { "inserts": 10000 },
+            "bank16": { "inserts": 10000 }
+          }
+        },
+        {
+          "versions": 1000,
+          "stores": {
+            "bank": { "updates": 20000 },
+            "bank2": { "updates": 20000 },
+            "bank3": { "updates": 20000 },
+            "bank4": { "updates": 20000 },
+            "bank5": { "updates": 20000 },
+            "bank6": { "updates": 20000 },
+            "bank7": { "updates": 20000 },
+            "bank8": { "updates": 20000 },
+            "bank9": { "updates": 20000 },
+            "bank10": { "updates": 20000 },
+            "bank11": { "updates": 20000 },
+            "bank12": { "updates": 20000 },
+            "bank13": { "updates": 20000 },
+            "bank14": { "updates": 20000 },
+            "bank15": { "updates": 20000 },
+            "bank16": { "updates": 20000 }
+          }
+        }
+      ]
+    }
+  ]
+}

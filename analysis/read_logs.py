@@ -21,7 +21,10 @@ class BenchmarkData:
     versions_df: pl.DataFrame
     mem_df: pl.DataFrame
     disk_df: pl.DataFrame
+    disk_io_df: pl.DataFrame  # disk I/O counters from gopsutil
+    cpu_df: pl.DataFrame  # CPU usage from gopsutil
     memiavl_snapshots: Optional[pl.DataFrame]
+    version_reads_df: pl.DataFrame  # read simulation stats per version
 
 
 def row_iterator(path: str) -> Generator[dict, None, None]:
@@ -30,16 +33,42 @@ def row_iterator(path: str) -> Generator[dict, None, None]:
             yield json.loads(line)
 
 
+def _determine_primary_disk(path: str) -> Optional[str]:
+    """First pass: determine which disk has the most total I/O activity."""
+    disk_totals = {}  # disk_name -> (read_bytes, write_bytes) at last reading
+
+    for row in row_iterator(path):
+        msg = row.get('msg')
+        if msg == 'disk io counters' or msg == 'initial disk io counters':
+            counters = row.get('disk_io_counters', {})
+            for name, data in counters.items():
+                if name.startswith('loop'):
+                    continue
+                disk_totals[name] = (data.get('readBytes', 0), data.get('writeBytes', 0))
+
+    if not disk_totals:
+        return None
+
+    # Pick the disk with the highest total I/O at the end of the run
+    return max(disk_totals.keys(), key=lambda n: sum(disk_totals[n]))
+
+
 def load_benchmark_log(path: str) -> BenchmarkData:
     """Parse benchmark log and extract raw time-series data."""
     name = os.path.basename(path).removesuffix('.jsonl')
+
+    # First pass: determine primary disk for consistent I/O tracking
+    primary_disk = _determine_primary_disk(path)
 
     init_data = None
     run_complete_time = None
     version_rows = []
     mem_rows = []
     disk_rows = []
+    disk_io_rows = []
+    cpu_rows = []
     memiavl_snapshot_data = []
+    version_read_rows = []
 
     for row in row_iterator(path):
         msg = row.get('msg')
@@ -109,6 +138,41 @@ def load_benchmark_log(path: str) -> BenchmarkData:
                     'gc_pause_total': ms['PauseTotalNs'],
                     'gc_cpu_fraction': ms['GCCPUFraction'],
                 })
+        elif msg == 'disk io counters' or msg == 'initial disk io counters':
+            counters = row.get('disk_io_counters', {})
+            # Use the pre-determined primary disk for consistent tracking
+            if primary_disk and primary_disk in counters:
+                disk_data = counters[primary_disk].copy()
+                disk_data['version'] = row.get('version', 0)
+                disk_data['timestamp'] = timestamp
+                disk_io_rows.append(disk_data)
+        elif msg == 'cpu usage':
+            cpu_percents = row.get('cpu_percents', [])
+            cpu_times = row.get('cpu_times', [])
+            if cpu_percents:
+                cpu_rows.append({
+                    'version': row.get('version', 0),
+                    'timestamp': timestamp,
+                    'avg_cpu_pct': sum(cpu_percents) / len(cpu_percents),
+                    'total_cpu_pct': sum(cpu_percents),
+                    'max_cpu_pct': max(cpu_percents),
+                    'num_cpus': len(cpu_percents),
+                    # Cumulative times (seconds) summed across CPUs - use diff() to get rates
+                    'user': sum(t.get('user', 0) for t in cpu_times),
+                    'system': sum(t.get('system', 0) for t in cpu_times),
+                    'idle': sum(t.get('idle', 0) for t in cpu_times),
+                    'iowait': sum(t.get('iowait', 0) for t in cpu_times),
+                    # Max iowait from any single CPU (to detect single-threaded I/O bottleneck)
+                    'iowait_max': max((t.get('iowait', 0) for t in cpu_times), default=0),
+                })
+        elif msg == 'completed reads':
+            version_read_rows.append({
+                'version': row['version'],
+                'timestamp': timestamp,
+                'total_reads': row['total_reads'],
+                'duration': row['duration'],
+                'concurrent_readers': row['concurrent_readers'],
+            })
         elif module == 'memiavl':
             capture_memiavl_snapshot_log(row, memiavl_snapshot_data)
 
@@ -116,7 +180,10 @@ def load_benchmark_log(path: str) -> BenchmarkData:
     versions_df = pl.DataFrame(version_rows) if version_rows else pl.DataFrame()
     mem_df = pl.DataFrame(mem_rows) if mem_rows else pl.DataFrame()
     disk_df = pl.DataFrame(disk_rows) if disk_rows else pl.DataFrame()
+    disk_io_df = pl.DataFrame(disk_io_rows) if disk_io_rows else pl.DataFrame()
+    cpu_df = pl.DataFrame(cpu_rows) if cpu_rows else pl.DataFrame()
     memiavl_snapshots = pl.DataFrame(memiavl_snapshot_data) if memiavl_snapshot_data else None
+    version_reads_df = pl.DataFrame(version_read_rows) if version_read_rows else pl.DataFrame()
 
     return BenchmarkData(
         name=name,
@@ -125,7 +192,10 @@ def load_benchmark_log(path: str) -> BenchmarkData:
         versions_df=versions_df,
         mem_df=mem_df,
         disk_df=disk_df,
+        disk_io_df=disk_io_df,
+        cpu_df=cpu_df,
         memiavl_snapshots=memiavl_snapshots,
+        version_reads_df=version_reads_df,
     )
 
 

@@ -9,34 +9,37 @@ import (
 	"path/filepath"
 	"time"
 
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/jsonc"
+
+	"github.com/cosmos/iavl-bench/bench"
 )
 
 type Plan struct {
-	Runs []RunPlan `json:"runs"`
+	Runs        []RunPlan         `json:"configs"`
+	Simulations []bench.SimParams `json:"simulations,omitempty"`
 }
 
 type RunPlan struct {
-	RunName string          `json:"name"`
-	Runner  string          `json:"runner"`
-	Options json.RawMessage `json:"options"`
+	RunName string                       `json:"name"`
+	Runner  string                       `json:"runner"`
+	Options json.RawMessage              `json:"options"`
+	Pruning *pruningtypes.PruningOptions `json:"pruning,omitempty"`
 }
 
 func main() {
 	var dryRun bool
-	var changesetDir string
-	var versions int64
 	var outDir string
+	var leaveData bool
 	cmd := &cobra.Command{
 		Use:   "bench-all [plan-file]",
 		Short: "Run all benchmarks in the given JSON/JSONC plan file.",
 		Args:  cobra.ExactArgs(1),
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the plan will be printed but not executed.")
-	cmd.Flags().StringVar(&changesetDir, "changeset-dir", "", "Directory containing changesets.")
-	cmd.Flags().Int64Var(&versions, "target-version", 0, "If non-zero, the target version to run the benchmarks against.")
 	cmd.Flags().StringVar(&outDir, "out-dir", "", "If set, the directory to write results to. Defaults to a timestamped directory next to the plan file.")
+	cmd.Flags().BoolVar(&leaveData, "leave-data", false, "If true, the temporary data directories will not be removed after each run.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		planFile := args[0]
 		bz, err := os.ReadFile(planFile)
@@ -69,7 +72,9 @@ func main() {
 		}
 
 		for _, run := range plan.Runs {
-			runOne(logger, run, changesetDir, versions, outDir, dryRun)
+			for _, sim := range plan.Simulations {
+				runOne(logger, run, sim, outDir, dryRun, leaveData)
+			}
 		}
 
 		return nil
@@ -79,39 +84,54 @@ func main() {
 	}
 }
 
-func runOne(logger *slog.Logger, plan RunPlan, changesetDir string, versions int64, resultDir string, dryRun bool) {
-	bz, err := json.Marshal(plan)
+func runOne(logger *slog.Logger, plan RunPlan, simPlan bench.SimParams, resultDir string, dryRun, leaveData bool) {
+	cfgBz, err := json.Marshal(plan)
 	if err != nil {
 		logger.Error("error marshaling plan", "error", err)
 		return
 	}
-	logger.Info("starting run", "run_plan", string(bz))
-	dir := filepath.Join(resultDir, fmt.Sprintf("%s-tmp", plan.RunName))
-	err = os.Mkdir(dir, 0700)
+
+	simBz, err := json.Marshal(simPlan)
 	if err != nil {
-		logger.Error("error creating db dir", "error", err)
+		logger.Error("error marshaling sim plan", "error", err)
 		return
 	}
-	defer os.RemoveAll(dir)
+
+	logger.Info("starting run", "config", string(cfgBz), "simulation", string(simBz))
+	dir := filepath.Join(resultDir, fmt.Sprintf("%s__%s-tmp", plan.RunName, simPlan.Name))
+	if !dryRun {
+		err = os.Mkdir(dir, 0700)
+		if err != nil {
+			logger.Error("error creating db dir", "error", err)
+			return
+		}
+		if !leaveData {
+			defer os.RemoveAll(dir)
+		}
+	}
 
 	args := []string{
 		"bench",
-		"--changeset-dir",
-		changesetDir,
+		"--gen-options",
+		string(simBz),
 		"--db-dir",
 		dir,
 		"--log-type",
 		"json",
 		"--log-file",
-		filepath.Join(resultDir, fmt.Sprintf("%s.jsonl", plan.RunName)),
+		filepath.Join(resultDir, fmt.Sprintf("%s__%s.jsonl", plan.RunName, simPlan.Name)),
 	}
 
 	if plan.Options != nil {
 		args = append(args, "--db-options", string(plan.Options))
 	}
 
-	if versions != 0 {
-		args = append(args, "--target-version", fmt.Sprintf("%d", versions))
+	if plan.Pruning != nil {
+		jsonBz, err := json.Marshal(plan.Pruning)
+		if err != nil {
+			logger.Error("error marshaling pruning options", "error", err)
+		}
+		args = append(args, "--pruning-options", string(jsonBz))
 	}
 
 	cmd := exec.Command(plan.Runner, args...)

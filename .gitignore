@@ -5,3 +5,12 @@ bench/run-*/
 .ipynb_checkpoints
 analysis/.ipynb_checkpoints
 analysis/__pycache__/
+
+# generated benchmark data
+changesets/
+data-*/
+results/
+
+# local benchmark binaries
+**/*-bench
+treedb/treedb

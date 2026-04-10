@@ -4,14 +4,45 @@ import (
 	"fmt"
 	"io"
 
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	"cosmossdk.io/store/types"
 
 	"github.com/cosmos/iavl-bench/bench"
 )
 
 type CommitMultiStoreWrapper struct {
-	storeKeys map[string]types.StoreKey
-	store     types.CommitMultiStore
+	store types.CommitMultiStore
+}
+
+func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeKeys []*types.KVStoreKey) (*CommitMultiStoreWrapper, error) {
+	for _, key := range storeKeys {
+		store.MountStoreWithDB(key, types.StoreTypeIAVL, nil)
+	}
+
+	err := store.LoadLatestVersion()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load latest version: %w", err)
+	}
+
+	return &CommitMultiStoreWrapper{store: store}, nil
+}
+
+func (s *CommitMultiStoreWrapper) Version() int64 {
+	return s.store.LatestVersion()
+}
+
+func (s *CommitMultiStoreWrapper) SetPruning(pruning pruningtypes.PruningOptions) {
+	s.store.SetPruning(pruning)
+}
+
+func (s *CommitMultiStoreWrapper) CacheMultiTree() bench.MultiTree {
+	return s.store.CacheMultiStore()
+}
+
+func (s *CommitMultiStoreWrapper) Commit(multiTree bench.MultiTree) (types.CommitID, error) {
+	multiTree.(types.CacheMultiStore).Write()
+	cid := s.store.Commit()
+	return cid, nil
 }
 
 func (s *CommitMultiStoreWrapper) Close() error {
@@ -21,45 +52,4 @@ func (s *CommitMultiStoreWrapper) Close() error {
 	return nil
 }
 
-func NewCommitMultiStoreWrapper(store types.CommitMultiStore, storeNames []string) (*CommitMultiStoreWrapper, error) {
-	storeKeys := make(map[string]types.StoreKey)
-	for _, name := range storeNames {
-		if _, exists := storeKeys[name]; exists {
-			return nil, fmt.Errorf("duplicate store name: %s", name)
-		}
-		storeKeys[name] = types.NewKVStoreKey(name)
-		store.MountStoreWithDB(storeKeys[name], types.StoreTypeIAVL, nil)
-	}
-
-	err := store.LoadLatestVersion()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load latest version: %w", err)
-	}
-
-	return &CommitMultiStoreWrapper{store: store, storeKeys: storeKeys}, nil
-}
-
-func (s *CommitMultiStoreWrapper) Version() int64 {
-	return s.store.LatestVersion()
-}
-
-func (s *CommitMultiStoreWrapper) ApplyUpdate(storeKey string, key, value []byte, delete bool) error {
-	sk, ok := s.storeKeys[storeKey]
-	if !ok {
-		return fmt.Errorf("store key %s not found", storeKey)
-	}
-	store := s.store.GetKVStore(sk)
-	if delete {
-		store.Delete(key)
-	} else {
-		store.Set(key, value)
-	}
-	return nil
-}
-
-func (s *CommitMultiStoreWrapper) Commit() error {
-	_ = s.store.Commit()
-	return nil
-}
-
-var _ bench.Tree = &CommitMultiStoreWrapper{}
+var _ bench.RootMultiTree = &CommitMultiStoreWrapper{}

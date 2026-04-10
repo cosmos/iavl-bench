@@ -14,14 +14,14 @@ import (
 
 func main() {
 	bench.Run("store-v1", bench.RunConfig{
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.RootMultiTree, error) {
 			d, err := db.NewGoLevelDB("bench-store", params.TreeDir, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create db: %w", err)
 			}
 			// use a no-op logger because logging is very noisy
 			store := rootmulti.NewStore(d, log.NewNopLogger(), metrics.NewNoOpMetrics())
-			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreNames)
+			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreKeys)
 		},
 	})
 }

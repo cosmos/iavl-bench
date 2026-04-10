@@ -15,7 +15,7 @@ import (
 
 func main() {
 	bench.Run("store-v1", bench.RunConfig{
-		TreeLoader: func(params bench.LoaderParams) (bench.Tree, error) {
+		TreeLoader: func(params bench.LoaderParams) (bench.RootMultiTree, error) {
 			d, err := db.NewGoLevelDB("not-used", params.TreeDir, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create db: %w", err)
@@ -24,7 +24,7 @@ func main() {
 			store.EnableIAVLV2(&iavl2.Config{
 				Path: params.TreeDir,
 			})
-			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreNames)
+			return store_v1.NewCommitMultiStoreWrapper(store, params.StoreKeys)
 		},
 	})
 }
